@@ -29,7 +29,20 @@ jobs:
             eyJ*) style="legacy service_role JWT" ;;
             sb_secret_*) style="new-style sb_secret_ key" ;;
             "") echo "::error::SUPABASE_SERVICE_KEY is not set"; exit 1 ;;
-            *) echo "::error::SUPABASE_SERVICE_KEY is neither a JWT nor an sb_secret_ key"; exit 1 ;;
+            *)
+              # Describe the value's shape, never the value, so the fix is obvious.
+              key=$SUPABASE_SERVICE_KEY
+              trimmed=$(printf '%s' "$key" | tr -d '[:space:]"'"'")
+              shape="${#key} characters"
+              [ "$trimmed" != "$key" ] && shape="$shape; contains whitespace, a newline or quotes"
+              case "$trimmed" in
+                eyJ*) shape="$shape; a JWT once those are removed" ;;
+                sb_secret_*) shape="$shape; an sb_secret_ key once those are removed" ;;
+                sb_publishable_*) shape="$shape; this is the publishable key, not a secret key" ;;
+                Bearer*) shape="$shape; includes a Bearer prefix" ;;
+              esac
+              echo "::error::SUPABASE_SERVICE_KEY is neither a JWT nor an sb_secret_ key ($shape)"
+              exit 1 ;;
           esac
           echo "SUPABASE_SERVICE_KEY is a $style"
           status=$(curl -sS -o response.json -w '%{http_code}' \
