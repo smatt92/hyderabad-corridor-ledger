@@ -61,8 +61,8 @@ AUDIT_FIELDS = [
     "cv_pre_rmspe", "overfit_ratio", "pre_fit_overfit", "n_active_donors", "n_placebos",
     "placebo_rank", "placebo_p_value", "placebo_p_floor", "placebo_extreme",
     "placebo_verdict", "equal_control_pre", "equal_control_post", "equal_effect", "equal_ci_low",
-    "equal_ci_high", "estimator_gap", "estimators_disagree", "cs_blocks", "cs_mean", "cs_low",
-    "cs_high", "n_excluded_incomplete_pre", "included_pre_missing_rate",
+    "equal_ci_high", "estimator_gap", "estimators_disagree", "n_excluded_incomplete_pre",
+    "included_pre_missing_rate",
     "excluded_pre_missing_rate", "included_pre_bti", "excluded_pre_bti", "sensitivity_min_effect",
     "sensitivity_max_effect", "sensitivity_material", "alpha", "resamples", "low_confidence",
     "method_version",
@@ -76,7 +76,7 @@ VARIANT_ORDER = ["base", "strict_125", "strict_150", "relaxed_one_block"]
 PLACEBO_FIELDS = ["corridor_id", "effect", "pre_rmspe", "cv_pre_rmspe", "post_rmspe",
                   "rmspe_ratio", "poor_pre_fit", "weights"]
 BLOCK_FIELDS = ["block", "block_start", "block_end", "complete", "n_treated", "treated_bti",
-                "synthetic_bti", "gap", "running_mean", "cs_low", "cs_high"]
+                "synthetic_bti", "gap"]
 
 VERIFICATION_FIELDS = [
     "verified_at", "ok", "rows_checked", "first_seq", "head_seq", "head_row_hash", "breaks",

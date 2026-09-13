@@ -270,7 +270,8 @@ def test_audit_publishes_donors_placebos_blocks_and_the_cross_check(client):
     assert (audit["cv_pre_rmspe"], audit["overfit_ratio"], audit["pre_fit_overfit"],
             audit["n_active_donors"]) == (0.05, 0.4, True, 1)
     assert body["blocks"]["pre"]["block"] == [0, 1]
-    assert body["blocks"]["post"]["cs_low"] == [-0.2]
+    # a legacy confidence-sequence column in a stored row is never served
+    assert not {"running_mean", "cs_low", "cs_high"} & set(body["blocks"]["post"])
     assert (audit["placebo_rank"], audit["placebo_p_floor"]) == (2, 0.5)
     assert (audit["n_excluded_incomplete_pre"], audit["excluded_pre_missing_rate"]) == (1, 0.22)
     assert donors["kukatpally-madhapur"]["short_pre_blocks"] == 0

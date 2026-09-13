@@ -66,13 +66,36 @@ what comparable untreated corridors did over the same days.
   below 1 / (n + 1). With fewer than 19 placebos no effect can reach p ≤ 0.05.
   The published p uses the post/pre RMSPE ratio and is always shown with its
   rank, the placebo count and that floor.
-- **Bootstrap interval.** `audit_bootstrap = "blocks"` (default) resamples
-  whole units of `audit_bootstrap_days` days within each period, the same
-  units for every corridor, with weights held fixed. `"calls"` resamples
-  single calls independently per corridor.
-- **Confidence sequence.** Each completed post block gives a gap between the
-  treated block BTI and the synthetic one. An always-valid confidence sequence
-  on their running mean may be read after every block.
+- **Bootstrap interval.** A percentile bootstrap that resamples calls within
+  each corridor and period, with the donor weights held fixed. Tested in
+  [audit_power.md](audit_power.md) section 2 on 10 scenarios (Tiers A and B;
+  6, 12 and 18 pre blocks; 20 and 40 donors; 28 and 56 post days; 80
+  simulated panels each):
+  - size: it excluded zero on 6% of no-effect panels (1–11% per scenario),
+    against a nominal 5%;
+  - coverage: it contained the true injected effect in 97% of panels on
+    average, and in at least 91% for every scenario and effect size tested
+    (0.05 to 0.30 BTI);
+  - spread: its standard error was 0.84–1.14 of the estimate's actual spread
+    across panels at no effect, and up to 1.56 at larger effects, so it errs
+    wide rather than narrow.
+
+  Resampling whole weeks instead did worse (11% size, coverage down to 82%),
+  and whole 14-day blocks much worse (26%, down to 56%). A 28-day post period
+  holds four weeks or two blocks, too few units to estimate a spread from.
+  The call-level result holds for the simulated noise: a city-wide daily
+  shock (sd 0.10) and each corridor's weekly drift (sd 0.08). Section 5 of
+  audit_power.md repeats the test with weekly drift 2.5 times larger.
+- **No sequential test.** An earlier version published an always-valid
+  confidence sequence on the gaps between treated and synthetic block BTIs,
+  meant to be read after each post block. At the default six pre blocks and
+  28 post days it excluded zero on 12–18% of no-effect panels (20 and 40
+  donors, in both sweeps) against a nominal 5%. Its scale came from the
+  pre-period residuals, which an overfitted synthetic control drives toward
+  zero. Where it did hold size, at 12 or more pre blocks, it was 0.20–0.46
+  BTI wide, too wide to say anything. It was removed. The audit reports once,
+  after the post period closes, and nothing may be read off a partial post
+  period.
 - **Overfitting diagnostic.** Each audit publishes the in-sample pre RMSPE, a
   leave-one-block-out pre RMSPE (`cv_pre_rmspe`: each pre block predicted by
   weights refitted, donor selection included, on the other blocks),

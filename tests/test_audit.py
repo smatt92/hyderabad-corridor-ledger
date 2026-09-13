@@ -3,8 +3,6 @@ import pandas as pd
 import pytest
 
 from metrics.audit import (
-    Audit,
-    Calls,
     estimators_disagree,
     fit,
     held_out_rmspe,
@@ -152,25 +150,14 @@ def test_held_out_rmspe_by_hand():
     assert np.isnan(held_out_rmspe(y[:2], x[:2]))
 
 
-def test_bootstrap_units_are_whole_days_and_shared_by_every_corridor():
-    """t and d carry identical calls. Resampling the same whole units for both, every
-    draw of t minus d is exactly zero; resampling calls independently, it is not."""
+def test_the_interval_resamples_calls_and_needs_resamples():
+    """Calls are resampled independently for each corridor and period. t and d carry
+    identical calls, so the effect is exactly zero, but their draws differ and the
+    interval has width. With no resamples there is no interval, not a zero-width one."""
     frames = [*series("t", D1_PRE, D1_POST), *series("d", D1_PRE, D1_POST)]
-    tti = pd.concat(frames, ignore_index=True)
-    a = Audit(Calls(tti), {}, "works", "t", DAY, SPAN["post_end"], PARAMS)
-    post = a.units("post")
-    assert len(post) == 4 and len(a.units("pre")) == 12
-    assert post[0] == (SPAN["post_start"], SPAN["post_start"] + pd.Timedelta(days=6))
-    assert post[-1][1] == SPAN["post_end"]
-    ten = Audit(Calls(tti), {}, "works", "t", DAY, SPAN["post_end"],
-                Params(bootstrap_resamples=200, audit_bootstrap_days=10))
-    assert [(e - s).days + 1 for s, e in ten.units("post")] == [10, 10, 8]
-
-    for mode, zero_width in (("blocks", True), ("calls", False)):
-        (row,) = audit(frames, params=Params(bootstrap_resamples=200, audit_bootstrap=mode))[
-            "intervention_audit"].to_dict("records")
-        assert row["effect"] == pytest.approx(0.0, abs=1e-12)
-        assert (row["ci_high"] - row["ci_low"] < 1e-12) == zero_width
+    (row,) = audit(frames)["intervention_audit"].to_dict("records")
+    assert row["effect"] == pytest.approx(0.0, abs=1e-12)
+    assert row["ci_low"] < 0 < row["ci_high"]
     (row,) = audit(frames, params=Params(bootstrap_resamples=0))["intervention_audit"].to_dict(
         "records")
     assert row["status"] == "ok" and np.isnan(row["ci_low"]) and np.isnan(row["ci_high"])
@@ -204,8 +191,9 @@ def test_synthetic_control_by_hand():
     post = blocks[blocks.period == "post"]
     assert len(blocks[blocks.period == "pre"]) == 6 and post["complete"].all()
     assert post["gap"].tolist() == pytest.approx([EFFECT, EFFECT], abs=1e-4)
-    assert row["cs_blocks"] == 2 and row["cs_mean"] == pytest.approx(EFFECT, abs=1e-4)
-    assert row["cs_low"] <= row["cs_mean"] <= row["cs_high"]
+    # gaps are published as a description; there is no sequential test
+    assert not {"cs_blocks", "cs_mean", "cs_low", "cs_high"} & set(row)
+    assert not {"running_mean", "cs_low", "cs_high"} & set(blocks.columns)
 
     # the headline pools each period once: recompute it from the calls directly
     tti = pd.concat(by_hand_panel(), ignore_index=True)
@@ -337,7 +325,6 @@ def test_statuses():
                      *series("d1", D1_PRE, D1_POST[:1]), *series("d2", D2_PRE, D2_POST[:1])])
     (row,) = partial["intervention_audit"].to_dict("records")
     assert row["status"] == "post_partial" and row["post_blocks_complete"] == 1
-    assert row["cs_blocks"] == 1 and row["cs_mean"] == pytest.approx(EFFECT, abs=1e-4)
     assert np.isnan(row["effect"]) and np.isnan(row["equal_effect"])  # the headline waits
     assert partial["audit_sensitivity"].empty
 

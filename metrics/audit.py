@@ -33,13 +33,11 @@ matching in level; the level difference is absorbed as a fixed shift. Then
     effect = (treated_post - synthetic_post) - (treated_pre - synthetic_pre)
 
 with every BTI pooled once over its whole period and synthetic = sum of
-weight x donor BTI. The interval is a percentile bootstrap over whole units of
-audit_bootstrap_days days: each resample draws units of a period with
-replacement, the same units for every corridor, so week-to-week drift and
-city-wide shocks move the interval as they move the estimate. Consecutive days
-on one corridor are not independent, and resampling single calls (still
-available as audit_bootstrap = "calls") gives intervals that are too narrow.
-Weights are held fixed across resamples.
+weight x donor BTI. The interval is a percentile bootstrap that resamples calls
+within each corridor and period, with the weights held fixed. In simulation
+(docs/audit_power.md) it held size and coverage across Tiers A and B, 6-18 pre
+blocks, 20-40 donors and 28-56 post days. Resampling whole weeks or 14-day
+blocks did not: a post period holds too few of them to estimate a spread.
 
 Overfitting. With few pre blocks and many donors the weights can reproduce the
 treated pre series exactly, and an exact fit predicts nothing. Each audit
@@ -59,11 +57,11 @@ Cross-check. The equal-weight mean of the same donors' pooled BTIs, over the
 same periods, with the same bootstrap. Both estimates are published, with the
 gap between them and whether they disagree.
 
-Partial post period. The headline waits for the post period to close, so it is
-fixed-horizon. Each completed post block gives a gap between the treated
-corridor's block BTI and the synthetic one; an always-valid confidence sequence
-on the running mean of those gaps (metrics.confseq) may be read after every
-block without inflating error.
+No sequential test. The audit reports once, after the post period closes. Each
+completed post block's gap between the treated and synthetic block BTIs is
+published as a description, not a test. A confidence sequence on those gaps was
+removed: at six pre blocks it excluded zero on 12-18% of no-effect panels
+against a nominal 5%.
 """
 
 import math
@@ -71,12 +69,10 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
-from scipy import stats
 from scipy.optimize import nnls
 
 from metrics import pooled
 from metrics.cells import local_day_hour
-from metrics.confseq import running_cs, running_mean_sd
 from metrics.params import Params
 
 NAN = float("nan")
@@ -101,7 +97,7 @@ AUDIT_COLUMNS = [
     "n_active_donors", "n_placebos", "placebo_rank", "placebo_p_value",
     "placebo_p_floor", "placebo_extreme", "placebo_verdict", "equal_control_pre",
     "equal_control_post", "equal_effect", "equal_ci_low", "equal_ci_high", "estimator_gap",
-    "estimators_disagree", "cs_blocks", "cs_mean", "cs_low", "cs_high",
+    "estimators_disagree",
     "n_excluded_incomplete_pre", "included_pre_missing_rate", "excluded_pre_missing_rate",
     "included_pre_bti", "excluded_pre_bti", "sensitivity_min_effect", "sensitivity_max_effect",
     "sensitivity_material", "alpha", "resamples", "missing_rate", "low_confidence",
@@ -116,7 +112,7 @@ PLACEBO_COLUMNS = [
 ]
 BLOCK_COLUMNS = [
     "intervention_id", "period", "block", "block_start", "block_end", "complete", "n_treated",
-    "treated_bti", "synthetic_bti", "gap", "running_mean", "cs_low", "cs_high",
+    "treated_bti", "synthetic_bti", "gap",
 ]
 SENSITIVITY_COLUMNS = [
     "intervention_id", "variant", "block_floor", "max_short_blocks", "status", "n_donors",
@@ -284,21 +280,6 @@ def placebo_summary(treated_ratio: float, placebo_ratios,
     return rank, p, floor, False, verdict
 
 
-def block_cs(gaps: np.ndarray, residuals: np.ndarray,
-             params: Params) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """(running mean, low, high) of the post-block gaps: an always-valid confidence
-    sequence, its scale at least the pre residuals' sd, widened by a t interval for the
-    pre-period level the gaps are measured from."""
-    half = params.cs_alpha / 2
-    m = len(residuals)
-    pre_sd = float(np.std(residuals, ddof=1)) if m > 1 else 0.0
-    intercept = float(stats.t.ppf(1 - half / 2, m - 1) * pre_sd / np.sqrt(m)) if m > 1 else 0.0
-    _, running_sd = running_mean_sd(gaps)
-    mean, low, high = running_cs(gaps, half, params.audit_post_blocks,
-                                 sd=np.fmax(running_sd, pre_sd))
-    return mean, low - intercept, high + intercept
-
-
 def estimators_disagree(effect: float, low: float, high: float,
                         equal: float, equal_low: float, equal_high: float) -> bool:
     """Opposite signs, or either estimate outside the other's interval."""
@@ -364,31 +345,11 @@ class Audit:
         self.complete = [end <= last_day for _, end in self.post_blocks]
         self.closed = all(self.complete)
         self._pooled: dict = {}
-        self._units: dict = {}
 
     def block(self, corridor_id: str, period: str, k: int) -> tuple[int, float]:
         start, end = (self.pre_blocks if period == "pre" else self.post_blocks)[k]
         values = self.calls.between(corridor_id, start, end)
         return len(values), pooled_bti(values, self.params)
-
-    def units(self, period: str) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
-        """The whole-day units a period is resampled in, audit_bootstrap_days long."""
-        step = pd.Timedelta(days=self.params.audit_bootstrap_days)
-        start, end = self.span[f"{period}_start"], self.span[f"{period}_end"]
-        out = []
-        while start <= end:
-            out.append((start, min(start + step - pd.Timedelta(days=1), end)))
-            start += step
-        return out
-
-    def unit_draws(self, period: str) -> np.ndarray:
-        """The units each resample takes, shared by every corridor so city-wide shocks
-        move the donors and the treated corridor together."""
-        if period not in self._units:
-            rng = pooled.generator(self.params, ("audit-units", self.intervention_id, period))
-            n = len(self.units(period))
-            self._units[period] = rng.integers(0, n, size=(self.params.bootstrap_resamples, n))
-        return self._units[period]
 
     def pooled(self, corridor_id: str, period: str) -> tuple[float, np.ndarray]:
         """A corridor's BTI pooled over a whole period, and its bootstrap draws."""
@@ -398,14 +359,9 @@ class Audit:
                                         self.span[f"{period}_end"])
             if self.params.bootstrap_resamples == 0:
                 sample = np.empty(0)
-            elif self.params.audit_bootstrap == "calls":
+            else:
                 (sample,) = pooled.draws(values, [pooled.bti_rows], self.params,
                                          ("audit", self.intervention_id, corridor_id, period))
-            else:
-                parts = [self.calls.between(corridor_id, s, e) for s, e in self.units(period)]
-                sample = np.array([pooled_bti(np.concatenate([parts[i] for i in row]),
-                                              self.params)
-                                   for row in self.unit_draws(period)])
             self._pooled[key] = (pooled_bti(values, self.params), sample)
         return self._pooled[key]
 
@@ -590,7 +546,7 @@ def audit_one(calls: Calls, cells: pd.DataFrame, pairs: dict, intervention_id: s
         return {"intervention_id": intervention_id, "period": period, "block": k,
                 "block_start": start, "block_end": end, "complete": done, "n_treated": n,
                 "treated_bti": treated_bti, "synthetic_bti": synthetic,
-                "gap": treated_bti - synthetic, "running_mean": NAN, "cs_low": NAN, "cs_high": NAN}
+                "gap": treated_bti - synthetic}
 
     def finish(status: str) -> dict[str, list[dict]]:
         audit["status"] = status
@@ -623,7 +579,6 @@ def audit_one(calls: Calls, cells: pd.DataFrame, pairs: dict, intervention_id: s
     rows = [block_row("pre", k, s, e, True, n, b, float(synthetic))
             for k, ((s, e), (n, b), synthetic)
             in enumerate(zip(a.pre_blocks, t_pre_blocks, pre_synthetic, strict=True))]
-    gaps = []
     for k, ((s, e), done) in enumerate(zip(a.post_blocks, a.complete, strict=True)):
         if not done:
             rows.append(block_row("post", k, s, e, False,
@@ -631,16 +586,6 @@ def audit_one(calls: Calls, cells: pd.DataFrame, pairs: dict, intervention_id: s
             continue
         n, b = a.block(treated, "post", k)
         rows.append(block_row("post", k, s, e, True, n, b, post_synthetic[k]))
-        if not np.isnan(rows[-1]["gap"]):
-            gaps.append((len(rows) - 1, rows[-1]["gap"]))
-
-    if gaps:
-        values = np.array([g for _, g in gaps])
-        mean, low, high = block_cs(values, residuals, params)
-        for (index, _), mu, lo, hi in zip(gaps, mean, low, high, strict=True):
-            rows[index] |= {"running_mean": float(mu), "cs_low": float(lo), "cs_high": float(hi)}
-        audit |= {"cs_blocks": len(values), "cs_mean": float(mean[-1]),
-                  "cs_low": float(low[-1]), "cs_high": float(high[-1])}
     out["audit_blocks"] = rows
 
     if not any(a.complete):

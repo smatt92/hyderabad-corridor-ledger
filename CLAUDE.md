@@ -376,9 +376,15 @@ Other definitions worth knowing before changing them:
   estimate depends on the threshold.
 - The equal-weight mean of the same donors is published as a cross-check,
   with the gap between the two estimates and whether they disagree.
-- The headline waits for the post period to close. Before that, an
-  always-valid confidence sequence over completed post blocks may be read
-  after every block without inflating error.
+- There is no sequential test. The audit reports once, after the post period
+  closes. The block confidence sequence was removed: at six pre blocks and 28
+  post days it excluded zero on 12-18% of no-effect panels against a nominal
+  5% (`docs/audit_power.md`). Do not reintroduce a sequential read without a
+  calibration run that holds size.
+- The interval is a call-level percentile bootstrap. In simulation it held
+  size (6%) and coverage (97% mean, 91% worst) across Tiers A and B, 6-18 pre
+  blocks, 20-40 donors and 28-56 post days. Whole-week and whole-block
+  resampling did not (11% and 26% size): a post period has too few units.
 - An audit needs 84 pre days, 9 settling days and 28 post days of data. Until
   then its status says why it is withheld, and every period boundary is
   recorded, never inferred.

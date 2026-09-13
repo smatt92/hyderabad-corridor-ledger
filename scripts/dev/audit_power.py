@@ -55,7 +55,6 @@ from metrics import pooled  # noqa: E402
 from metrics.audit import (  # noqa: E402
     Audit,
     Calls,
-    block_cs,
     intervention_audits,
     periods,
     rmspe,
@@ -77,15 +76,12 @@ CONFIGS = {"demeaned": {"audit_weights": "demeaned"},
            "sparse5": {"audit_weights": "demeaned", "audit_max_donors": 5},
            "levels": {"audit_weights": "levels"}}
 PREBLOCK_CONFIGS = {k: CONFIGS[k] for k in ("demeaned", "levels")}
+# Whole-week and whole-block resampling ("blocks7", "blocks14") and the block confidence
+# sequence were evaluated at commit f8f2be8 and removed from metrics.audit: they did not
+# hold size. Their rows stay in the saved records and in docs/audit_power.md.
 BOOTSTRAPS = {
-    "calls": {"audit_weights": "demeaned", "audit_bootstrap": "calls"},
-    "blocks7": {"audit_weights": "demeaned", "audit_bootstrap": "blocks",
-                "audit_bootstrap_days": 7},
-    "blocks14": {"audit_weights": "demeaned", "audit_bootstrap": "blocks",
-                 "audit_bootstrap_days": 14},
-    "calls-levels": {"audit_weights": "levels", "audit_bootstrap": "calls"},
-    "blocks7-levels": {"audit_weights": "levels", "audit_bootstrap": "blocks",
-                       "audit_bootstrap_days": 7},
+    "calls": {"audit_weights": "demeaned"},
+    "calls-levels": {"audit_weights": "levels"},
 }
 RULES = {"ratio": "ratio", "cv_ratio": "cv ratio", "abs_effect": "|effect|",
          "std_effect": "std |effect|", "cs": "cs"}
@@ -93,7 +89,7 @@ RANKS = ("ratio", "cv_ratio", "abs_effect", "std_effect")
 # the most congested, most volatile corridor panel_model can draw
 STRESS = {"base": 2.37, "volatility": 0.21, "spread": 1.84}
 DRIFT_WEEK_SD = 0.20  # 2.5 times panel_model's default corridor weekly drift
-STRESS_VARIANTS = {"demeaned": {"audit_weights": "demeaned", "audit_bootstrap": "calls"}}
+STRESS_VARIANTS = {"demeaned": {"audit_weights": "demeaned"}}
 SCENARIO = ["tier", "block_days", "pre_blocks", "donors", "post_blocks"]
 INTERVENTIONS = pd.DataFrame({
     "id": ["works"], "corridor_id": [TREATED],
@@ -176,9 +172,8 @@ def rank_p(treated: float, placebos) -> float:
 def treated_estimate(peak: pd.DataFrame, cells: pd.DataFrame, params: Params,
                      candidates: list[str], shared: dict) -> dict:
     """The treated corridor's estimate against fixed donors, with the bootstrap standard
-    errors of both estimators and the confidence sequence at the last post block. shared
-    carries the donors' pooled BTIs and draws between deltas; the injection does not
-    touch them."""
+    errors of both estimators. shared carries the donors' pooled BTIs and draws between
+    deltas; the injection does not touch them."""
     last_day = cells.loc[cells["n_ok"] > 0, "day"].max()
     a = Audit(Calls(peak), {}, "works", TREATED, EFFECTIVE, last_day, params)
     a._pooled.update(shared)  # dev-only reuse of the audit's cache
@@ -193,12 +188,9 @@ def treated_estimate(peak: pd.DataFrame, cells: pd.DataFrame, params: Params,
         equal = (tq - tp) - (dq.mean(axis=0) - dp.mean(axis=0))
         se, equal_se = float(np.nanstd(synthetic, ddof=1)), float(np.nanstd(equal, ddof=1))
     shared.update({k: v for k, v in a._pooled.items() if k[0] != TREATED})
-    cs_mean, cs_low, cs_high = block_cs(np.array(gaps), residuals, params)
     return {k: head[k] for k in ("effect", "ci_low", "ci_high", "equal_effect", "equal_ci_low",
                                  "equal_ci_high")} | {
         "se": se, "equal_se": equal_se, "post_rmspe": rmspe(gaps),
-        "cs_mean": float(cs_mean[-1]), "cs_low": float(cs_low[-1]),
-        "cs_high": float(cs_high[-1]),
     }
 
 
@@ -258,7 +250,7 @@ def with_detections(frame: pd.DataFrame) -> pd.DataFrame:
     for rule in RANKS:
         out[rule] = (((out[f"p_{rule}"] <= ALPHA) & upward).astype(float)
                      if f"p_{rule}" in out else np.nan)
-    out["cs"] = excludes_zero(out, "cs_low", "cs_high")
+    out["cs"] = excludes_zero(out, "cs_low", "cs_high") if "cs_low" in out else np.nan
     if "ci_low" in out and out["ci_low"].notna().any():
         out["interval"] = excludes_zero(out, "ci_low", "ci_high")
         out["equal"] = excludes_zero(out, "equal_ci_low", "equal_ci_high")
@@ -387,6 +379,7 @@ def calibration_cells(c: dict[float, dict]) -> list[str]:
 
 def bootstrap_report(frame: pd.DataFrame) -> list[str]:
     ok = frame[frame["status"] == "ok"]
+    variants = sorted(frame["variant"].unique(), key=lambda v: (v.endswith("levels"), v))
     intervals = {"synthetic-control bootstrap interval": ("effect", "ci_low", "ci_high", "se"),
                  "equal-weight bootstrap interval": ("equal_effect", "equal_ci_low",
                                                      "equal_ci_high", "equal_se")}
@@ -403,7 +396,7 @@ def bootstrap_report(frame: pd.DataFrame) -> list[str]:
              ""]
     pooled_rows = []
     for title, (estimate, low, high, se) in intervals.items():
-        for variant in BOOTSTRAPS:
+        for variant in variants:
             sub = ok[ok["variant"] == variant]
             c = [calibration(g, estimate, low, high, se) for _, g in sub.groupby(SCENARIO)]
             size = np.nanmean([x[0.0]["excludes_zero"] for x in c if 0.0 in x])
@@ -411,7 +404,8 @@ def bootstrap_report(frame: pd.DataFrame) -> list[str]:
             ratio = np.nanmean([x[d]["ratio"] for x in c for d in x])
             worst = np.nanmin([x[d]["covers"] for x in c for d in x if d > 0])
             pooled_rows.append([title, variant, cell(size), cell(cover), cell(worst), cell(ratio)])
-    cs_variants = {"demeaned": "calls", "levels": "calls-levels"}
+    cs_variants = ({"demeaned": "calls", "levels": "calls-levels"}
+                   if "cs_low" in frame and frame["cs_low"].notna().any() else {})
     for weights, variant in cs_variants.items():
         sub = ok[ok["variant"] == variant]
         c = [calibration(g, "cs_mean", "cs_low", "cs_high", None) for _, g in sub.groupby(SCENARIO)]
@@ -426,7 +420,7 @@ def bootstrap_report(frame: pd.DataFrame) -> list[str]:
     for title, (estimate, low, high, se) in intervals.items():
         rows = []
         for key, everything in frame.groupby(SCENARIO, sort=True):
-            for variant in BOOTSTRAPS:
+            for variant in variants:
                 mine = everything[everything["variant"] == variant]
                 sub = mine[mine["status"] == "ok"]
                 rows.append(scenario_cells(key, mine)
@@ -435,6 +429,8 @@ def bootstrap_report(frame: pd.DataFrame) -> list[str]:
         lines += [f"### {title}", "",
                   *table(["tier", "block days", "pre blocks", "donors (used)", "post days",
                           "withheld", "resampling", *CALIBRATION_HEADER], rows), ""]
+    if not cs_variants:
+        return lines
     rows = []
     for key, everything in frame.groupby(SCENARIO, sort=True):
         for weights, variant in cs_variants.items():
@@ -506,9 +502,12 @@ def preblock_report(frame: pd.DataFrame) -> list[str]:
                 cell(by_delta["abs_effect"].mean().get(0.10)),
                 cell(by_delta["abs_effect"].mean().get(0.20)), mde(by_delta["abs_effect"].mean()),
                 cell(null["std_effect"].mean()), mde(by_delta["std_effect"].mean()),
-                cell(null["ratio"].mean()), mde(by_delta["ratio"].mean()), cell(null["cs"].mean()),
-                cell(((cs10["cs_low"] <= 0.10) & (cs10["cs_high"] >= 0.10)).mean()),
-                cell(((cs20["cs_low"] <= 0.20) & (cs20["cs_high"] >= 0.20)).mean()),
+                cell(null["ratio"].mean()), mde(by_delta["ratio"].mean()),
+                cell(mean_of(null, "cs")),
+                cell(((cs10["cs_low"] <= 0.10) & (cs10["cs_high"] >= 0.10)).mean()
+                     if "cs_low" in cs10 else np.nan),
+                cell(((cs20["cs_low"] <= 0.20) & (cs20["cs_high"] >= 0.20)).mean()
+                     if "cs_low" in cs20 else np.nan),
             ])
         for rule, (p10, p20) in powers.items():
             summary.append([tier, str(donors), variant, RULES.get(rule, rule),
@@ -589,7 +588,8 @@ def report(frames: dict[str, pd.DataFrame], replicates: dict[str, int], minutes:
         "|effect| ranked among placebo |effects|. `std |effect|`: treated |effect| over its own "
         "leave-one-block-out pre RMSPE, ranked among the placebos' same ratio. `cs`: the "
         "block confidence sequence at the last post block excludes zero. `interval` / "
-        "`equal`: the synthetic-control / equal-weight bootstrap interval excludes zero. For a positive effect every rule "
+        "`equal`: the synthetic-control / equal-weight bootstrap interval excludes zero. "
+        "For a positive effect every rule "
         "also needs the estimate's sign right. `oracle`: (1.96 + 0.84) x the sd of the null "
         "effect, what a test that knew the estimator's true spread would need.",
         "",

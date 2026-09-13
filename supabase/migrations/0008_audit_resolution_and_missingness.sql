@@ -18,6 +18,11 @@
 -- rate and BTI beside the donors', and reruns the estimate under stricter and
 -- looser completeness thresholds (audit_sensitivity).
 --
+-- No sequential test. The block confidence sequence from 0007 excluded zero on
+-- 12-18% of no-effect panels at six pre blocks against a nominal 5%
+-- (docs/audit_power.md). Its columns are dropped rather than left for a reader
+-- to quote. The audit reports once, after the post period closes.
+--
 -- 0007 is applied and is not edited. The audit tables are derived and are
 -- replaced wholesale on every backfill.
 
@@ -36,6 +41,17 @@ alter table public.intervention_audit
   add column sensitivity_min_effect     double precision,
   add column sensitivity_max_effect     double precision,
   add column sensitivity_material       boolean;           -- a variant outside the interval or of opposite sign
+
+alter table public.intervention_audit
+  drop column cs_blocks,
+  drop column cs_mean,
+  drop column cs_low,
+  drop column cs_high;
+
+alter table public.audit_blocks
+  drop column running_mean,
+  drop column cs_low,
+  drop column cs_high;
 
 alter table public.audit_placebos
   add column cv_pre_rmspe  double precision;

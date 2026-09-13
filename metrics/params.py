@@ -7,7 +7,7 @@ recomputes them from raw under the new version.
 
 from dataclasses import dataclass
 
-METHOD_VERSION = "p02.5"
+METHOD_VERSION = "p02.6"
 LOCAL_TZ = "Asia/Kolkata"
 BASES = ("tomtom", "p5")
 
@@ -87,17 +87,9 @@ class Params:
     audit_weights: str = "demeaned"
     audit_max_donors: int = 0
     audit_overfit_ratio: float = 0.5
-    # Audit intervals: "blocks" resamples whole units of audit_bootstrap_days days
-    # within each period, the same units for every corridor, so week-to-week drift
-    # and city-wide shocks enter the interval. "calls" resamples single calls, as if
-    # consecutive days on one corridor were independent, and is kept for comparison.
-    audit_bootstrap: str = "blocks"
-    audit_bootstrap_days: int = 7
 
     def __post_init__(self) -> None:
         if self.p95_min_samples < self.central_min_samples:
             raise ValueError("p95_min_samples must be at least central_min_samples")
         if self.audit_weights not in ("demeaned", "levels"):
             raise ValueError("audit_weights must be demeaned or levels")
-        if self.audit_bootstrap not in ("blocks", "calls"):
-            raise ValueError("audit_bootstrap must be blocks or calls")
