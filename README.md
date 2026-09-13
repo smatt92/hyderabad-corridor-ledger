@@ -34,8 +34,10 @@ Read this before anything it can do.
   one audit in 22 reads "extreme" by chance when there are 21 placebos.
 - **It is not live.** Indices are recomputed once a night, at 03:11 IST. It
   knows nothing about the accident ten minutes ago.
-- **It holds no road geometry.** Lines on the map are straight connectors
-  between measured endpoints, not roads.
+- **It holds no road geometry yet.** A corridor's road is fetched from TomTom
+  once, when the corridor is verified, and no corridor is verified. Until then
+  every line on the map is a straight connector between measured endpoints,
+  labelled as one, and not the road.
 - **Every power figure comes from simulated panels.** Their noise sizes are
   assumptions: a city-wide daily shock with sd 0.10 and a weekly corridor drift
   with sd 0.08. They have to be re-estimated once a real corridor has a full
@@ -106,7 +108,9 @@ This could stop the project, so it is written here and not in a footnote.
   - clause 11.6.1 bars building a secondary or derived database;
   - no clause found permits publishing results as an open dataset.
 
-  The sample log, the Parquet archive and the exports all store Results.
+  The sample log, the Parquet archive and the exports all store Results. So
+  would each corridor road the collector stores at verification (0012), which
+  the database also makes publicly readable.
 - **Allowance.** TomTom's pricing page lists the Routing API at 20,000 free
   calls a month, and does not say when the count resets. The collector's
   budget was designed around 2,400 calls a day, which uses 20,000 in under
@@ -122,7 +126,7 @@ As of 14 September 2026.
 
 | Part | State |
 |---|---|
-| Database (Supabase, Mumbai) | Migrations 0001–0010 applied. 0011 (TomTom response headers) written and not applied. 12 MB. |
+| Database (Supabase, Mumbai) | Migrations 0001–0010 applied. 0011 (TomTom response headers) and 0012 (corridor roads and their weekly checks) written and not applied. 12 MB. |
 | Corridors | 10 declared, all draft placeholders. None verified, none active. |
 | Measurements | 0 samples, 0 failed samples, 0 collector runs recorded. |
 | Collector | Scheduled every 5 minutes across the collection windows in GitHub Actions. It exits at once while no corridor is active. |
@@ -301,17 +305,29 @@ about seven months after the first real corridor goes active.
 
 **Answers:** where the corridors are. It is for spatial orientation only.
 
-- **Connectors, not roads.** Lines are straight connectors between each pair's
-  measured endpoints, not the road driven. The collector stores
-  `routeRepresentation=summaryOnly` and holds no route geometry.
-- **Tiles.** The basemap and the traffic-flow layer are TomTom's raster tiles,
-  loaded by your browser from TomTom. The traffic layer refreshes every 2
-  minutes while the tab is visible. If a layer's tiles fail to load (for
-  example once the tile allowance runs out), the whole layer is hidden, and the
-  connectors draw on a plain ground.
-- **Freshness.** Connector colours are TTI at the scrubber position. The indices
+- **Stored roads and straight connectors.** A corridor whose road has been
+  stored is drawn as that road: the route TomTom returned through the
+  corridor's declared points, fetched once when the corridor was verified. Any
+  other corridor is a straight connector between its measured endpoints, not
+  the road driven. A list under the map says which corridor is drawn which
+  way. No corridor has a stored road yet.
+- **Basemaps.** Minimal (the default), street or satellite, remembered in your
+  browser. All three are TomTom raster tiles loaded by your browser from
+  TomTom. Minimal is TomTom's street map desaturated, and satellite is
+  TomTom's imagery. Until the browser tile key exists, no mode shows a
+  basemap.
+- **Satellite imagery never shows a straight connector.** A straight line over
+  imagery reads as a claim about the road, crossing Hussain Sagar or cutting
+  through buildings. So satellite mode is offered only once some corridor has
+  a stored road, and over it only those corridors are drawn; the rest are
+  listed as not drawn.
+- **Tiles.** The traffic-flow layer refreshes every 2 minutes while the tab is
+  visible, and is not drawn over imagery. If a layer's tiles fail to load (for
+  example once the tile allowance runs out), the whole layer is hidden and the
+  corridors draw on a plain ground.
+- **Freshness.** Line colours are TTI at the scrubber position. The indices
   behind them are recomputed nightly, not every 15 minutes, and the timestamp
-  above the map says when. The traffic tiles are live; the connectors are not.
+  above the map says when. The traffic tiles are live; the lines are not.
 
 ### 7. Wall mode (`?mode=wall`)
 
@@ -500,7 +516,9 @@ npm --prefix web run dev
 
 | Rule | Enforced by |
 |---|---|
-| A measured corridor's geometry never changes. To change a road, retire the corridor and declare a new id that supersedes it. | `collector/immutability.py` in `tests.yml` and `corridors.yml`; database trigger `corridors_guard` |
+| A verified or measured corridor's geometry never changes. To change a road, retire the corridor and declare a new id that supersedes it. | `collector/immutability.py` in `tests.yml` and `corridors.yml`; database trigger `corridors_guard` once a road is stored or the corridor has been active |
+| A corridor's stored road is fetched once and never overwritten. A refetch that differs is a rerouting alarm. | Database trigger `corridors_guard` (0012); `collector/fetch.py` fails the run; `collector/gaps.py` fails nightly until the corridor is retired |
+| Satellite imagery never shows a straight connector. | `web/src/lib/mapmode.ts` with `mapmode.test.ts`; `web/src/lib/rules.test.ts` |
 | An unverified corridor stays a draft. | `collector/config.py` in CI; database constraint `corridors_measured_only_when_verified` (0010) |
 | Raw responses are kept, gzipped, and never with route geometry. | The collector refuses a response with route points or over 4 KB gzipped; check constraint on `samples.raw_gz`; `archive.py` re-verifies each file's sha256 and chain before `prune_archived()` may delete |
 | `samples` and `failed_samples` are insert-only. | Database triggers raise on UPDATE and TRUNCATE, and on DELETE outside `prune_archived()`; the service role's UPDATE, DELETE and TRUNCATE privileges are revoked; the hash chain, walked nightly and anchored in Rekor |

@@ -125,6 +125,12 @@ sequenceDiagram
             F->>DB: tomtom_responses, headers of first response and every 403 and 429
         end
     end
+    opt verified corridors with no stored road, or a road unchecked for 7 days, at most 2 a run
+        F->>T: calculateRoute with via_points, polyline, traffic false
+        T-->>F: the road
+        F->>DB: corridor_route_checks row
+        F->>DB: store the road once, or compare it and fail the run if it differs
+    end
     F->>DB: finish collector_runs row with outcome, counts and attempts
 ```
 
@@ -157,9 +163,15 @@ and an exhausted allowance, and nothing that tells them apart.
 - Any other 429 is treated as quota. The run stops, the run itself fails, and
   no further call is made until midnight UTC.
 
+**Corridor roads.** After the slots, a run checks the roads of verified
+corridors: at most two a run, one attempt each, from the same budget.
+- A corridor with no stored road gets one polyline call, stored permanently.
+- A stored road is refetched weekly and compared. One that differs fails the
+  run, and is never written over the stored road.
+
 **Not live yet.** Keeping TomTom's response headers (`tomtom_responses`) and
-the `quota_exhausted` run outcome need migration 0011, which is written and
-not applied.
+the `quota_exhausted` run outcome need migration 0011. Corridor roads need
+0012. Both are written and not applied.
 
 ## 3. Data model
 
@@ -179,6 +191,7 @@ erDiagram
     corridors }o--o{ corridors : "share a pair_id"
     collector_runs ||--o{ tomtom_responses : "headers kept, 0011"
     collector_runs |o..o{ samples : "collector_run, no FK"
+    corridors ||--o{ corridor_route_checks : "road checks, 0012"
     corridors {
         text id PK
         text class "core, alternate or donor"
@@ -190,6 +203,8 @@ erDiagram
         boolean verified
         text treatment_status
         text treatment_work "a work in config/interventions.yaml"
+        jsonb route_polyline "the road, fetched once, permanent"
+        jsonb route_polyline_simplified "served for drawing"
     }
     samples {
         bigint seq PK
@@ -216,6 +231,12 @@ erDiagram
         bigint id PK
         text collector_run FK
         jsonb headers
+    }
+    corridor_route_checks {
+        bigint id PK
+        text corridor_id FK
+        text kind "initial or refetch"
+        boolean matched "false is a rerouting alarm"
     }
     gap_reports {
         date day PK
@@ -250,8 +271,13 @@ erDiagram
   downloaded again and re-verified.
 - **Chain walks.** `chain_verifications` records each walk of both chains,
   with its head hash and first break.
-- **Pending.** `tomtom_responses` exists only in migration 0011, not yet
-  applied.
+- **Roads.** `route_polyline` is the corridor's road, fetched once at
+  verification and frozen by `corridors_guard` together with the points it was
+  routed through. `corridor_route_checks` records every road call, and the
+  service role can neither update nor delete it: it is the evidence for a
+  rerouting alarm.
+- **Pending.** `tomtom_responses` (0011), the road columns and
+  `corridor_route_checks` (0012) exist only in migrations not yet applied.
 
 ### 3b. Derived tables and the read model
 
@@ -374,8 +400,8 @@ stateDiagram-v2
     state "draft, unverified" as draft_unverified
     state "draft, verified" as draft_verified
     [*] --> draft_unverified : declared in corridors.yaml
-    draft_unverified --> draft_verified : every coordinate checked on imagery
-    draft_verified --> active : geometry freezes here
+    draft_unverified --> draft_verified : every coordinate checked on imagery, geometry freezes
+    draft_verified --> active
     active --> paused
     paused --> active
     active --> retired
@@ -386,12 +412,17 @@ stateDiagram-v2
         in CI by config.py and in the database
         by corridors_measured_only_when_verified
     end note
+    note right of draft_verified
+        The next collector run fetches the road once
+        and stores it. Endpoints, via_points, direction
+        and the road are frozen from here. CI
+        immutability.py, database corridors_guard.
+    end note
     note right of active
-        Endpoints, via_points and direction are frozen
-        from the first status that is not draft.
-        CI immutability.py, database corridors_guard.
-        To change the road, retire this corridor and
-        declare a new id that supersedes it.
+        A weekly refetch that finds a different road
+        fails the collector and the daily alarm.
+        Retire this corridor and declare a new id
+        that supersedes it.
     end note
 ```
 
@@ -405,10 +436,12 @@ stateDiagram-v2
   not junction centres, and a coordinate becomes permanent once measured.
 
 **Freezing.**
-- Geometry freezes at the first status that is not draft, which is earlier
-  than the first sample. `collector/immutability.py` compares every committed
-  version in CI, and the `corridors_guard` trigger refuses the change again in
-  the database.
+- Geometry freezes at verification, before the first sample, because the
+  collector then fetches the corridor's road, which is permanent with the points
+  it was routed through. `collector/immutability.py` freezes it in CI from the
+  first commit that marks the corridor verified. The `corridors_guard` trigger
+  freezes it in the database from the moment a road is stored, or the corridor
+  is first active.
 - Superseding is how a road changes: the old corridor is retired, and a new
   id that names it starts again as a draft.
 
@@ -747,14 +780,15 @@ point of this section.
   the text found, and is unresolved.
 
 **Request `routeRepresentation=summaryOnly`.**
-- Decided: store the route summary and the gzipped raw response, never route
-  geometry.
+- Decided: every sample stores the route summary and the gzipped raw response,
+  never route geometry. The one geometry stored is each corridor's road,
+  fetched once (below).
 - Evidence: the database has a 500 MB free tier. At 2,400 calls a day the
   ledger gains about 876,000 rows a year, and the 90-day live window holds
   about 216,000. Each stored response is capped at 4 KB gzipped, which a
   response carrying route points exceeds.
-- Rejected: storing geometry, which the collector now refuses and records as
-  a failure.
+- Rejected: geometry on every sample, which the collector refuses and records
+  as a failure.
 
 **Declared via points, not derived alternates.**
 - Decided: every corridor declares waypoints, sent on every call. An
@@ -766,11 +800,12 @@ point of this section.
   render time.
 
 **No deck.gl or MapLibre.**
-- Decided: plain `<img>` tiles and SVG connectors. A build plugin fails on
-  any map library.
-- Evidence: the project holds no route geometry, so there is nothing for a map
-  library to draw. A road drawn from anything else would be a road not
-  measured. The bundle is 75 KB gzipped.
+- Decided: plain `<img>` tiles and SVG lines. A build plugin fails on any map
+  library.
+- Evidence: the map is a fixed frame with at most one stored road per
+  corridor, which an SVG polyline draws. Nothing pans, zooms or streams
+  geometry. The bundle is 75 KB gzipped. A map library would also invite
+  drawing roads nobody measured.
 - Rejected: deck.gl, MapLibre, Mapbox and Leaflet.
 
 **Pooled BTI, not per cell.**
@@ -874,3 +909,47 @@ to align the bucket with TomTom's daily reset.
   as no-store.
 - Rejected: pre-fetching the fixed 12-tile basemap into our own storage, and a
   caching tile proxy.
+
+**Fetch each corridor's road once, at verification.** This reversed an earlier
+decision of Sahil's, that the project holds no route geometry.
+- Decided: one calculateRoute call with the polyline when a corridor is
+  verified. The road is stored permanently on the corridor row, simplified for
+  drawing, and refetched weekly. A refetch that differs is an alarm, never an
+  update.
+- Evidence: a straight connector over satellite imagery reads as a route
+  claim, whatever the caption says. A corridor's road is fixed by its declared
+  points, so one call is enough, and a changed road means the corridor no
+  longer measures what was verified.
+- Caveats:
+  - TomTom documents live traffic as an input to routing, so a sample
+    (`traffic=true`) can take a different road between two declared points.
+    The stored road is fetched with `traffic=false`, and the daily alarm warns
+    when a sample's length strays more than 2% from it.
+  - Storing the road is storing a Result under TomTom's Terms 11.4, the same
+    open question as the samples.
+  - The rerouting thresholds (30 m, 2%) are not calibrated.
+- Rejected: straight connectors whatever the basemap, and a road fetched with
+  live traffic, which would differ between refetches for reasons other than a
+  change of road.
+
+**All three basemaps from TomTom.** This departed from the brief, which named
+Esri World Imagery or Protomaps for satellite, and TomTom grey or CARTO
+Positron for minimal.
+- Decided:
+  - minimal is TomTom's street tiles, desaturated in the browser;
+  - street is TomTom's street tiles;
+  - satellite is TomTom's `sat/main` imagery;
+  - all three use the one browser key.
+- Evidence, from the providers' pages read on 2026-09-14:
+  - TomTom's raster styles are `main` and `night` only, and Orbis offers
+    `street-light` and `street-dark`, so there is no grey style;
+  - Esri's documentation requires an ArcGIS account to use its basemap
+    services;
+  - Protomaps serves vector tiles, which need a renderer such as MapLibre;
+  - CARTO's raster basemaps need a CARTO API key and are being retired, and
+    its licence file restricts the tiles to enterprise customers;
+  - Google's terms allow its tiles only inside Google Maps Platform, with a
+    billing-enabled key.
+- Rejected: Esri, Protomaps, CARTO and Google tiles.
+- Unknown: TomTom does not document whether its free tier covers satellite
+  tiles.
