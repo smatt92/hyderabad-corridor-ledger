@@ -308,6 +308,15 @@ unauditable, however good the estimator. This decides seeding order.
   meter of TomTom's. The headers of each run's first response and of every 403
   and 429 go to `tomtom_responses` (0011), redacted, cookies not kept. If
   TomTom ever reports its count or limit, it is there.
+- Allowance: TomTom publishes the Routing API's free allowance as 20,000
+  calls a month, reset time undocumented (see "TomTom's terms and allowance").
+  `CAPACITY_PER_DAY` was set against a daily allowance TomTom no longer
+  publishes: a panel at the budget's 2,040 first attempts a day uses 20,000
+  calls in under ten days. Which allowance the account has shows only in its
+  TomTom dashboard, and Sahil decides which figure governs. The daily alarm
+  (`collector/gaps.py`) measures UTC months against the published figure: it
+  fails at 80% of it, on any quota refusal, and when an IST day's attempts
+  pass `CAPACITY_PER_DAY`, and warns when the month's rate carries past it.
 - `length_m` from the response is the only distance anywhere in the system.
 - A response with route points, or over 4 KB gzipped, is recorded as a
   `geometry_leak` failure and fails the run.
@@ -319,6 +328,7 @@ unauditable, however good the estimator. This decides seeding order.
 | Check | Where |
 |---|---|
 | Slots missing from yesterday (IST) | `collector/gaps.py` in `daily.yml`; writes `gap_reports` |
+| Routing calls at 80% of TomTom's published monthly allowance, any quota refusal, an IST day over `CAPACITY_PER_DAY` | `collector/gaps.py` in `daily.yml` |
 | Head hash and first break of both chains | `collector/chain.py` in `daily.yml` |
 | Every anchored head still in an independent walk of the chains | `collector/anchor.py check` in `daily.yml` |
 | Junction candidates and the treatment register valid; no recheck over 92 days | `collector/registry.py` in `tests.yml` and `recheck.yml` |

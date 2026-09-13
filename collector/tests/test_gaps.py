@@ -1,6 +1,13 @@
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 
-from gaps import expected_slots, gap_rows, unbroken_days
+from gaps import (
+    expected_slots,
+    gap_rows,
+    month_bounds,
+    quota_headers,
+    unbroken_days,
+    usage_report,
+)
 from schedule import IST, slots_for_day
 
 DAY = date(2026, 9, 14)
@@ -41,3 +48,53 @@ def test_unbroken_days_stop_at_a_gap_or_a_day_with_nothing_owed():
     assert unbroken_days(reports, DAY) == 8
     assert unbroken_days(reports + [report(DAY, missing=2)], DAY) == 0
     assert unbroken_days([report(d) for d in days[1:]], DAY) == 0
+
+
+NOW = datetime(2026, 9, 16, 0, 0, tzinfo=UTC)        # exactly half of September gone
+
+
+def usage(month=2000, day=100, refusals=0, latest=None, now=NOW):
+    return usage_report(now, month, DAY, day, refusals, latest)
+
+
+def test_a_quiet_month_raises_nothing_and_says_tomtom_reports_no_count():
+    lines, warnings, errors = usage(latest={"observed_at": "2026-09-15T02:30:00Z",
+                                            "headers": {"tracking-id": "t", "content-type": "x"}})
+    assert (warnings, errors) == ([], [])
+    assert "| attempts this month, as the collector recorded them | 2000 |" in lines
+    assert "| carried to month end at this month's rate | 4000 |" in lines
+    assert any("not reported" in line for line in lines)
+
+
+def test_warns_when_this_months_rate_reaches_the_allowance():
+    assert usage(month=9998)[1:] == ([], [])
+    _, warnings, errors = usage(month=10_000)            # 10,000 at half the month
+    assert errors == [] and "about 20000 routing calls by month end" in warnings[0]
+
+
+def test_fails_at_eighty_percent_of_the_allowance():
+    assert usage(month=15_999)[2] == []
+    _, warnings, errors = usage(month=16_000)
+    assert warnings == [] and errors == [
+        "16000 routing calls this UTC month: 80% of TomTom's published free allowance of 20000"]
+
+
+def test_fails_on_any_quota_refusal_and_when_the_governor_lets_too_much_through():
+    assert usage(refusals=1)[2] == ["TomTom refused 1 calls for quota this UTC month"]
+    assert usage(day=2400)[2] == []
+    assert "governor and the meter disagree" in usage(day=2401)[2][0]
+
+
+def test_headers_that_look_like_tomtoms_own_count_are_shown_beside_ours():
+    latest = {"observed_at": "2026-09-15T02:30:00Z",
+              "headers": {"x-ratelimit-remaining": "12", "retry-after": "1", "tracking-id": "t"}}
+    lines, _, _ = usage(latest=latest)
+    assert any(line.endswith("retry-after: 1, x-ratelimit-remaining: 12") for line in lines)
+    assert quota_headers(None) == {}
+
+
+def test_months_are_utc_calendar_months():
+    assert month_bounds(datetime(2026, 12, 31, 23, 0, tzinfo=IST)) == (
+        datetime(2026, 12, 1, tzinfo=UTC), datetime(2027, 1, 1, tzinfo=UTC))
+    early_october_ist = datetime(2026, 10, 1, 3, 0, tzinfo=IST)     # still September in UTC
+    assert month_bounds(early_october_ist)[0] == datetime(2026, 9, 1, tzinfo=UTC)

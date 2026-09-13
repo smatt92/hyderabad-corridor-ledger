@@ -16,6 +16,14 @@ from schedule import slots_for_day
 CAPACITY_PER_DAY = 2400
 RETRY_RESERVE = 0.15  # share of capacity kept for retries
 
+# TomTom's published free allowance for the Routing API is "Free 20K monthly"
+# (docs.tomtom.com/pricing, read 2026-09-14); when it resets is not documented.
+# CAPACITY_PER_DAY was set against a daily allowance TomTom no longer publishes, and a
+# panel spending it every day uses 20,000 calls in under nine days. Which allowance
+# this account actually has is shown only in its TomTom dashboard.
+TOMTOM_FREE_MONTHLY = 20_000
+USAGE_ALARM_SHARE = 0.80
+
 
 def day_plan(tiers: Iterable[str], day: date) -> list[tuple[datetime, int]]:
     """(slot, planned first attempts) for the day. `tiers` has one entry per active corridor."""
