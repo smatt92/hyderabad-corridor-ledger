@@ -73,6 +73,16 @@ logic cannot be attributed, the dataset it produced cannot be trusted either.
 - If a step appears to need the service key on Vercel, stop and tell Sahil:
   something is running in the wrong place.
 - Tokens are never written to files, `.env` included.
+- PostgREST needs `apikey` AND `Authorization`. With a legacy JWT key,
+  `apikey` alone silently resolves to the `anon` role: a service call fails
+  with 401 (`db-size.yml` did), or reads only what anon may read and looks as
+  if it worked. Every hand-rolled REST call sends both. `db-size.yml` sends
+  both headers and reports the key's style, never the key.
+  `collector/store.py` and `metrics/io.py` add `Authorization` for JWT-style
+  keys. New-style `sb_` keys authenticate through `apikey`: on 2026-09-13 the
+  publishable key worked with `apikey` alone and with an identical Bearer.
+  Whether the `sb_secret_` key accepts a Bearer header is not yet verified.
+  The project has both a legacy `service_role` JWT and an `sb_secret_` key.
 
 ## Schema discipline
 

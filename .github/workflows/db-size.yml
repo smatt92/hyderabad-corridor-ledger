@@ -15,18 +15,32 @@ jobs:
     name: db-size
     runs-on: ubuntu-latest
     steps:
+      # PostgREST needs apikey AND Authorization. With a legacy JWT key, apikey
+      # alone silently resolves to the anon role, which may not call
+      # log_db_size: the call fails with 401. The key's style is reported so a
+      # failure says which kind of key was used; the key itself never is.
       - name: Log database size and enforce the 400 MB ceiling
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           LIMIT_BYTES: '400000000'  # 400 MB; the free tier stops at 500 MB
         run: |
-          bytes=$(curl -fsS -X POST "$SUPABASE_URL/rest/v1/rpc/log_db_size" \
+          case "$SUPABASE_SERVICE_KEY" in
+            eyJ*) style="legacy service_role JWT" ;;
+            sb_secret_*) style="new-style sb_secret_ key" ;;
+            "") echo "::error::SUPABASE_SERVICE_KEY is not set"; exit 1 ;;
+            *) echo "::error::SUPABASE_SERVICE_KEY is neither a JWT nor an sb_secret_ key"; exit 1 ;;
+          esac
+          echo "SUPABASE_SERVICE_KEY is a $style"
+          status=$(curl -sS -o response.json -w '%{http_code}' \
+            -X POST "$SUPABASE_URL/rest/v1/rpc/log_db_size" \
             -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
             -H 'Content-Type: application/json' \
             -d '{}')
-          if ! [[ $bytes =~ ^[0-9]+$ ]]; then
-            echo "::error::log_db_size returned an unexpected response"
+          bytes=$(cat response.json)
+          if [ "$status" != 200 ] || ! [[ $bytes =~ ^[0-9]+$ ]]; then
+            echo "::error::log_db_size returned HTTP $status with a $style: $(head -c 300 response.json)"
             exit 1
           fi
           mb=$((bytes / 1000000))
