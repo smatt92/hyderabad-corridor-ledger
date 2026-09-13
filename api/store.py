@@ -17,7 +17,7 @@ READABLE = frozenset({
     "corridors", "interventions", "dataset_stats", "corridor_stats", "corridor_rankings",
     "metrics_daily", "metrics_day", "profile_hourly", "heatmap_weekly", "network_hourly",
     "pair_advantage_hourly", "intervention_audit", "audit_donors", "audit_placebos",
-    "audit_blocks", "chain_verifications", "export_manifest",
+    "audit_blocks", "audit_sensitivity", "chain_verifications", "export_manifest",
 })
 PAGE_SIZE = 1000  # PostgREST's row cap per request on Supabase
 

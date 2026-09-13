@@ -26,8 +26,13 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
+from metrics import pooled  # noqa: E402
+from metrics.audit import blocks, periods  # noqa: E402
+from metrics.cells import local_day_hour  # noqa: E402
 from metrics.io import to_records  # noqa: E402
+from metrics.params import Params  # noqa: E402
 from metrics.pipeline import compute_all  # noqa: E402
+from scripts.dev.panel_model import DOW_FACTOR, hour_factor, inject_bti_effect  # noqa: E402
 
 OUT = ROOT / ".fixtures" / "tables"
 LAST_DAY = pd.Timestamp("2026-09-12")
@@ -77,19 +82,15 @@ PAYLOAD = [
 ]
 INTERVENTIONS = [(0, 22, "Signal retiming, 6 junctions", 0.93), (4, 36, "Flyover opened", 0.86),
                  (10, 50, "Bus-lane enforcement", 0.96), (16, 64, "Left-turn free flow", 0.90)]
-DOW_FACTOR = [0.86, 1.00, 1.05, 1.05, 1.03, 1.13, 0.72]  # Monday first (pandas dayofweek)
+# A positive control: an effect of known size (+0.15 BTI on the treated corridor's pooled
+# post-period peak calls) that the audit in the preview must recover. The corridor is the
+# first primary from index 22 that no other intervention touches and whose every pre block
+# reaches the p95 floor: an audit withheld as insufficient_pre tests nothing.
+POSITIVE_CONTROL = (22, 40, "Injected +0.15 BTI, positive control", 0.15)
 
 
 def slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
-
-
-def hour_factor(h: np.ndarray) -> np.ndarray:
-    def bump(mean, sd, amp):
-        return amp * np.exp(-((h - mean) ** 2) / (2 * sd * sd))
-
-    f = 1 + bump(9.4, 1.35, 0.62) + bump(18.9, 1.8, 0.86) + bump(13, 2.4, 0.14)
-    return np.where(h < 6, f * (0.9 - 0.02 * (6 - h)), f)
 
 
 def declared_corridors() -> pd.DataFrame:
@@ -160,7 +161,27 @@ def synthetic_samples(corridors: pd.DataFrame) -> pd.DataFrame:
     return samples
 
 
-DOW_FACTOR_ARRAY = np.array(DOW_FACTOR)
+DOW_FACTOR_ARRAY = DOW_FACTOR
+
+
+def auditable_primary(samples: pd.DataFrame, primaries: pd.DataFrame, start: int,
+                      span: dict) -> int:
+    """The first primary from start, untreated, with every pre block at the p95 floor."""
+    params = Params()
+    ok = samples[samples["ok"] & pooled.is_peak(samples["requested_at"], params)]
+    day = local_day_hour(ok["requested_at"])["day"]
+    taken = {iv[0] for iv in INTERVENTIONS}
+    for k in [*range(start, len(primaries)), *range(start)]:
+        if k in taken:
+            continue
+        mine = day[ok["corridor_id"] == primaries.loc[k, "id"]]
+        counts = [int(mine.between(s, e).sum()) for s, e in blocks(span, "pre", params)]
+        if min(counts) >= params.p95_min_samples:
+            if k != start:
+                print(f"positive control: primary {start} has a pre block below the floor, "
+                      f"using primary {k} (smallest pre block {min(counts)} calls)")
+            return k
+    raise SystemExit("no primary reaches the p95 floor in every pre block")
 
 
 def main() -> None:
@@ -174,6 +195,18 @@ def main() -> None:
          "description": label}
         for k, day, label, _ in INTERVENTIONS
     ])
+    start_k, day, label, delta = POSITIVE_CONTROL
+    effective = first + pd.Timedelta(days=day)
+    span = periods(effective, Params())
+    k = auditable_primary(samples, primaries, start_k, span)
+    samples, before, after = inject_bti_effect(samples, primaries.loc[k, "id"], span["post_start"],
+                                               span["post_end"], delta)
+    interventions = pd.concat([interventions, pd.DataFrame([{
+        "id": slug(label), "corridor_id": primaries.loc[k, "id"],
+        "effective_at": effective.tz_localize("Asia/Kolkata").isoformat(), "description": label,
+    }])], ignore_index=True)
+    print(f"positive control on {primaries.loc[k, 'id']}: "
+          f"pooled post BTI {before:.3f} -> {after:.3f}")
     print(f"{len(corridors)} corridors, {len(samples):,} samples; computing metrics...")
     tables = compute_all(samples, corridors.rename(columns={"id": "corridor_id"}), interventions)
 

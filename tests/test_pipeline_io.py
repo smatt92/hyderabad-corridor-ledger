@@ -42,7 +42,7 @@ def test_compute_all_end_to_end_invariants():
         "recovery_events", "recovery_km", "recovery_cox", "before_after", "dataset_stats",
         "corridor_stats", "metrics_day", "profile_hourly", "heatmap_weekly", "network_hourly",
         "pair_advantage_hourly", "intervention_audit", "audit_donors", "audit_placebos",
-        "audit_blocks",
+        "audit_blocks", "audit_sensitivity",
     }
     assert len(tables["pair_advantage_hourly"]) == 24
     # b is a's declared alternate: contaminated by the intervention, so never a donor,

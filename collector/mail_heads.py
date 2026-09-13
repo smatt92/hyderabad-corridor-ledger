@@ -3,9 +3,14 @@
 After chain.py records a walk of both chains, this mails the head of each to
 a mailbox outside the systems the chains audit. A head hash stored only in the
 database it describes proves nothing: whoever can rewrite the chain can
-rewrite the record of its head too. A copy in a separate mailbox, which no one
-with database or repository access can edit, lets anyone check later that the
-chain in the database still extends the head mailed on an earlier night.
+rewrite the record of its head too. A copy in a separate mailbox lets anyone
+check later that the chain in the database still extends the head mailed on an
+earlier night.
+
+The SMTP credential here must be send-only (a transactional mail service's
+sending key), so a leaked CI secret can neither read nor delete the witness.
+The receiving mailbox's password never reaches GitHub. The mailbox's owner can
+still delete from it; a surface no one can rewrite is stronger.
 
 Settings come from GitHub Actions secrets, never from files:
   HEAD_HASH_SMTP_HOST, HEAD_HASH_SMTP_PORT, HEAD_HASH_SMTP_USERNAME,

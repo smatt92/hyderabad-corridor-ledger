@@ -79,7 +79,25 @@ class Params:
     audit_settle_days: int = 9
     audit_post_blocks: int = 2
     audit_poor_fit_ratio: float = 5.0
+    # Synthetic-control weights: "demeaned" matches the demeaned pre-block series and
+    # absorbs the level difference as a shift; "levels" matches levels with no shift
+    # (Abadie's original). audit_max_donors > 0 caps the nonzero weights by greedy
+    # forward selection. audit_overfit_ratio flags an in-sample pre fit tighter than
+    # that fraction of its leave-one-block-out fit.
+    audit_weights: str = "demeaned"
+    audit_max_donors: int = 0
+    audit_overfit_ratio: float = 0.5
+    # Audit intervals: "blocks" resamples whole units of audit_bootstrap_days days
+    # within each period, the same units for every corridor, so week-to-week drift
+    # and city-wide shocks enter the interval. "calls" resamples single calls, as if
+    # consecutive days on one corridor were independent, and is kept for comparison.
+    audit_bootstrap: str = "blocks"
+    audit_bootstrap_days: int = 7
 
     def __post_init__(self) -> None:
         if self.p95_min_samples < self.central_min_samples:
             raise ValueError("p95_min_samples must be at least central_min_samples")
+        if self.audit_weights not in ("demeaned", "levels"):
+            raise ValueError("audit_weights must be demeaned or levels")
+        if self.audit_bootstrap not in ("blocks", "calls"):
+            raise ValueError("audit_bootstrap must be blocks or calls")

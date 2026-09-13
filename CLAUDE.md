@@ -123,13 +123,18 @@ chain.
   records each head hash and first break in `chain_verifications`, and
   returns them. `daily.yml` runs it nightly and copies the heads into the job
   summary, outside the database.
-- The same job mails both heads to a dedicated witness mailbox
+- The same job mails both heads to a witness mailbox
   (`collector/mail_heads.py`), because a head kept only inside the database
-  it audits proves nothing. The mailbox is write-only for this project and
-  nothing here reads it. The SMTP credential in GitHub should be able to
-  send to that mailbox but not log in to it: a credential that can read the
-  witness can also delete from it. The step runs even when the walk finds a
-  break, and fails loudly until the `HEAD_HASH_*` secrets are set.
+  it audits proves nothing. Two credentials, kept apart: GitHub holds a
+  send-only SMTP credential (a transactional mail service's sending key), which
+  cannot log in to, read or delete from any mailbox. The receiving mailbox's
+  password never touches GitHub, Vercel or a file. Nothing in this project
+  reads the witness. The step runs even when the walk finds a break, and fails
+  loudly until the `HEAD_HASH_*` secrets are set.
+- The mailbox defends against a leaked CI secret, not against its owner:
+  Sahil can delete mail from an inbox Sahil controls. A surface its owner
+  cannot rewrite (a public transparency log or a timestamp anchored in a
+  public blockchain) is strictly stronger and is proposed, not yet built.
 - Any change to a canonical function is a new format version.
 
 ## Storage budget (500 MB free tier)
@@ -353,6 +358,22 @@ Other definitions worth knowing before changing them:
   The treated post/pre RMSPE ratio is ranked among them, and the published
   verdict says plainly when the effect is not extreme, including when there
   are too few placebos for any effect to be.
+- A placebo p is never shown bare. With n placebos the smallest attainable p is
+  1/(n+1), so p = 0.08 with 25 placebos means rank 2 of 26. Every p is
+  published with the treated corridor's rank, the placebo count and that floor
+  (`placebo_rank`, `n_placebos`, `placebo_p_floor`), in the verdict text, the
+  API and the frontend.
+- **Missingness in donor selection is not random.** A donor needs every pre
+  block at the p95 floor, and failed calls cluster at peak hours on the most
+  congested roads, so the corridors dropped for an incomplete pre block are
+  disproportionately the congested ones. The donor pool is not a random sample
+  of the network: it leans toward well-behaved roads. Every audit publishes
+  each exclusion with its reason, the excluded corridors' pre-period missing
+  rate and BTI beside the donors', and the estimate rerun at stricter (1.25x
+  and 1.5x the floor) and looser (one short block) completeness thresholds
+  (`audit_sensitivity`). `sensitivity_material` is true when a variant's effect
+  leaves the headline interval or flips sign; the frontend then says the
+  estimate depends on the threshold.
 - The equal-weight mean of the same donors is published as a cross-check,
   with the gap between the two estimates and whether they disagree.
 - The headline waits for the post period to close. Before that, an

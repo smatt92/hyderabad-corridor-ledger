@@ -67,7 +67,8 @@ def bti_rows(rows: np.ndarray) -> np.ndarray:
     return (np.quantile(rows, 0.95, axis=1) - means) / means
 
 
-def _generator(params: Params, key) -> np.random.Generator:
+def generator(params: Params, key) -> np.random.Generator:
+    """A generator seeded from the parameters and a key: the same key, the same draws."""
     digest = zlib.crc32("|".join(str(part) for part in key).encode())
     return np.random.default_rng([params.bootstrap_seed, digest])
 
@@ -75,7 +76,7 @@ def _generator(params: Params, key) -> np.random.Generator:
 def draws(values, statistics: list[Statistic], params: Params, key) -> list[np.ndarray]:
     """Each statistic over the same bootstrap_resamples resamples of values."""
     v = clean(values)
-    rng = _generator(params, key)
+    rng = generator(params, key)
     parts: list[list[np.ndarray]] = [[] for _ in statistics]
     remaining = params.bootstrap_resamples
     while remaining:
@@ -88,6 +89,11 @@ def draws(values, statistics: list[Statistic], params: Params, key) -> list[np.n
 
 
 def interval(sample: np.ndarray, params: Params) -> tuple[float, float]:
+    """Percentile interval of the finite draws; NaN when there are none."""
+    sample = np.asarray(sample, dtype=float)
+    sample = sample[~np.isnan(sample)]
+    if not len(sample):
+        return NAN, NAN
     half = params.bootstrap_alpha / 2
     low, high = np.quantile(sample, [half, 1 - half])
     return float(low), float(high)

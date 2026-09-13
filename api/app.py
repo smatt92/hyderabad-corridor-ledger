@@ -58,15 +58,23 @@ AUDIT_FIELDS = [
     "post_start", "post_end", "block_days", "pre_blocks", "post_blocks", "post_blocks_complete",
     "n_pre", "n_post", "n_donors", "treated_pre", "treated_post", "synthetic_pre",
     "synthetic_post", "effect", "ci_low", "ci_high", "pre_rmspe", "post_rmspe", "rmspe_ratio",
-    "n_placebos", "placebo_p_value", "placebo_extreme", "placebo_verdict", "equal_control_pre",
-    "equal_control_post", "equal_effect", "equal_ci_low", "equal_ci_high", "estimator_gap",
-    "estimators_disagree", "cs_blocks", "cs_mean", "cs_low", "cs_high", "alpha", "resamples",
-    "low_confidence", "method_version",
+    "cv_pre_rmspe", "overfit_ratio", "pre_fit_overfit", "n_active_donors", "n_placebos",
+    "placebo_rank", "placebo_p_value", "placebo_p_floor", "placebo_extreme",
+    "placebo_verdict", "equal_control_pre", "equal_control_post", "equal_effect", "equal_ci_low",
+    "equal_ci_high", "estimator_gap", "estimators_disagree", "cs_blocks", "cs_mean", "cs_low",
+    "cs_high", "n_excluded_incomplete_pre", "included_pre_missing_rate",
+    "excluded_pre_missing_rate", "included_pre_bti", "excluded_pre_bti", "sensitivity_min_effect",
+    "sensitivity_max_effect", "sensitivity_material", "alpha", "resamples", "low_confidence",
+    "method_version",
 ]
 DONOR_FIELDS = ["corridor_id", "included", "weight", "exclusion", "n_pre", "n_post", "pre_bti",
-                "post_bti"]
-PLACEBO_FIELDS = ["corridor_id", "effect", "pre_rmspe", "post_rmspe", "rmspe_ratio",
-                  "poor_pre_fit", "weights"]
+                "post_bti", "pre_missing_rate", "short_pre_blocks", "min_pre_block_n"]
+SENSITIVITY_FIELDS = ["variant", "block_floor", "max_short_blocks", "status", "n_donors",
+                      "n_fit_blocks", "effect", "ci_low", "ci_high", "equal_effect",
+                      "placebo_rank", "n_placebos", "placebo_p_value", "placebo_p_floor"]
+VARIANT_ORDER = ["base", "strict_125", "strict_150", "relaxed_one_block"]
+PLACEBO_FIELDS = ["corridor_id", "effect", "pre_rmspe", "cv_pre_rmspe", "post_rmspe",
+                  "rmspe_ratio", "poor_pre_fit", "weights"]
 BLOCK_FIELDS = ["block", "block_start", "block_end", "complete", "n_treated", "treated_bti",
                 "synthetic_bti", "gap", "running_mean", "cs_low", "cs_high"]
 
@@ -377,6 +385,8 @@ def audit(store: StoreDep, intervention_id: Annotated[str, Path(pattern=INTERVEN
     donors = store.select("audit_donors", by_intervention, [("corridor_id", "asc")])
     placebos = store.select("audit_placebos", by_intervention, [("corridor_id", "asc")])
     blocks = store.select("audit_blocks", by_intervention, [("block", "asc")])
+    variants = store.select("audit_sensitivity", by_intervention)
+    variants.sort(key=lambda v: VARIANT_ORDER.index(v["variant"]))
     body = {
         "intervention": {k: iv[k] for k in ("id", "corridor_id", "effective_at", "description")},
         "corridor": {"id": corridor["id"], "code": corridor.get("code"), "name": corridor["name"]},
@@ -389,6 +399,8 @@ def audit(store: StoreDep, intervention_id: Annotated[str, Path(pattern=INTERVEN
         "placebos": [{k: p.get(k) for k in PLACEBO_FIELDS} for p in placebos],
         "blocks": {period: columnar([b for b in blocks if b["period"] == period], BLOCK_FIELDS)
                    for period in ("pre", "post")},
+        # the estimate under stricter and looser donor completeness thresholds
+        "sensitivity": [{k: v.get(k) for k in SENSITIVITY_FIELDS} for v in variants],
     }
     return respond(store, body, row and row["computed_at"], row and row["missing_rate"])
 

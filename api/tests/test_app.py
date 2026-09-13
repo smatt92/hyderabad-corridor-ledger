@@ -91,21 +91,37 @@ def tables():
             "post_start": "2026-08-10", "post_end": "2026-09-06", "effect": -0.04,
             "ci_low": -0.09, "ci_high": 0.01, "equal_effect": -0.02, "equal_ci_low": -0.07,
             "equal_ci_high": 0.03, "estimator_gap": -0.02, "estimators_disagree": False,
-            "n_placebos": 1, "placebo_p_value": 1.0, "placebo_extreme": False,
+            "n_placebos": 1, "placebo_rank": 2, "placebo_p_value": 1.0, "pre_rmspe": 0.02,
+            "cv_pre_rmspe": 0.05, "overfit_ratio": 0.4, "pre_fit_overfit": True,
+            "n_active_donors": 1,
+            "placebo_p_floor": 0.5, "placebo_extreme": False, "n_excluded_incomplete_pre": 1,
+            "included_pre_missing_rate": 0.05, "excluded_pre_missing_rate": 0.22,
+            "sensitivity_min_effect": -0.05, "sensitivity_max_effect": -0.03,
+            "sensitivity_material": False,
             "placebo_verdict": "Not extreme: 1 of 1 placebo runs on untreated donors show a "
                                "post/pre fit ratio at least as large as the treated corridor's",
             "resamples": 2000, "missing_rate": 0.06, "computed_at": COMPUTED}],
         "audit_donors": [
             {"intervention_id": "signal-retiming", "corridor_id": "kukatpally-madhapur",
-             "included": True, "weight": 1.0, "exclusion": None, "n_pre": 2400, "n_post": 800},
+             "included": True, "weight": 1.0, "exclusion": None, "n_pre": 2400, "n_post": 800,
+             "pre_missing_rate": 0.05, "short_pre_blocks": 0, "min_pre_block_n": 390},
             {"intervention_id": "signal-retiming", "corridor_id": "miyapur-hitec-alt",
              "included": False, "weight": None, "exclusion": "same_pair", "n_pre": 2300,
              "n_post": 790},
         ],
         "audit_placebos": [{"intervention_id": "signal-retiming",
                             "corridor_id": "kukatpally-madhapur", "effect": 0.01,
-                            "pre_rmspe": 0.02, "post_rmspe": 0.03, "rmspe_ratio": 1.5,
+                            "pre_rmspe": 0.02, "cv_pre_rmspe": 0.04, "post_rmspe": 0.03,
+                            "rmspe_ratio": 1.5,
                             "poor_pre_fit": False, "weights": {}}],
+        "audit_sensitivity": [
+            {"intervention_id": "signal-retiming", "variant": "relaxed_one_block",
+             "block_floor": 200, "max_short_blocks": 1, "status": "ok", "n_donors": 2,
+             "n_fit_blocks": 5, "effect": -0.05},
+            {"intervention_id": "signal-retiming", "variant": "base", "block_floor": 200,
+             "max_short_blocks": 0, "status": "ok", "n_donors": 1, "n_fit_blocks": 6,
+             "effect": -0.04},
+        ],
         "audit_blocks": [
             {"intervention_id": "signal-retiming", "period": "post", "block": 0,
              "block_start": "2026-08-10", "block_end": "2026-08-23", "complete": True,
@@ -250,8 +266,16 @@ def test_audit_publishes_donors_placebos_blocks_and_the_cross_check(client):
     assert donors["miyapur-hitec-alt"]["exclusion"] == "same_pair"
     assert donors["miyapur-hitec-alt"]["weight"] is None
     assert body["placebos"][0]["rmspe_ratio"] == 1.5
+    assert body["placebos"][0]["cv_pre_rmspe"] == 0.04
+    assert (audit["cv_pre_rmspe"], audit["overfit_ratio"], audit["pre_fit_overfit"],
+            audit["n_active_donors"]) == (0.05, 0.4, True, 1)
     assert body["blocks"]["pre"]["block"] == [0, 1]
     assert body["blocks"]["post"]["cs_low"] == [-0.2]
+    assert (audit["placebo_rank"], audit["placebo_p_floor"]) == (2, 0.5)
+    assert (audit["n_excluded_incomplete_pre"], audit["excluded_pre_missing_rate"]) == (1, 0.22)
+    assert donors["kukatpally-madhapur"]["short_pre_blocks"] == 0
+    assert [v["variant"] for v in body["sensitivity"]] == ["base", "relaxed_one_block"]
+    assert body["sensitivity"][1]["n_fit_blocks"] == 5
     assert body["floors"]["bootstrap_resamples"] == 2000
 
 

@@ -38,9 +38,10 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: uv run python chain.py
       # A head hash kept only inside the database it describes proves nothing.
-      # The heads are mailed to a separate mailbox that no one with database or
-      # repository access can edit. The step runs even when the walk found a
-      # break, and fails loudly until the HEAD_HASH_* secrets are set.
+      # The heads are mailed to a separate mailbox with a send-only credential
+      # that cannot read or delete mail; the mailbox's own password is never a
+      # secret here. The step runs even when the walk found a break, and fails
+      # loudly until the HEAD_HASH_* secrets are set.
       - name: Mail the chain heads to the witness mailbox
         if: ${{ !cancelled() }}
         env:
