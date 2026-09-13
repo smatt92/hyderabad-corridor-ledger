@@ -276,6 +276,20 @@ def test_placebos_exclude_their_own_pair_and_report_their_resolution():
     assert "no effect could reach p = 0.05" in row["placebo_verdict"]
 
 
+def test_every_verdict_states_how_often_chance_reads_extreme():
+    # rank 1 of 22: extreme, and 1 audit in 22 would read extreme with no effect at all
+    _, p, _, extreme, verdict = placebo_summary(100.0, [float(i) for i in range(21)], 0.05)
+    assert extreme and p == pytest.approx(1 / 22)
+    assert verdict.endswith("With no effect at all, 1 audit in 22 would read extreme by chance, "
+                            "so a single extreme verdict is not a finding.")
+    # 40 placebos: floor(0.05 x 41) = 2 ranks reject, so 2 audits in 41
+    _, _, _, extreme, verdict = placebo_summary(0.5, [float(i) for i in range(40)], 0.05)
+    assert not extreme and "2 audits in 41 would read extreme by chance" in verdict
+    # with three placebos nothing can read extreme, by chance or otherwise
+    _, _, _, _, verdict = placebo_summary(100.0, [1.0, 2.0, 3.0], 0.05)
+    assert "by chance" not in verdict and "no effect could reach p = 0.05" in verdict
+
+
 def test_placebo_summary_by_hand():
     rank, p, floor, extreme, verdict = placebo_summary(2.5, [1.0, 2.0, 3.0, 4.0], 0.05)
     assert (rank, p, floor, extreme) == (3, pytest.approx(3 / 5), pytest.approx(1 / 5), False)

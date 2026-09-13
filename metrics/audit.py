@@ -288,15 +288,21 @@ def placebo_summary(treated_ratio: float, placebo_ratios,
     resolution = (f"rank {rank} of {total} ({n} placebo runs on untreated donors; the smallest "
                   f"attainable p is 1/{total} = {floor:.3f}), permutation p = {rank}/{total} = "
                   f"{p:.3f}")
+    # Under no effect every rank is equally likely, so this many audits in `total`
+    # read extreme by chance.
+    by_chance = math.floor(alpha * total + 1e-9)
+    chance = (f" With no effect at all, {by_chance} audit{'' if by_chance == 1 else 's'} in "
+              f"{total} would read extreme by chance, so a single extreme verdict is not a "
+              "finding.") if by_chance else ""
     if p <= alpha:
-        return rank, p, floor, True, f"Extreme among placebos: {resolution}."
+        return rank, p, floor, True, f"Extreme among placebos: {resolution}.{chance}"
     verdict = (f"Not extreme: {resolution}. {at_least} of {n} placebo runs show a "
                "standardised effect at least as large as the treated corridor's, so this "
                "audit cannot distinguish the change from ordinary variation among these "
                "corridors.")
     if floor > alpha:
         verdict += f" With {n} placebos no effect could reach p = {alpha:g}."
-    return rank, p, floor, False, verdict
+    return rank, p, floor, False, verdict + chance
 
 
 def estimators_disagree(effect: float, equal: float) -> bool:
