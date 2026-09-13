@@ -177,7 +177,8 @@ TomTom key.
 `collector/config.py`: `id`, `code`, `name`, `class` (core, alternate or
 donor), `tier` (A, B or C), `direction` (ab or ba), `pair_id`, origin and
 destination names and coordinates, `via_points`, `status` (draft, active, paused or
-retired) and `supersedes`.
+retired), `supersedes`, `verified`, `treatment_status` with `treatment_work`, and
+optional `origin_junction` and `destination_junction`.
 
 - Alternates are declared, never derived. A pair holds one core and at most
   one alternate per direction, all sharing endpoints, and `ba` reverses `ab`.
@@ -197,6 +198,36 @@ retired) and `supersedes`.
   declare a new id that `supersedes` it. `collector/immutability.py` compares
   every committed version in CI, and the `corridors_guard` trigger refuses the
   change again in the database.
+- `verified` (default false) means a person has confirmed every coordinate on
+  satellite imagery. An unverified corridor may exist only as a draft:
+  `collector/config.py` refuses any other status in CI, and the
+  `corridors_measured_only_when_verified` constraint (0010) refuses it again in
+  the database. Why: coordinates are immutable once a corridor has samples, and
+  public sources give neighbourhood centroids, bus stops and metro stations,
+  not junction centres, so an unchecked coordinate becomes a permanent wrong
+  one.
+- `config/junctions.yaml` holds junction candidates, never values. Each has a
+  confidence (high, medium, low; a low one says why), is `verified` only with
+  `verified_on`, and any two within about 300 m name each other in
+  `distinct_from` (Rethibowli and Nanal Nagar are about 200 m apart and are
+  different junctions). A corridor that names `origin_junction` or
+  `destination_junction` must sit exactly on it, and cannot be verified while
+  that junction is not. Khajaguda and NFCL Junction are not established and are
+  not seeded. "Kukatpally" is ambiguous (KPHB Circle, the Y-Junction or the
+  metro station), and Sahil chooses.
+- `treatment_status` is untreated, will_be_treated, under_construction or
+  treated. Anything but untreated cites a `treatment_work` in
+  `config/interventions.yaml` with the same status and at least one source with
+  a URL and a date; a work with no source cannot be cited. A donor is always
+  untreated. The intervention audit excludes every corridor under construction
+  (`under_works`) or treated from every donor pool. `collector/registry.py`
+  validates both registers.
+- Recheck: `.github/workflows/recheck.yml` fails every week once a work not yet
+  treated, or a screened control, is more than 92 days past its last check. The
+  trigger for changing a record: a control moves to `under_construction`,
+  recorded as a work, on the first traffic-diversion advisory or excavation
+  report for its junction; a will_be_treated work moves to `under_construction`
+  on its first excavation report.
 - `.github/workflows/corridors.yml` syncs the file into `corridors` on pushes
   to `main`, after the same checks.
 - `placeholder-01` to `placeholder-10` are drafts. Nothing is measured until
@@ -210,10 +241,16 @@ blocks (168 days, 24 weeks) before the change. Samples are never backfilled, so
 an intervention that opens before its corridor has 24 weeks of Tier A data is
 unauditable, however good the estimator. This decides seeding order.
 
-- Seed first every corridor on or beside infrastructure already under
-  construction or due to open within about six months: flyovers, grade
-  separations, new links, metro works that take lanes. Each week of delay is a
-  week of pre-period that can never be recovered.
+- Seed first the works that are announced but not begun (`will_be_treated`
+  in `config/interventions.yaml`): today the Miyapur X Road to Allwyn X Road
+  flyover, the Hafeezpet to Miyapur underpass and the Bachupally to Allwyn
+  underpass, with no excavation reported. They are the only stretches where a
+  pre-period can still be banked; each week of delay loses one. A stretch
+  already under construction or treated has no usable baseline: the Bachupally
+  flyover (Miyapur X Roads to Gandimaisamma) opened on 8 Jun 2026.
+- Controls come from the eastern and south-eastern candidates in the register,
+  each only after screening against Hyderabad Metro Phase-2 alignments and
+  traffic advisories.
 - Those corridors, and the donors they will be compared with, are Tier A.
   Tier B has 238 peak slots in a 14-day block, so a block misses the 200-call
   floor once 16% of calls fail. In simulation 30-62% of Tier B audits were
@@ -260,6 +297,7 @@ unauditable, however good the estimator. This decides seeding order.
 | Slots missing from yesterday (IST) | `collector/gaps.py` in `daily.yml`; writes `gap_reports` |
 | Head hash and first break of both chains | `collector/chain.py` in `daily.yml` |
 | Every anchored head still in an independent walk of the chains | `collector/anchor.py check` in `daily.yml` |
+| Junction candidates and the treatment register valid; no recheck over 92 days | `collector/registry.py` in `tests.yml` and `recheck.yml` |
 | Database at or over 400 MB | `db-size.yml` |
 | A measured corridor's geometry changed | `immutability.py` in `tests.yml` and `corridors.yml` |
 | Scheduled workflows disabled after 60 idle days | `keepalive.yml` re-enables them through the API weekly |
@@ -385,7 +423,8 @@ Other definitions worth knowing before changing them:
 - The intervention audit (`metrics/audit.py`) is a synthetic control on pooled
   BTI. Donor weights are fitted on twelve 14-day pre blocks, each block's BTI
   pooled at the p95 floor. The headline compares BTI pooled once over the whole
-  pre and post periods. The donor pool excludes every treated corridor and the
+  pre and post periods. The donor pool excludes every treated corridor, every
+  corridor under construction or treated in the works register, and the
   treated corridor's own pair: traffic diverting onto a paired alternate is a
   consequence of the intervention, so it is contaminated, not a control.
   Weights are published donor by donor, with every exclusion's reason.

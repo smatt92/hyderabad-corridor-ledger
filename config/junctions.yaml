@@ -1,0 +1,148 @@
+# Junction candidates: coordinates to verify on satellite imagery, not values to
+# measure.
+#
+# Public sources give neighbourhood centroids, bus stops and metro stations, not
+# junction centres, and a corridor's endpoints and via_points freeze the moment
+# it is measured. So every point here is a candidate. verified stays false until
+# Sahil confirms the junction centre on satellite imagery and records
+# verified_on. A corridor may reference these ids, and cannot be verified, and
+# therefore cannot leave draft, while a junction it uses is unverified.
+#
+# confidence: high | medium | low, as the research found it. Every low candidate
+# says why in note, and even a high one still needs checking.
+#
+# Candidates within about 300 m of each other must name each other in
+# distinct_from, so near neighbours are never conflated.
+#
+# NOT ESTABLISHED, deliberately not seeded: Khajaguda, NFCL Junction. Add them
+# only with a sourced junction centre.
+#
+# AMBIGUOUS: "Kukatpally" may mean KPHB Circle (about 17.4938, 78.4018),
+# Kukatpally Y-Junction, or Kukatpally metro station. Only the metro station is
+# seeded, and it is not a decision: Sahil chooses which one a corridor means.
+#
+# Validated by collector/registry.py.
+
+version: 1
+junctions:
+  # --- HIGH confidence (still needs Sahil's check) ---
+  - id: jubilee-hills-check-post
+    name: Jubilee Hills Check Post
+    lat: 17.416471
+    lon: 78.438247
+    confidence: high
+    verified: false
+
+  - id: lb-nagar
+    name: LB Nagar
+    lat: 17.34843
+    lon: 78.55096
+    confidence: high
+    verified: false
+
+  - id: paradise-secunderabad
+    name: Paradise, Secunderabad
+    lat: 17.44353
+    lon: 78.48510
+    confidence: high
+    verified: false
+
+  # --- MEDIUM confidence ---
+  - id: hitec-city-cyber-towers
+    name: HITEC City / Cyber Towers
+    lat: 17.44889
+    lon: 78.38306
+    confidence: medium
+    verified: false
+
+  - id: koti
+    name: Koti
+    lat: 17.38564
+    lon: 78.48371
+    confidence: medium
+    verified: false
+
+  - id: uppal
+    name: Uppal
+    lat: 17.40251
+    lon: 78.56126
+    confidence: medium
+    verified: false
+
+  - id: rethibowli
+    name: Rethibowli
+    lat: 17.39213
+    lon: 78.42860
+    confidence: medium
+    verified: false
+    note: About 200 m from Nanal Nagar; a different junction, never to be conflated with it.
+    distinct_from: [nanal-nagar]
+
+  - id: nanal-nagar
+    name: Nanal Nagar
+    lat: 17.39461
+    lon: 78.42717
+    confidence: medium
+    verified: false
+    note: About 200 m from Rethibowli; a different junction, never to be conflated with it.
+    distinct_from: [rethibowli]
+
+  - id: kukatpally-metro
+    name: Kukatpally metro station
+    lat: 17.48512
+    lon: 78.40937
+    confidence: medium
+    verified: false
+    note: >-
+      A metro station, not necessarily the junction a corridor means: "Kukatpally"
+      may instead be KPHB Circle (about 17.4938, 78.4018) or Kukatpally Y-Junction.
+      Sahil chooses.
+
+  # --- LOW confidence: likely wrong ---
+  - id: miyapur-x-road
+    name: Miyapur X Road
+    lat: 17.49790
+    lon: 78.36160
+    confidence: low
+    verified: false
+    note: LIKELY WRONG. The source point is a bus stop, not the junction.
+
+  - id: hafeezpet
+    name: Hafeezpet
+    lat: 17.49816
+    lon: 78.35676
+    confidence: low
+    verified: false
+    note: LIKELY WRONG. Low-confidence public point; junction centre not established.
+
+  - id: bachupally
+    name: Bachupally
+    lat: 17.54685
+    lon: 78.36502
+    confidence: low
+    verified: false
+    note: LIKELY WRONG. A neighbourhood centroid, not a junction.
+
+  - id: allwyn-x-road
+    name: Allwyn X Road
+    lat: 17.4830
+    lon: 78.4170
+    confidence: low
+    verified: false
+    note: LIKELY WRONG. A colony centroid, given to 4 decimal places only.
+
+  - id: wipro-junction
+    name: Wipro Junction
+    lat: 17.4360
+    lon: 78.3490
+    confidence: low
+    verified: false
+    note: LIKELY WRONG. An estimated position, not a sourced one.
+
+  - id: film-nagar
+    name: Film Nagar
+    lat: 17.41406
+    lon: 78.41050
+    confidence: low
+    verified: false
+    note: LIKELY WRONG. A neighbourhood centroid, not a junction.

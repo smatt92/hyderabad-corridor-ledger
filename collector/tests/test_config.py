@@ -5,7 +5,8 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from config import Panel, load_panel
+from config import Panel, check_references, load_panel
+from registry import Junctions, Register
 
 FIXTURE = Path(__file__).parent / "fixtures" / "corridors.yaml"
 
@@ -62,6 +63,18 @@ def test_seeded_panel_is_valid_and_collects_nothing():
      "outside Greater Hyderabad"),
     (lambda cs: by_id(cs, "placeholder-04").update(colour="red"), "Extra inputs"),
     (lambda cs: by_id(cs, "placeholder-04").update(tier="D"), "tier"),
+    # unverified coordinates may only ever be a draft: they freeze once measured
+    (lambda cs: by_id(cs, "placeholder-04").update(status="active"), "needs verified: true"),
+    (lambda cs: by_id(cs, "placeholder-04").update(status="paused"), "needs verified: true"),
+    (lambda cs: by_id(cs, "placeholder-04").update(treatment_status="treated"),
+     "needs a treatment_work"),
+    (lambda cs: by_id(cs, "placeholder-04").update(treatment_work="bachupally-flyover"),
+     "needs a treatment_work"),
+    (lambda cs: by_id(cs, "placeholder-09").update(treatment_status="will_be_treated",
+                                                   treatment_work="miyapur-allwyn-flyover"),
+     "must be untreated"),
+    (lambda cs: by_id(cs, "placeholder-04").update(treatment_status="demolished",
+                                                   treatment_work="x-y"), "treatment_status"),
 ])
 def test_invalid_panels_are_rejected(mutate, message):
     with pytest.raises(ValidationError, match=message):
@@ -70,11 +83,60 @@ def test_invalid_panels_are_rejected(mutate, message):
 
 def test_superseding_a_retired_corridor():
     def retire_and_replace(cs):
-        by_id(cs, "placeholder-07").update(status="retired")
+        by_id(cs, "placeholder-07").update(status="retired", verified=True)
         new = copy.deepcopy(by_id(cs, "placeholder-07"))
         new.update(id="placeholder-11", code="PL-11", status="active", pair_id="PL-06",
-                   supersedes="placeholder-07", dest_lat=17.390)
+                   supersedes="placeholder-07", dest_lat=17.390, verified=True)
         cs.append(new)
 
     panel = Panel.model_validate(panel_with(retire_and_replace))
     assert [c.id for c in panel.active()] == ["placeholder-11"]
+
+
+JUNCTIONS = Junctions.model_validate({"version": 1, "junctions": [
+    {"id": "checked", "name": "Checked", "lat": 17.497, "lon": 78.360, "confidence": "high",
+     "verified": True, "verified_on": "2026-09-20"},
+    {"id": "unchecked", "name": "Unchecked", "lat": 17.447, "lon": 78.377,
+     "confidence": "low", "note": "a bus stop"},
+]})
+
+
+def register(sources):
+    return Register.model_validate({"version": 1, "works": [
+        {"id": "a-flyover", "name": "A flyover", "treatment_status": "will_be_treated",
+         "sources": sources, "last_checked": "2026-09-14"}]})
+
+
+SOURCED = [{"url": "https://example.org/award", "date": "2026-02-10"}]
+
+
+def placeholder(**changes):
+    doc = copy.deepcopy(BASE)
+    by_id(doc["corridors"], "placeholder-01").update(changes)
+    return Panel.model_validate(doc)
+
+
+def test_a_corridor_cites_only_a_sourced_work_with_its_own_status():
+    cited = placeholder(treatment_status="will_be_treated", treatment_work="a-flyover")
+    check_references(cited, JUNCTIONS, register(SOURCED))
+    with pytest.raises(ValueError, match="no source with a URL and a date"):
+        check_references(cited, JUNCTIONS, register([]))
+    mismatched = placeholder(treatment_status="treated", treatment_work="a-flyover")
+    with pytest.raises(ValueError, match="but a-flyover is will_be_treated"):
+        check_references(mismatched, JUNCTIONS, register(SOURCED))
+    unknown = placeholder(treatment_status="treated", treatment_work="nowhere")
+    with pytest.raises(ValueError, match="not in config/interventions.yaml"):
+        check_references(unknown, JUNCTIONS, register(SOURCED))
+
+
+def test_named_junctions_are_the_endpoints_and_verification_needs_verified_junctions():
+    # placeholder-01 runs from 17.497,78.360 to 17.447,78.377
+    check_references(placeholder(origin_junction="checked", destination_junction="unchecked"),
+                     JUNCTIONS, register([]))
+    with pytest.raises(ValueError, match="is not junction checked"):
+        check_references(placeholder(destination_junction="checked"), JUNCTIONS, register([]))
+    with pytest.raises(ValueError, match="destination junction unchecked is not"):
+        check_references(placeholder(origin_junction="checked", destination_junction="unchecked",
+                                     verified=True), JUNCTIONS, register([]))
+    with pytest.raises(ValueError, match="not in config/junctions.yaml"):
+        check_references(placeholder(origin_junction="elsewhere"), JUNCTIONS, register([]))

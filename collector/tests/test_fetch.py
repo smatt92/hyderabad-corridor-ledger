@@ -33,6 +33,7 @@ def panel(active_ids=("placeholder-01",)):
     for c in doc["corridors"]:
         if c["id"] in active_ids or active_ids == "all":
             c["status"] = "active"
+            c["verified"] = True  # only a verified corridor may leave draft
     return Panel.model_validate(doc)
 
 

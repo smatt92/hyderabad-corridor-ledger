@@ -1,0 +1,32 @@
+name: recheck
+
+# The treatment register goes stale silently: a control that gains a
+# traffic-diversion advisory or an excavation report is no longer a control, and
+# a will_be_treated work that starts excavation no longer has a bankable
+# pre-period. Every week this validates the junction candidates and the register
+# and fails loudly once any recheck is more than 92 days old.
+on:
+  schedule:
+    - cron: '41 4 * * 1'  # Mondays 10:11 IST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  recheck:
+    name: recheck
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: collector
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
+      - run: uv sync --locked
+      - name: Junction candidates and the treatment register validate
+        run: uv run python registry.py
+      - name: No work or screened control is more than 92 days past its last check
+        run: uv run python registry.py overdue

@@ -20,7 +20,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          for workflow in collector.yml daily.yml archive.yml metrics.yml db-size.yml keepalive.yml; do
+          for workflow in collector.yml daily.yml archive.yml metrics.yml db-size.yml recheck.yml keepalive.yml; do
             gh api --method PUT "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/enable"
             echo "enabled $workflow"
           done

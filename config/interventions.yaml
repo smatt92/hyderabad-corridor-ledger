@@ -1,0 +1,180 @@
+# Treatment register: which roads have been rebuilt, are being rebuilt, or will
+# be, and which areas are candidate controls.
+#
+# treatment_status: untreated | will_be_treated | under_construction | treated.
+# A corridor in config/corridors.yaml that is not untreated cites one work here
+# (treatment_work), with the same status, and that work must carry at least one
+# source with a URL and a date. A donor corridor is always untreated: a road
+# that is or will be rebuilt is never a control.
+#
+# events record each date with who gave it. Where official dates conflict, every
+# one is recorded; none is chosen.
+#
+# Sources: the research of 14 Sep 2026 gave dates, costs and agencies but no
+# URLs. Every work below therefore has sources: [] and cannot be cited by any
+# corridor until a URL and a date are added. Nothing here was invented.
+#
+# RECHECK, every 92 days (collector/registry.py overdue, run weekly by
+# .github/workflows/recheck.yml):
+# - a control moves to under_construction, recorded as a work, on the first
+#   traffic-diversion advisory or excavation report for its junction;
+# - a will_be_treated work moves to under_construction on its first excavation
+#   report.
+#
+# Validated by collector/registry.py.
+
+version: 1
+works:
+  # --- TREATED or UNDER CONSTRUCTION: unusable as controls ---
+  - id: bachupally-flyover
+    name: Bachupally flyover, Miyapur X Roads to Gandimaisamma
+    treatment_status: treated
+    junctions: [miyapur-x-road, bachupally]
+    events:
+      - {event: opened, date: "2026-06-08", according_to: HMDA}
+    cost: Rs 65.53 crore, per HMDA
+    notes: >-
+      Opened on 8 Jun 2026, before collection began, so this stretch has no
+      usable baseline. This corrects the earlier plan.
+    sources: []
+    last_checked: 2026-09-14
+
+  - id: film-nagar-kbr-park-cluster
+    name: Film Nagar, Jubilee Hills Check Post, LV Prasad and KBR Park junctions
+    treatment_status: under_construction
+    junctions: [film-nagar, jubilee-hills-check-post]
+    events:
+      - {event: excavation_reported, date: "2026-09", note: excavation underway}
+      - {event: target_completion, date: "2028-12"}
+    sources: []
+    last_checked: 2026-09-14
+
+  - id: iiit-khajaguda-wipro-cluster
+    name: IIIT, Khajaguda and Wipro junctions
+    treatment_status: under_construction
+    junctions: [wipro-junction]
+    events:
+      - {event: excavation_began, date: "2026-02"}
+      - {event: target_completion, date: "2027-04", according_to: CMC Commissioner}
+      - {event: target_completion, date: "2028-05", according_to: GHMC}
+    notes: >-
+      More than 30% of civil works reported done. The two official completion
+      dates conflict and both are kept. Khajaguda has no established junction
+      centre, so only Wipro Junction is linked.
+    sources: []
+    last_checked: 2026-09-14
+
+  - id: lb-nagar-works
+    name: LB Nagar junction works
+    treatment_status: treated
+    junctions: [lb-nagar]
+    notes: >-
+      Classified as already treated. Whether works are complete or still under
+      way, and their dates, are not yet recorded.
+    sources: []
+    last_checked: 2026-09-14
+
+  - id: uppal-works
+    name: Uppal junction works
+    treatment_status: treated
+    junctions: [uppal]
+    notes: >-
+      Classified as already treated. Whether works are complete or still under
+      way, and their dates, are not yet recorded.
+    sources: []
+    last_checked: 2026-09-14
+
+  - id: kompally-suchitra-medchal-works
+    name: Kompally, Suchitra and Medchal corridor works
+    treatment_status: treated
+    notes: >-
+      Classified as already treated. Whether works are complete or still under
+      way, and their dates, are not yet recorded. No junction candidate seeded.
+    sources: []
+    last_checked: 2026-09-14
+
+  - id: mehdipatnam-rethibowli-works
+    name: Mehdipatnam, Tolichowki, Attapur, Rethibowli and Nanal Nagar works
+    treatment_status: treated
+    junctions: [rethibowli, nanal-nagar]
+    notes: >-
+      Classified as already treated. Whether works are complete or still under
+      way, and their dates, are not yet recorded.
+    sources: []
+    last_checked: 2026-09-14
+
+  - id: rk-puram-works
+    name: RK Puram works
+    treatment_status: treated
+    notes: >-
+      Classified as already treated. Whether works are complete or still under
+      way, and their dates, are not yet recorded. No junction candidate seeded.
+    sources: []
+    last_checked: 2026-09-14
+
+  # --- WILL BE TREATED: the only stretches where a pre-period is still
+  # bankable. Priority baseline targets: seed these corridors first. ---
+  - id: miyapur-allwyn-flyover
+    name: Miyapur X Road to Allwyn X Road six-lane flyover
+    treatment_status: will_be_treated
+    junctions: [miyapur-x-road, allwyn-x-road]
+    events: &package_events
+      - {event: price_bids_opened, date: "2026-02-10"}
+      - {event: target_completion, date: "2028", according_to: realistic estimate in the research}
+    contract: &package >-
+      One package with the two underpasses below: awarded to Shivasatya
+      Engineering at Rs 384.45 crore, EPC with a 2-year defect liability period.
+    notes: No excavation reported as of 14 Sep 2026. Priority baseline target.
+    sources: []
+    last_checked: 2026-09-14
+
+  - id: hafeezpet-miyapur-underpass
+    name: Hafeezpet to Miyapur underpass
+    treatment_status: will_be_treated
+    junctions: [hafeezpet, miyapur-x-road]
+    events: *package_events
+    contract: *package
+    notes: No excavation reported as of 14 Sep 2026. Priority baseline target.
+    sources: []
+    last_checked: 2026-09-14
+
+  - id: bachupally-allwyn-underpass
+    name: Bachupally to Allwyn underpass
+    treatment_status: will_be_treated
+    junctions: [bachupally, allwyn-x-road]
+    events: *package_events
+    contract: *package
+    notes: >-
+      No excavation reported as of 14 Sep 2026. Priority baseline target. The
+      Miyapur X Roads to Gandimaisamma stretch through Bachupally is already
+      treated (bachupally-flyover), so a corridor here must avoid it or its
+      baseline is contaminated.
+    sources: []
+    last_checked: 2026-09-14
+
+# --- CONTROL CANDIDATES: eastern and south-eastern areas with no announced
+# works. None is usable until screened against Hyderabad Metro Phase-2
+# alignments and traffic advisories. ---
+controls:
+  - {id: tarnaka-habsiguda-nacharam, name: Tarnaka-Habsiguda-Nacharam, screening: unscreened}
+  - {id: habsiguda-nacharam-mallapur, name: Habsiguda-Nacharam-Mallapur, screening: unscreened}
+  - {id: ecil-kushaiguda-as-rao-nagar, name: ECIL-Kushaiguda-AS Rao Nagar, screening: unscreened}
+  - {id: as-rao-nagar-sainikpuri-neredmet, name: AS Rao Nagar-Sainikpuri-Neredmet, screening: unscreened}
+  - {id: moula-ali-malkajgiri-safilguda, name: Moula Ali-Malkajgiri-Safilguda, screening: unscreened}
+  - {id: malkajgiri-anandbagh-neredmet, name: Malkajgiri-Anandbagh-Neredmet, screening: unscreened}
+  - {id: sainikpuri-kapra-nagaram, name: Sainikpuri-Kapra-Nagaram, screening: unscreened}
+  - {id: dilsukhnagar-chaitanyapuri-kothapet, name: Dilsukhnagar-Chaitanyapuri-Kothapet, screening: unscreened}
+  - {id: kothapet-karmanghat-champapet, name: Kothapet-Karmanghat-Champapet, screening: unscreened}
+  - {id: vanasthalipuram-hayathnagar, name: Vanasthalipuram-Hayathnagar, screening: unscreened}
+  - {id: saroornagar-nagole, name: Saroornagar-Nagole, screening: unscreened}
+  - {id: sainikpuri-yapral, name: Sainikpuri-Yapral, screening: unscreened}
+  - {id: begumpet-prakash-nagar-paradise, name: Begumpet-Prakash Nagar-Paradise, screening: unscreened, junctions: [paradise-secunderabad]}
+  - {id: fatehnagar-ameerpet-yousufguda, name: Fatehnagar-Ameerpet-Yousufguda, screening: unscreened}
+  - {id: erragadda-esi-moosapet, name: Erragadda-ESI-Moosapet, screening: unscreened}
+  - {id: panjagutta-somajiguda-khairatabad, name: Panjagutta-Somajiguda-Khairatabad, screening: unscreened}
+  - {id: secunderabad-sp-road-sd-road-patny, name: Secunderabad SP Road-SD Road-Patny, screening: unscreened}
+  - id: chandrayangutta-kanchanbagh-barkas
+    name: Chandrayangutta-Kanchanbagh-Barkas
+    screening: unscreened
+    flags:
+      - Flagged for the Old City metro Phase-2 alignment. Check before including.

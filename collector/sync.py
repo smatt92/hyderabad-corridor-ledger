@@ -24,7 +24,8 @@ def row_for(c: Corridor) -> dict:
         "destination_name": c.destination_name, "origin_lat": c.origin_lat,
         "origin_lon": c.origin_lon, "dest_lat": c.dest_lat, "dest_lon": c.dest_lon,
         "via_points": [{"lat": p.lat, "lon": p.lon} for p in c.via_points], "status": c.status,
-        "active": c.status == "active", "supersedes": c.supersedes,
+        "active": c.status == "active", "supersedes": c.supersedes, "verified": c.verified,
+        "treatment_status": c.treatment_status, "treatment_work": c.treatment_work,
     }
 
 
