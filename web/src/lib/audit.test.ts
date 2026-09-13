@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { Audit, AuditBlocks, AuditDonor, AuditPlacebo } from "../api/types";
 import {
-  NO_SEQUENTIAL_TEST, auditPeriods, blockRows, blockSegments, confidencePercent, dayNumber, donorStatusText, donorWeightText,
+  NO_INTERVAL, NO_SEQUENTIAL_TEST, auditPeriods, blockRows, blockSegments, dayNumber, donorStatusText, donorWeightText,
   estimatorStatement, exclusionText, fmtRate, fmtSettling, incompletePreComparison, orderDonors, placeboFloor,
-  placeboResolutionText, postPeriodOpen, rankRatios, selectionBiasText, sensitivityStatement, sensitivityStatusText,
+  placeboResolutionText, postPeriodOpen, rankStdEffects, selectionBiasText, sensitivityStatement, sensitivityStatusText,
   settlingWindow, statusNotice, thinnestBlock, variantText,
 } from "./audit";
 import { MINUS } from "./format";
@@ -13,17 +13,17 @@ const audit: Audit = {
   status: "ok",
   effective_day: "2026-03-02",
   settle_days: 9,
-  pre_start: "2025-12-08",
+  pre_start: "2025-09-15",
   pre_end: "2026-03-01",
   settle_start: "2026-03-02",
   settle_end: "2026-03-10",
   post_start: "2026-03-11",
   post_end: "2026-04-07",
   block_days: 14,
-  pre_blocks: 6,
+  pre_blocks: 12,
   post_blocks: 2,
   post_blocks_complete: 2,
-  n_pre: 1640,
+  n_pre: 3280,
   n_post: 560,
   n_donors: 4,
   treated_pre: 0.41,
@@ -31,15 +31,14 @@ const audit: Audit = {
   synthetic_pre: 0.4,
   synthetic_post: 0.43,
   effect: 0.08,
-  ci_low: -0.02,
-  ci_high: 0.18,
   pre_rmspe: 0.02,
   post_rmspe: 0.09,
   rmspe_ratio: 3,
+  std_effect: 2.4,
   n_placebos: 4,
   placebo_p_value: 0.4,
   placebo_extreme: false,
-  placebo_verdict: "Not extreme: 1 of 4 placebos has a ratio at least as large.",
+  placebo_verdict: "Not extreme: 1 of 4 placebo runs show a standardised effect at least as large as the treated corridor's.",
   placebo_rank: 2,
   placebo_p_floor: 0.2,
   n_excluded_incomplete_pre: 9,
@@ -53,12 +52,9 @@ const audit: Audit = {
   equal_control_pre: 0.38,
   equal_control_post: 0.39,
   equal_effect: 0.1,
-  equal_ci_low: 0.01,
-  equal_ci_high: 0.19,
   estimator_gap: -0.02,
   estimators_disagree: false,
   alpha: 0.05,
-  resamples: 2000,
   low_confidence: false,
   method_version: "audit-sc-1",
 };
@@ -79,19 +75,28 @@ const donor = (over: Partial<AuditDonor>): AuditDonor => ({
   corridor_id: "c", code: null, included: true, weight: null, exclusion: null, n_pre: 1200, n_post: 400, pre_bti: 0.4, post_bti: 0.41, ...over,
 });
 
-const placebo = (corridor_id: string, rmspe_ratio: number | null, poor_pre_fit = false): AuditPlacebo => ({
-  corridor_id, effect: 0.01, pre_rmspe: 0.02, post_rmspe: 0.03, rmspe_ratio, poor_pre_fit, weights: {},
+const placebo = (corridor_id: string, std_effect: number | null | undefined, poor_pre_fit = false, rmspe_ratio: number | null = 1.5): AuditPlacebo => ({
+  corridor_id, effect: 0.01, pre_rmspe: 0.02, cv_pre_rmspe: 0.03, std_effect, post_rmspe: 0.03, rmspe_ratio, poor_pre_fit, weights: {},
 });
 
 describe("periods", () => {
   it("states every period from its recorded dates, settling included", () => {
     expect(auditPeriods(audit, 200)).toEqual([
-      ["pre period", "8 Dec 2025–1 Mar 2026 · 6 blocks of 14 d · n = 1640"],
+      ["pre period", "15 Sep 2025–1 Mar 2026 · 12 blocks of 14 d · n = 3280"],
       ["change date", "2 Mar 2026"],
       ["settling, excluded", "2 Mar–10 Mar 2026 · 9 d"],
       ["post period", "11 Mar–7 Apr 2026 · 2 blocks of 14 d · 2 of 2 complete · n = 560"],
       ["block floor", "200 pooled peak-hour calls per block"],
     ]);
+  });
+
+  it("takes the pre period's block count, block length and dates from the payload, never from a default", () => {
+    const six = { ...audit, pre_start: "2025-12-08", pre_blocks: 6, n_pre: 1640 };
+    expect(auditPeriods(six, 200)[0]).toEqual(["pre period", "8 Dec 2025–1 Mar 2026 · 6 blocks of 14 d · n = 1640"]);
+    const weekly = { ...audit, block_days: 7, pre_blocks: 24 };
+    expect(auditPeriods(weekly, 200)[0]).toEqual(["pre period", "15 Sep 2025–1 Mar 2026 · 24 blocks of 7 d · n = 3280"]);
+    const n = statusNotice({ ...six, status: "insufficient_pre" }, "X", 200, { pre: [], post: [] })!;
+    expect(n.body).toContain("8 Dec 2025–1 Mar 2026: 6 blocks of 14 days, 1640 calls pooled in total.");
   });
 
   it("uses recorded settling dates as they are, even where they do not abut the periods", () => {
@@ -109,11 +114,6 @@ describe("periods", () => {
     const abutting = { ...audit, settle_start: null, settle_end: null, post_start: "2026-03-02" };
     expect(settlingWindow(abutting)).toBe(null);
     expect(fmtSettling(null)).toBe(EM_DASH);
-  });
-
-  it("reads alpha as a confidence level", () => {
-    expect(confidencePercent(0.05)).toBe(95);
-    expect(confidencePercent(0.1)).toBe(90);
   });
 
   it("keeps the post period open until every post block has completed", () => {
@@ -198,23 +198,40 @@ describe("donors", () => {
 });
 
 describe("placebo ranking", () => {
-  it("ranks largest ratio first, a tie above the treated corridor, unpublished ratios last", () => {
-    const ranked = rankRatios({ corridor_id: "t", ratio: 3 }, [placebo("c", 1.2, true), placebo("d", null), placebo("b", 3), placebo("a", 5)]);
-    expect(ranked.map((r) => [r.corridor_id, r.position, r.atLeastTreated])).toEqual([
-      ["a", 0, true],
-      ["b", 1, true],
-      ["t", 2, false],
-      ["c", 3, false],
-      ["d", 4, false],
+  it("ranks by standardised effect, not the RMSPE ratio: largest first, a tie above the treated corridor", () => {
+    // RMSPE ratios run the opposite way, so ranking them would reverse this order
+    const ranked = rankStdEffects({ corridor_id: "t", stdEffect: 3 }, [
+      placebo("c", 1.2, true, 40),
+      placebo("d", null, false, 50),
+      placebo("b", 3, false, 0.5),
+      placebo("a", 5, false, 0.2),
+    ]);
+    expect(ranked.map((r) => [r.corridor_id, r.stdEffect, r.rank, r.atLeastTreated])).toEqual([
+      ["a", 5, 1, true],
+      ["b", 3, 2, true],
+      ["t", 3, 3, false],
+      ["c", 1.2, 4, false],
+      ["d", null, null, false],
     ]);
     expect(ranked.find((r) => r.corridor_id === "c")?.poorPreFit).toBe(true);
   });
 
-  it("keeps the treated row when its ratio is unpublished, and marks no placebo against it", () => {
-    const ranked = rankRatios({ corridor_id: "t", ratio: null }, [placebo("a", 2), placebo("b", null)]);
-    expect(ranked.map((r) => r.corridor_id)).toEqual(["a", "t", "b"]);
+  it("treats a null standardised effect as unranked, never as zero", () => {
+    const ranked = rankStdEffects({ corridor_id: "t", stdEffect: 0.5 }, [placebo("n", null), placebo("z", 0), placebo("u", undefined), placebo("x", Number.NaN)]);
+    expect(ranked.map((r) => [r.corridor_id, r.stdEffect, r.rank])).toEqual([
+      ["t", 0.5, 1],
+      ["z", 0, 2],
+      ["n", null, null],
+      ["u", null, null],
+      ["x", null, null],
+    ]);
+  });
+
+  it("leaves the treated row unranked when its held-out pre error is zero, and marks no placebo against it", () => {
+    const ranked = rankStdEffects({ corridor_id: "t", stdEffect: null }, [placebo("a", 2), placebo("b", null)]);
+    expect(ranked.map((r) => [r.corridor_id, r.rank])).toEqual([["a", 1], ["t", null], ["b", null]]);
     expect(ranked.some((r) => r.atLeastTreated)).toBe(false);
-    expect(rankRatios({ corridor_id: "t", ratio: 1.5 }, null)).toHaveLength(1);
+    expect(rankStdEffects({ corridor_id: "t", stdEffect: 1.5 }, null)).toHaveLength(1);
   });
 
   it("never states a bare p: rank, placebo count and floor go with it", () => {
@@ -227,19 +244,19 @@ describe("placebo ranking", () => {
 });
 
 describe("estimator cross-check", () => {
-  it("says plainly when the estimators disagree, with both numbers", () => {
-    const s = estimatorStatement({ ...audit, estimators_disagree: true, equal_effect: -0.05, equal_ci_low: -0.12, equal_ci_high: 0.02, estimator_gap: 0.13 });
+  it("says plainly when the estimators have opposite signs, with both point estimates", () => {
+    const s = estimatorStatement({ ...audit, estimators_disagree: true, equal_effect: -0.05, estimator_gap: 0.13 });
     expect(s.tone).toBe("disagree");
-    expect(s.headline).toBe("The two estimators disagree.");
+    expect(s.headline).toBe("The two estimators point in opposite directions.");
     expect(s.detail).toBe(
-      `Synthetic control: +0.08 [${MINUS}0.02, +0.18] BTI. Equal-weight mean of the same donors: ${MINUS}0.05 [${MINUS}0.12, +0.02] BTI. ` +
-        "Synthetic minus equal-weight: +0.13 BTI. The estimate depends on how the donors are weighted, so neither number should be read without the other.",
+      `Synthetic control: +0.08 BTI. Equal-weight mean of the same donors: ${MINUS}0.05 BTI. Synthetic minus equal-weight: +0.13 BTI. ` +
+        "One has BTI rising against the donors and the other falling, so even the direction of the estimate depends on how the donors are weighted, and neither number should be read without the other.",
     );
   });
 
-  it("states agreement and an unassessed comparison without dropping a number", () => {
+  it("states a same-direction and an unassessed comparison without dropping a number", () => {
     const agree = estimatorStatement(audit);
-    expect(agree.headline).toBe("The two estimators agree.");
+    expect(agree.headline).toBe("The two estimators do not point in opposite directions.");
     expect(agree.detail).toContain(`Synthetic minus equal-weight: ${MINUS}0.02 BTI.`);
     const unassessed = estimatorStatement({ ...audit, estimators_disagree: null, equal_effect: null });
     expect(unassessed.headline).toBe("Agreement between the two estimators was not assessed.");
@@ -253,13 +270,13 @@ describe("sensitivity to the completeness threshold", () => {
     expect(s.tone).toBe("material");
     expect(s.headline).toBe("The estimate depends on the completeness threshold.");
     expect(s.detail).toBe(
-      `Across the completeness-threshold variants the synthetic-control effect ranges from ${MINUS}0.03 to +0.11 BTI; the headline is +0.08 [${MINUS}0.02, +0.18] BTI. ` +
-        "At least one variant’s effect falls outside the headline interval or has the opposite sign.",
+      `Across the completeness-threshold variants the synthetic-control effect ranges from ${MINUS}0.03 to +0.11 BTI; the headline is +0.08 BTI. ` +
+        "At least one variant’s effect has the opposite sign, or its placebo verdict (extreme at p ≤ 0.05 or not) differs from the headline’s.",
     );
   });
 
   it("covers a stable and an unassessed result", () => {
-    expect(sensitivityStatement(audit).headline).toBe("No completeness-threshold variant moves the effect outside the headline interval or flips its sign.");
+    expect(sensitivityStatement(audit).headline).toBe("No completeness-threshold variant flips the effect’s sign or changes the placebo verdict.");
     const absent = sensitivityStatement({ ...audit, sensitivity_material: undefined, sensitivity_min_effect: undefined, sensitivity_max_effect: null });
     expect(absent.headline).toBe("Sensitivity to the completeness threshold was not assessed.");
     expect(absent.detail).toContain(`ranges from ${EM_DASH} to ${EM_DASH} BTI`);
@@ -277,6 +294,32 @@ describe("sensitivity to the completeness threshold", () => {
   });
 });
 
+describe("no interval", () => {
+  it("renders no interval text from a payload without interval fields", () => {
+    for (const key of ["ci_low", "ci_high", "equal_ci_low", "equal_ci_high", "resamples"]) expect(audit).not.toHaveProperty(key);
+    const statements = [
+      estimatorStatement(audit),
+      estimatorStatement({ ...audit, estimators_disagree: true }),
+      estimatorStatement({ ...audit, estimators_disagree: null }),
+      sensitivityStatement(audit),
+      sensitivityStatement({ ...audit, sensitivity_material: true }),
+      sensitivityStatement({ ...audit, sensitivity_material: null }),
+    ].flatMap((s) => [s.headline, s.detail]);
+    const notices = (["insufficient_pre", "insufficient_post", "post_pending", "post_partial", "no_controls"] as const).map(
+      (status) => statusNotice({ ...audit, status }, "X", 200, { pre: [], post: [] })?.body ?? "",
+    );
+    for (const text of [...statements, ...notices, ...auditPeriods(audit, 200).flat()]) {
+      expect(text).not.toMatch(/interval|bootstrap|resample|excludes zero|\[/i);
+    }
+  });
+
+  it("states plainly why no interval is published", () => {
+    expect(NO_INTERVAL).toBe(
+      "No interval is published. A call-level bootstrap interval held its error rate when corridors drifted little from week to week, but when they drifted more, 20% of no-effect intervals excluded zero and coverage fell to 80–86%, and no observable diagnostic told the two cases apart. The inference is the placebo rank and its smallest attainable p.",
+    );
+  });
+});
+
 describe("status notices", () => {
   const rows = { pre: blockRows(blocks(), "pre"), post: [] };
 
@@ -287,7 +330,7 @@ describe("status notices", () => {
   it("withholds on a thin pre period with dates and the count against the floor", () => {
     const n = statusNotice({ ...audit, status: "insufficient_pre" }, "Hitec City–Gachibowli", 200, rows)!;
     expect(n.kicker).toBe("Audit withheld");
-    expect(n.body).toContain("8 Dec 2025–1 Mar 2026: 6 blocks of 14 days, 1640 calls pooled in total.");
+    expect(n.body).toContain("15 Sep 2025–1 Mar 2026: 12 blocks of 14 days, 3280 calls pooled in total.");
     expect(n.body).toContain("Its thinnest pre block, 22 Dec 2025–4 Jan 2026, holds n = 143 / 200.");
     expect(n.body).toContain("used only from 200 pooled peak-hour calls");
   });
@@ -329,6 +372,6 @@ describe("status notices", () => {
   it("explains that the treated corridor's own pair is never a donor", () => {
     const n = statusNotice({ ...audit, status: "no_controls", n_donors: 0 }, "Hitec City–Gachibowli", 200, rows)!;
     expect(n.body).toContain("The treated corridor’s own pair is never a donor");
-    expect(n.body).toContain("at least 200 pooled peak-hour calls in every pre block (6 blocks of 14 days, 8 Dec 2025–1 Mar 2026)");
+    expect(n.body).toContain("at least 200 pooled peak-hour calls in every pre block (12 blocks of 14 days, 15 Sep 2025–1 Mar 2026)");
   });
 });

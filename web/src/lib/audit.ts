@@ -1,5 +1,5 @@
 import type { Audit, AuditBlocks, AuditDonor, AuditPlacebo, DonorExclusion } from "../api/types";
-import { addDays, fmtCount, fmtDay, fmtNum, fmtSigned, fmtSignedInterval, fmtWindow, parseDay } from "./format";
+import { addDays, fmtCount, fmtDay, fmtNum, fmtSigned, fmtWindow, parseDay } from "./format";
 import { EM_DASH } from "./route";
 
 /**
@@ -18,11 +18,6 @@ function finite(v: Num): number | null {
 
 function plural(n: Num, one: string, many: string): string {
   return n === 1 ? one : many;
-}
-
-/** The confidence level of an interval at the payload's alpha. */
-export function confidencePercent(alpha: number): number {
-  return Math.round((1 - alpha) * 100);
 }
 
 /** A rate in [0, 1] as a whole percentage: "21%". An em dash when absent. */
@@ -91,8 +86,7 @@ export function postPeriodOpen(a: Audit): boolean {
 /**
  * Stated wherever a reader could look for a reading of a partial post period.
  * There is deliberately no sequential test: in simulation the block confidence
- * sequence excluded zero on 12–18% of no-effect panels (six pre blocks, 28 post
- * days) against a nominal 5%.
+ * sequence excluded zero on 12–18% of no-effect panels against a nominal 5%.
  */
 export const NO_SEQUENTIAL_TEST =
   "The audit reports once, after the post period closes. There is no sequential test: the block confidence sequence was removed because it rejected no-effect panels far more often than its nominal 5%.";
@@ -268,44 +262,48 @@ export function placeboResolutionText(p: Num, rank: Num, nPlacebos: Num, pFloor:
   return `p = ${fmtNum(p, 2)} · rank ${r ?? EM_DASH} of ${of} · ${n ?? EM_DASH} ${plural(n, "placebo", "placebos")}, floor 1/${of} = ${f === null ? EM_DASH : f.toFixed(3)}`;
 }
 
-export interface RankedRatio {
+export interface RankedPlacebo {
   corridor_id: string;
-  /** Post/pre RMSPE ratio; null is drawn as a gap. */
-  ratio: number | null;
+  /** |effect| ÷ held-out pre RMSPE. Null is unranked, never zero. */
+  stdEffect: number | null;
   treated: boolean;
   poorPreFit: boolean;
-  /** A placebo whose ratio is at least the treated corridor's: it counts against the treated effect. */
+  /** A placebo whose standardised effect is at least the treated corridor's: it counts against the treated effect. */
   atLeastTreated: boolean;
-  /** 0 is the largest ratio. */
-  position: number;
+  /** 1 is the largest standardised effect; null for an unranked row. */
+  rank: number | null;
 }
 
 /**
- * The treated corridor and every placebo, largest post/pre RMSPE ratio first.
- * A placebo tied with the treated corridor ranks above it, because ties count
- * against the treated corridor. Unpublished ratios come last and keep their row.
+ * The treated corridor and every placebo, largest standardised effect first:
+ * the statistic the placebo p ranks, not the post/pre RMSPE ratio, which only
+ * describes fit. A placebo tied with the treated corridor ranks above it,
+ * because ties count against the treated corridor, so the treated rank is
+ * 1 + placebos at least as large. A row without a standardised effect keeps
+ * its place after every ranked row and has no rank.
  */
-export function rankRatios(treated: { corridor_id: string; ratio: number | null }, placebos: readonly AuditPlacebo[] | null | undefined): RankedRatio[] {
-  const t = finite(treated.ratio);
+export function rankStdEffects(treated: { corridor_id: string; stdEffect: Num }, placebos: readonly AuditPlacebo[] | null | undefined): RankedPlacebo[] {
+  const t = finite(treated.stdEffect);
   const entries = [
-    { corridor_id: treated.corridor_id, ratio: t, treated: true, poorPreFit: false },
-    ...(placebos ?? []).map((p) => ({ corridor_id: p.corridor_id, ratio: finite(p.rmspe_ratio), treated: false, poorPreFit: p.poor_pre_fit === true })),
+    { corridor_id: treated.corridor_id, stdEffect: t, treated: true, poorPreFit: false },
+    ...(placebos ?? []).map((p) => ({ corridor_id: p.corridor_id, stdEffect: finite(p.std_effect), treated: false, poorPreFit: p.poor_pre_fit === true })),
   ];
   entries.sort((a, b) => {
-    if (a.ratio === null || b.ratio === null) {
-      if (a.ratio !== b.ratio) return a.ratio === null ? 1 : -1;
-      // both unpublished: nothing to rank, so the treated row leads the gaps
+    if (a.stdEffect === null || b.stdEffect === null) {
+      if (a.stdEffect !== b.stdEffect) return a.stdEffect === null ? 1 : -1;
+      // both unranked: nothing to order by, so the treated row leads them
       if (a.treated !== b.treated) return a.treated ? -1 : 1;
       return a.corridor_id.localeCompare(b.corridor_id);
     }
-    if (a.ratio !== b.ratio) return b.ratio - a.ratio;
+    if (a.stdEffect !== b.stdEffect) return b.stdEffect - a.stdEffect;
     if (a.treated !== b.treated) return a.treated ? 1 : -1;
     return a.corridor_id.localeCompare(b.corridor_id);
   });
-  return entries.map((e, position) => ({
+  let ranked = 0;
+  return entries.map((e) => ({
     ...e,
-    atLeastTreated: !e.treated && e.ratio !== null && t !== null && e.ratio >= t,
-    position,
+    atLeastTreated: !e.treated && e.stdEffect !== null && t !== null && e.stdEffect >= t,
+    rank: e.stdEffect === null ? null : ++ranked,
   }));
 }
 
@@ -318,41 +316,48 @@ export interface Statement<Tone extends string> {
   detail: string;
 }
 
-/** The synthetic control against the equal-weight cross-check, both numbers always stated. */
+/**
+ * Why the audit publishes point estimates only. Stated in the method and where
+ * the headline interval used to sit.
+ */
+export const NO_INTERVAL =
+  "No interval is published. A call-level bootstrap interval held its error rate when corridors drifted little from week to week, but when they drifted more, 20% of no-effect intervals excluded zero and coverage fell to 80–86%, and no observable diagnostic told the two cases apart. The inference is the placebo rank and its smallest attainable p.";
+
+/** The synthetic control against the equal-weight cross-check, both point estimates always stated. */
 export function estimatorStatement(a: Audit): Statement<"disagree" | "agree" | "unassessed"> {
   const numbers =
-    `Synthetic control: ${fmtSignedInterval(a.effect, a.ci_low, a.ci_high)} BTI. ` +
-    `Equal-weight mean of the same donors: ${fmtSignedInterval(a.equal_effect, a.equal_ci_low, a.equal_ci_high)} BTI. ` +
+    `Synthetic control: ${fmtSigned(a.effect)} BTI. ` +
+    `Equal-weight mean of the same donors: ${fmtSigned(a.equal_effect)} BTI. ` +
     `Synthetic minus equal-weight: ${fmtSigned(a.estimator_gap)} BTI.`;
   if (a.estimators_disagree === true) {
     return {
       tone: "disagree",
-      headline: "The two estimators disagree.",
-      detail: `${numbers} The estimate depends on how the donors are weighted, so neither number should be read without the other.`,
+      headline: "The two estimators point in opposite directions.",
+      detail: `${numbers} One has BTI rising against the donors and the other falling, so even the direction of the estimate depends on how the donors are weighted, and neither number should be read without the other.`,
     };
   }
   if (a.estimators_disagree === false) {
-    return { tone: "agree", headline: "The two estimators agree.", detail: numbers };
+    return { tone: "agree", headline: "The two estimators do not point in opposite directions.", detail: numbers };
   }
   return { tone: "unassessed", headline: "Agreement between the two estimators was not assessed.", detail: numbers };
 }
 
-/** Whether the effect survives other completeness thresholds for donor pre blocks. */
+/** Whether the effect's sign or the placebo verdict changes under other completeness thresholds for donor pre blocks. */
 export function sensitivityStatement(a: Audit): Statement<"material" | "stable" | "unassessed"> {
   const range =
     `Across the completeness-threshold variants the synthetic-control effect ranges from ${fmtSigned(a.sensitivity_min_effect)} to ${fmtSigned(a.sensitivity_max_effect)} BTI; ` +
-    `the headline is ${fmtSignedInterval(a.effect, a.ci_low, a.ci_high)} BTI.`;
+    `the headline is ${fmtSigned(a.effect)} BTI.`;
   if (a.sensitivity_material === true) {
     return {
       tone: "material",
       headline: "The estimate depends on the completeness threshold.",
-      detail: `${range} At least one variant’s effect falls outside the headline interval or has the opposite sign.`,
+      detail: `${range} At least one variant’s effect has the opposite sign, or its placebo verdict (extreme at p ≤ ${a.alpha} or not) differs from the headline’s.`,
     };
   }
   if (a.sensitivity_material === false) {
     return {
       tone: "stable",
-      headline: "No completeness-threshold variant moves the effect outside the headline interval or flips its sign.",
+      headline: "No completeness-threshold variant flips the effect’s sign or changes the placebo verdict.",
       detail: range,
     };
   }

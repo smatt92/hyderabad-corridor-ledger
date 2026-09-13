@@ -60,6 +60,21 @@ describe("SVG attributes", () => {
   }
 });
 
+describe("intervention audit", () => {
+  // The audit publishes point estimates only: its bootstrap interval lost
+  // coverage when corridors drifted, and nothing observable said when. The view
+  // cannot be rendered in this node test environment, so its source is checked.
+  // Ledger, profile and pair-advantage intervals live elsewhere and are unaffected.
+  const files = ["analyst/Audit.tsx", "lib/audit.ts", "charts/BlockChart.tsx", "charts/PlaceboRanks.tsx", "charts/SlopeChart.tsx"];
+  const interval = /\b(ci_low|ci_high|equal_ci_low|equal_ci_high|resamples)\b|fmt\w*Interval\b|excludes zero|%\s*(bootstrap\s*)?interval/;
+
+  for (const name of files) {
+    it(`src/${name} reads no interval field and renders no interval`, () => {
+      expect(code(join(SRC, name))).not.toMatch(interval);
+    });
+  }
+});
+
 describe("dependency boundaries", () => {
   const forbidden = /^(d3|d3-selection|d3-transition|d3-zoom|d3-brush|three|deck\.gl|@deck\.gl\/.*|maplibre-gl|mapbox-gl|leaflet)$/;
 

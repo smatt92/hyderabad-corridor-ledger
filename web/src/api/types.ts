@@ -303,10 +303,9 @@ export interface Audit {
   synthetic_post: Maybe<number>;
   /** (treated_post - synthetic_post) - (treated_pre - synthetic_pre), in BTI units. Null until "ok". */
   effect: Maybe<number>;
-  ci_low: Maybe<number>;
-  ci_high: Maybe<number>;
   pre_rmspe: Maybe<number>;
   post_rmspe: Maybe<number>;
+  /** Post RMSPE ÷ in-sample pre RMSPE. Describes fit; it is not the tested statistic. */
   rmspe_ratio: Maybe<number>;
   /** Pre RMSPE with each pre block predicted by weights fitted on the others. */
   cv_pre_rmspe?: Maybe<number>;
@@ -316,13 +315,19 @@ export interface Audit {
   pre_fit_overfit?: Maybe<boolean>;
   /** Donors with a nonzero weight. */
   n_active_donors?: Maybe<number>;
+  /**
+   * |effect| ÷ cv_pre_rmspe: the statistic the placebo test ranks. Null when the
+   * held-out pre error is zero or missing, and placebo_rank is then null too.
+   */
+  std_effect?: Maybe<number>;
+  /** Placebo runs with a standardised effect. */
   n_placebos: number;
-  /** (1 + placebos with a ratio at least as large) / (1 + placebos). */
+  /** (1 + placebos with a standardised effect at least as large) / (1 + placebos). */
   placebo_p_value: Maybe<number>;
   placebo_extreme: boolean;
   /** A plain sentence written by the pipeline. Shown verbatim. */
   placebo_verdict: Maybe<string>;
-  /** Treated rank by post/pre RMSPE ratio among treated + placebos; 1 is largest, ties count against the treated corridor. */
+  /** Treated rank by std_effect among treated + placebos; 1 is largest, ties count against the treated corridor. Null when std_effect is null. */
   placebo_rank?: Maybe<number>;
   /** The smallest attainable p: 1 / (n_placebos + 1). */
   placebo_p_floor?: Maybe<number>;
@@ -335,19 +340,18 @@ export interface Audit {
   /** Range of the effect across completeness-threshold variants. */
   sensitivity_min_effect?: Maybe<number>;
   sensitivity_max_effect?: Maybe<number>;
-  /** True when a variant's effect falls outside the headline interval or flips sign. */
+  /** True when a variant's effect has the opposite sign, or its placebo verdict (p <= alpha) differs from the headline's. */
   sensitivity_material?: Maybe<boolean>;
   /** Cross-check: the equal-weight mean of the same donors over the same periods. */
   equal_control_pre: Maybe<number>;
   equal_control_post: Maybe<number>;
   equal_effect: Maybe<number>;
-  equal_ci_low: Maybe<number>;
-  equal_ci_high: Maybe<number>;
   /** effect - equal_effect. */
   estimator_gap: Maybe<number>;
+  /** True only when effect and equal_effect have opposite signs. */
   estimators_disagree: Maybe<boolean>;
+  /** The placebo test's threshold: the effect is extreme when placebo_p_value <= alpha. */
   alpha: number;
-  resamples: number;
   low_confidence: boolean;
   method_version: string;
 }
@@ -385,8 +389,6 @@ export interface AuditSensitivity {
   n_donors: Maybe<number>;
   n_fit_blocks: Maybe<number>;
   effect: Maybe<number>;
-  ci_low: Maybe<number>;
-  ci_high: Maybe<number>;
   equal_effect: Maybe<number>;
   placebo_rank: Maybe<number>;
   n_placebos: Maybe<number>;
@@ -398,7 +400,10 @@ export interface AuditPlacebo {
   effect: Maybe<number>;
   pre_rmspe: Maybe<number>;
   cv_pre_rmspe?: Maybe<number>;
+  /** |effect| ÷ cv_pre_rmspe for this run; null is unranked. */
+  std_effect?: Maybe<number>;
   post_rmspe: Maybe<number>;
+  /** Describes fit; not the tested statistic. */
   rmspe_ratio: Maybe<number>;
   poor_pre_fit: boolean;
   weights: Record<string, number>;

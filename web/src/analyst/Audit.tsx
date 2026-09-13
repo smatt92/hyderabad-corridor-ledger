@@ -6,13 +6,13 @@ import { BlockChart } from "../charts/BlockChart";
 import { PlaceboRanks } from "../charts/PlaceboRanks";
 import { SlopeChart } from "../charts/SlopeChart";
 import {
-  type BlockRow, NO_SEQUENTIAL_TEST, auditPeriods, blockRows, confidencePercent, donorStatusText, donorWeightText, estimatorStatement,
-  fmtRate, fmtSettling, incompletePreComparison, orderDonors, placeboFloor, placeboResolutionText, postPeriodOpen, rankRatios,
+  type BlockRow, NO_INTERVAL, NO_SEQUENTIAL_TEST, auditPeriods, blockRows, donorStatusText, donorWeightText, estimatorStatement,
+  fmtRate, fmtSettling, incompletePreComparison, orderDonors, placeboFloor, placeboResolutionText, postPeriodOpen, rankStdEffects,
   selectionBiasText, sensitivityStatement, sensitivityStatusText, settlingWindow, statusNotice, variantText,
 } from "../lib/audit";
 import { CARD, FAINT, INK, MID, MONO, RULE, RUST, SOFT, TEXT } from "../lib/color";
 import { meetsFloor, resolveFloors } from "../lib/floors";
-import { fmtCount, fmtDay, fmtNum, fmtSigned, fmtSignedInterval, fmtWindow } from "../lib/format";
+import { fmtCount, fmtDay, fmtNum, fmtSigned, fmtWindow } from "../lib/format";
 import { EM_DASH } from "../lib/route";
 import { cache } from "./cache";
 import { Notice, SectionHead, Select, StatList, smallCaps } from "./common";
@@ -164,7 +164,7 @@ function DonorTable({ donors, floor }: { donors: AuditDonor[]; floor: number }) 
   );
 }
 
-function SensitivityTable({ rows, conf }: { rows: AuditSensitivity[]; conf: number }) {
+function SensitivityTable({ rows }: { rows: AuditSensitivity[] }) {
   return (
     <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "1080px" }}>
@@ -176,7 +176,7 @@ function SensitivityTable({ rows, conf }: { rows: AuditSensitivity[]; conf: numb
             <th style={th}>outcome</th>
             <th style={thRight}>donors</th>
             <th style={thRight}>fit blocks</th>
-            <th style={thRight}>effect [{conf}% interval]</th>
+            <th style={thRight}>effect · no interval</th>
             <th style={thRight}>equal-weight effect</th>
             <th style={th}>placebo test</th>
           </tr>
@@ -195,7 +195,7 @@ function SensitivityTable({ rows, conf }: { rows: AuditSensitivity[]; conf: numb
               <td style={cell({ color: r.status === "ok" ? TEXT : RUST })}>{sensitivityStatusText(r.status)}</td>
               <td style={num()}>{count(r.n_donors)}</td>
               <td style={num()}>{count(r.n_fit_blocks)}</td>
-              <td style={num()}>{fmtSignedInterval(r.effect, r.ci_low, r.ci_high)}</td>
+              <td style={num()}>{fmtSigned(r.effect)}</td>
               <td style={num()}>{fmtSigned(r.equal_effect)}</td>
               <td style={cell({ whiteSpace: "nowrap" })}>{placeboResolutionText(r.placebo_p_value, r.placebo_rank, r.n_placebos, placeboFloor(r.n_placebos))}</td>
             </tr>
@@ -207,7 +207,6 @@ function SensitivityTable({ rows, conf }: { rows: AuditSensitivity[]; conf: numb
 }
 
 function Method({ a, floor }: { a: AuditRow; floor: number }) {
-  const conf = confidencePercent(a.alpha);
   return (
     <p style={{ margin: 0, fontSize: "12px", lineHeight: 1.65, color: TEXT, maxWidth: "88ch" }}>
       <span style={{ fontWeight: 600, color: INK }}>Method.</span> The periods are whole blocks of {a.block_days} days, recorded when the intervention was declared:{" "}
@@ -218,11 +217,14 @@ function Method({ a, floor }: { a: AuditRow; floor: number }) {
       donors is absorbed as a fixed shift. The donor pool excludes every treated corridor; the treated corridor’s own pair, because traffic diverting onto the paired alternate
       is a consequence of the intervention, so that corridor is contaminated, not a control; corridors with a pre block below the floor; and, once the post period has closed,
       corridors with too few post-period calls. The headline effect is (treated post − synthetic post) − (treated pre − synthetic pre), each BTI pooled once over its whole
-      period, with a {conf}% percentile bootstrap interval from {a.resamples} resamples in which the donor weights are held fixed. Placebo runs repeat the procedure with each
-      donor as the treated corridor. The treated corridor’s ratio of post-period to pre-period RMSPE is ranked among the placebos’, ties counting against it, and the
-      permutation p-value is (1 + placebos at least as large) / (1 + placebos), so it can never fall below 1 / (1 + placebos). The equal-weight mean of the same donors over
-      the same periods is a cross-check with its own interval. The audit is rerun with stricter and looser completeness thresholds for donor pre blocks to show how far the
-      estimate depends on that choice. {NO_SEQUENTIAL_TEST} Until the post period closes the headline stays unpublished, and a post block’s gap between treated and
+      period, published as a point estimate. {NO_INTERVAL} Placebo runs repeat the procedure with each donor as the treated corridor. Each run’s standardised effect is its
+      |effect| divided by its own held-out pre-period RMSPE, the error when each pre block is predicted by weights fitted on the other pre blocks. The treated corridor’s
+      standardised effect is ranked among the placebos’, ties counting against it, and the permutation p-value is (1 + placebos at least as large) / (1 + placebos), so it
+      can never fall below 1 / (1 + placebos); the effect is called extreme when p ≤ {a.alpha}. A run whose held-out pre error is zero has no standardised effect and is not
+      ranked. The post/pre RMSPE ratio is published only as a description of fit. The equal-weight mean of the same donors over the same periods is a cross-check, and the
+      two estimates are said to disagree only when their signs are opposite. The audit is rerun with stricter and looser completeness thresholds for donor pre blocks to show
+      how far the estimate depends on that choice; the dependence is material when a variant’s effect has the opposite sign or its placebo verdict differs from the
+      headline’s. {NO_SEQUENTIAL_TEST} Until the post period closes the headline stays unpublished, and a post block’s gap between treated and
       synthetic BTI is descriptive, not a test. This is not a causal claim beyond the assumption that, without the change, the treated corridor’s BTI would have followed its
       synthetic control.
     </p>
@@ -271,7 +273,6 @@ export function Audit({ interventions, corridors }: { interventions: Interventio
   }
 
   const treatedName = corridor.code ?? corridor.id;
-  const conf = confidencePercent(audit.alpha);
   const rows = { pre: blockRows(data.blocks?.pre, "pre"), post: blockRows(data.blocks?.post, "post") };
   const allRows = [...rows.pre, ...rows.post];
   const postOpen = postPeriodOpen(audit);
@@ -329,12 +330,12 @@ export function Audit({ interventions, corridors }: { interventions: Interventio
   const sensitivitySection = (
     <Section
       title="Sensitivity · completeness threshold"
-      sub="The audit rerun under other rules for how complete a donor’s pre blocks must be. The strict variants require every pre block at 1.25× or 1.5× the floor; the relaxed variant admits donors with one short pre block and fits only on the blocks every donor has."
+      sub="The audit rerun under other rules for how complete a donor’s pre blocks must be. The strict variants require every pre block at 1.25× or 1.5× the floor; the relaxed variant admits donors with one short pre block and fits only on the blocks every donor has. The dependence is material when a variant’s effect has the opposite sign or its placebo verdict differs from the headline’s. Effects are point estimates with no interval."
     >
       <div style={{ marginBottom: "14px" }}>
         <Statement alert={sensitivity.tone === "material"} headline={sensitivity.headline} detail={sensitivity.detail} />
       </div>
-      <SensitivityTable rows={sensitivityRows} conf={conf} />
+      <SensitivityTable rows={sensitivityRows} />
     </Section>
   );
 
@@ -381,10 +382,9 @@ export function Audit({ interventions, corridors }: { interventions: Interventio
     );
   }
 
-  const excludesZero = audit.ci_low != null && audit.ci_high != null ? audit.ci_low > 0 || audit.ci_high < 0 : null;
   const estimators = estimatorStatement(audit);
   const resolution = placeboResolutionText(audit.placebo_p_value, audit.placebo_rank, audit.n_placebos, audit.placebo_p_floor);
-  const ranked = rankRatios({ corridor_id: corridor.id, ratio: audit.rmspe_ratio }, placebos);
+  const ranked = rankStdEffects({ corridor_id: corridor.id, stdEffect: audit.std_effect }, placebos);
 
   return (
     <div>
@@ -413,12 +413,12 @@ export function Audit({ interventions, corridors }: { interventions: Interventio
             <div style={smallCaps}>synthetic-control effect on BTI</div>
             <div style={{ fontFamily: MONO, fontSize: "28px", fontWeight: 500, color: INK, lineHeight: 1.25, fontVariantNumeric: "tabular-nums" }}>{fmtSigned(audit.effect)}</div>
             <div style={{ fontFamily: MONO, fontSize: "11.5px", color: MID }}>
-              {conf}% bootstrap interval [{fmtSigned(audit.ci_low)}, {fmtSigned(audit.ci_high)}] · {audit.resamples} resamples, donor weights held fixed
+              point estimate · no interval · the inference is the placebo rank below
             </div>
             <div style={{ fontSize: "13px", lineHeight: 1.55, color: TEXT, marginTop: "10px" }}>
               Pooled over each whole period, the treated corridor’s BTI moved from {fmtNum(audit.treated_pre)} to {fmtNum(audit.treated_post)} and its synthetic control’s from{" "}
               {fmtNum(audit.synthetic_pre)} to {fmtNum(audit.synthetic_post)}. The effect is (treated post − synthetic post) − (treated pre − synthetic pre). The synthetic control
-              blends {count(audit.n_donors)} donor {audit.n_donors === 1 ? "corridor" : "corridors"}, each with the weight published in the donor pool below.
+              blends {count(audit.n_donors)} donor {audit.n_donors === 1 ? "corridor" : "corridors"}, each with the weight published in the donor pool below. {NO_INTERVAL}
             </div>
             <div style={{ marginTop: "14px", border: `1.5px solid ${INK}`, background: CARD, padding: "12px 14px" }}>
               <div style={{ fontFamily: MONO, fontSize: "10.5px", letterSpacing: ".16em", textTransform: "uppercase", color: RUST }}>Placebo test · verdict</div>
@@ -446,15 +446,16 @@ export function Audit({ interventions, corridors }: { interventions: Interventio
                 ["donors", count(audit.n_donors)],
                 ["treated BTI pre → post", `${fmtNum(audit.treated_pre)} → ${fmtNum(audit.treated_post)}`],
                 ["synthetic BTI pre → post", `${fmtNum(audit.synthetic_pre)} → ${fmtNum(audit.synthetic_post)}`],
-                ["estimated effect", `${fmtSignedInterval(audit.effect, audit.ci_low, audit.ci_high)} BTI`],
-                [`${conf}% bootstrap interval`, `${fmtSigned(audit.ci_low)} to ${fmtSigned(audit.ci_high)}`],
-                ["interval excludes zero", yesNo(excludesZero)],
-                ["bootstrap resamples", `${audit.resamples} · donor weights held fixed`],
+                ["estimated effect", `${fmtSigned(audit.effect)} BTI · point estimate, no interval`],
                 ["RMSPE pre / post", `${fmtNum(audit.pre_rmspe, 3)} / ${fmtNum(audit.post_rmspe, 3)}`],
-                ["RMSPE ratio, post / pre", fmtNum(audit.rmspe_ratio)],
+                ["RMSPE ratio, post / pre · describes fit, not the test", fmtNum(audit.rmspe_ratio)],
                 [
                   "pre RMSPE, one block held out",
                   `${fmtNum(audit.cv_pre_rmspe, 3)}${audit.pre_fit_overfit ? " · in-sample fit far tighter: the weights may be fitting noise" : ""}`,
+                ],
+                [
+                  "standardised effect, |effect| ÷ held-out pre RMSPE · the tested statistic",
+                  audit.std_effect == null || !Number.isFinite(audit.std_effect) ? `${EM_DASH} unranked` : fmtNum(audit.std_effect),
                 ],
                 ["active donors", audit.n_active_donors == null ? "—" : String(audit.n_active_donors)],
                 ["placebo test", resolution],
@@ -471,7 +472,7 @@ export function Audit({ interventions, corridors }: { interventions: Interventio
 
       <Section
         title="Placebo runs"
-        sub="The same procedure repeated with each donor as the treated corridor. Bars are post/pre RMSPE ratios, largest first. A placebo at least as large as the treated corridor’s ratio counts against the effect."
+        sub="The same procedure repeated with each donor as the treated corridor. Bars are standardised effects, |effect| ÷ held-out pre RMSPE, largest first. A placebo at least as large as the treated corridor’s counts against the effect; a run whose standardised effect could not be computed is listed unranked, not as zero. Ranking the raw |effect| would call a corridor significant just because it is volatile anyway, and the in-sample post/pre RMSPE ratio breaks when the pre fit is exact, because its denominator is then zero. Dividing each corridor’s |effect| by its own held-out pre-period error, measured on pre blocks its weights were not fitted to, avoids both."
       >
         <div style={{ fontFamily: MONO, fontSize: "12px", color: INK, marginBottom: "10px" }}>{resolution}</div>
         {placebos.length === 0 ? <div style={{ fontSize: "12.5px", color: MID, marginBottom: "8px" }}>No placebo runs were published.</div> : null}
@@ -480,7 +481,7 @@ export function Audit({ interventions, corridors }: { interventions: Interventio
 
       <Section
         title="Cross-check · equal-weight donors"
-        sub="The equal-weight mean of the same donors over the same periods, with its own bootstrap interval. It is not the headline; it shows how far the headline depends on the fitted weights."
+        sub="The equal-weight mean of the same donors over the same periods, a point estimate with no interval. It is not the headline; it shows how far the headline depends on the fitted weights. The two disagree only when their signs are opposite; the gap between them is stated either way."
       >
         <div style={{ marginBottom: "12px" }}>
           <Statement alert={estimators.tone === "disagree"} headline={estimators.headline} detail={estimators.detail} />
@@ -489,10 +490,10 @@ export function Audit({ interventions, corridors }: { interventions: Interventio
           <StatList
             items={[
               ["equal-weight control BTI pre → post", `${fmtNum(audit.equal_control_pre)} → ${fmtNum(audit.equal_control_post)}`],
-              ["equal-weight effect", `${fmtSignedInterval(audit.equal_effect, audit.equal_ci_low, audit.equal_ci_high)} BTI`],
-              ["synthetic-control effect", `${fmtSignedInterval(audit.effect, audit.ci_low, audit.ci_high)} BTI`],
+              ["equal-weight effect", `${fmtSigned(audit.equal_effect)} BTI`],
+              ["synthetic-control effect", `${fmtSigned(audit.effect)} BTI`],
               ["estimator gap, synthetic − equal", `${fmtSigned(audit.estimator_gap)} BTI`],
-              ["estimators disagree", yesNo(audit.estimators_disagree)],
+              ["opposite signs, so the estimators disagree", yesNo(audit.estimators_disagree)],
             ]}
           />
         </div>
