@@ -5,9 +5,10 @@ import { UPlot } from "./UPlot";
 
 interface Props {
   treated: [number, number];
-  control: [number, number];
+  /** The synthetic control's pooled pre and post values. */
+  synthetic: [number, number];
   treatedLabel: string;
-  controlLabel: string;
+  syntheticLabel: string;
   /** The pre period's dates, drawn under PRE. */
   preLabel: string;
   /** The post period's dates, drawn under POST. */
@@ -17,12 +18,12 @@ interface Props {
 }
 
 /**
- * Pre/post slope chart, treated corridor against the equal-weight control.
- * Every annotation is drawn on the chart itself, not in a tooltip, so a printed
- * page still carries the argument.
+ * Pre/post slope chart, treated corridor against its synthetic control, each
+ * value pooled once over its whole period. Every annotation is drawn on the
+ * chart itself, not in a tooltip, so a printed page still carries the argument.
  */
-export function SlopeChart({ treated, control, treatedLabel, controlLabel, preLabel, postLabel, changeDate, changeLabel }: Props) {
-  const all = [...treated, ...control];
+export function SlopeChart({ treated, synthetic, treatedLabel, syntheticLabel, preLabel, postLabel, changeDate, changeLabel }: Props) {
+  const all = [...treated, ...synthetic];
   const lo = Math.min(...all) * 0.9;
   const hi = Math.max(...all) * 1.1;
 
@@ -39,7 +40,7 @@ export function SlopeChart({ treated, control, treatedLabel, controlLabel, preLa
         ctx.fillText(s, x, y);
       };
       // When two values sit close together, stack the treated one above the
-      // control one (or below, following their order) so neither is drawn over the other.
+      // synthetic one (or below, following their order) so neither is drawn over the other.
       const stack = (t: number, c: number, gap: number, shift: number): [number, number] => {
         if (Math.abs(Y(t) - Y(c)) > gap * px) return [0, 0];
         return Y(t) <= Y(c) ? [-shift, shift] : [shift, -shift];
@@ -63,15 +64,15 @@ export function SlopeChart({ treated, control, treatedLabel, controlLabel, preLa
       text(changeDate, mx + 6 * px, top - 2 * px, RUST, 10);
       text(changeLabel, mx + 6 * px, top + 11 * px, RUST, 10.5, "left", false);
       // pre values
-      const [tPre, cPre] = stack(treated[0], control[0], 18, 9);
+      const [tPre, sPre] = stack(treated[0], synthetic[0], 18, 9);
       text(treated[0].toFixed(2), X(0) - 10 * px, Y(treated[0]) + (4 + tPre) * px, INK, 12, "right");
-      text(control[0].toFixed(2), X(0) - 10 * px, Y(control[0]) + (4 + cPre) * px, GHOST, 12, "right");
+      text(synthetic[0].toFixed(2), X(0) - 10 * px, Y(synthetic[0]) + (4 + sPre) * px, GHOST, 12, "right");
       // post values and series labels
-      const [tPost, cPost] = stack(treated[1], control[1], 44, 16);
+      const [tPost, sPost] = stack(treated[1], synthetic[1], 44, 16);
       text(treated[1].toFixed(2), X(1) + 10 * px, Y(treated[1]) + (4 + tPost) * px, INK, 12);
-      text(control[1].toFixed(2), X(1) + 10 * px, Y(control[1]) + (4 + cPost) * px, GHOST, 12);
+      text(synthetic[1].toFixed(2), X(1) + 10 * px, Y(synthetic[1]) + (4 + sPost) * px, GHOST, 12);
       text(`Treated · ${treatedLabel}`, X(1) + 52 * px, Y(treated[1]) + (4 + tPost) * px, INK, 11.5, "left", false);
-      text(controlLabel, X(1) + 52 * px, Y(control[1]) + (4 + cPost) * px, GHOST, 11.5, "left", false);
+      text(syntheticLabel, X(1) + 52 * px, Y(synthetic[1]) + (4 + sPost) * px, GHOST, 11.5, "left", false);
       ctx.restore();
     };
     return {
@@ -87,8 +88,8 @@ export function SlopeChart({ treated, control, treatedLabel, controlLabel, preLa
       ],
       plugins: [{ hooks: { draw: [annotate] } }],
     };
-  }, [treated, control, treatedLabel, controlLabel, preLabel, postLabel, changeDate, changeLabel, lo, hi]);
+  }, [treated, synthetic, treatedLabel, syntheticLabel, preLabel, postLabel, changeDate, changeLabel, lo, hi]);
 
-  const data = useMemo<uPlot.AlignedData>(() => [[0, 1], [...treated], [...control]], [treated, control]);
+  const data = useMemo<uPlot.AlignedData>(() => [[0, 1], [...treated], [...synthetic]], [treated, synthetic]);
   return <UPlot options={options} data={data} height={310} />;
 }

@@ -265,35 +265,163 @@ export interface InterventionsResponse extends Envelope {
   interventions: (Intervention & { audit_status: Maybe<string> })[];
 }
 
-export type AuditStatus = "ok" | "insufficient_pre" | "post_pending" | "insufficient_post" | "no_controls";
+export type AuditStatus = "ok" | "insufficient_pre" | "post_pending" | "post_partial" | "insufficient_post" | "no_controls";
 
+/**
+ * A synthetic-control audit of one intervention on pooled buffer time index.
+ * Periods are whole blocks of block_days; every boundary is recorded by the
+ * pipeline, settling included, and the frontend never infers one.
+ */
 export interface Audit {
   status: AuditStatus;
   effective_day: string;
   settle_days: number;
-  /** Fixed when the intervention is declared; always present. */
+  /** Recorded when the intervention is declared; always present. */
   pre_start: string;
   pre_end: string;
+  /**
+   * The excluded settling period as recorded. Where either is null or absent the
+   * view derives it from pre_end + 1 .. post_start - 1 and labels that date INFERRED.
+   */
+  settle_start?: Maybe<string>;
+  settle_end?: Maybe<string>;
   post_start: string;
   post_end: string;
+  block_days: number;
+  pre_blocks: number;
+  post_blocks: number;
+  post_blocks_complete: number;
   /** Pooled peak-hour calls on the treated corridor in each period. */
   n_pre: number;
   n_post: number;
-  n_controls: number;
+  /** Donors in the synthetic control after exclusions. */
+  n_donors: number;
+  /** Each BTI is pooled once over its whole period. treated_pre may be set before status is "ok". */
   treated_pre: Maybe<number>;
   treated_post: Maybe<number>;
-  /** Equal-weight mean of the untreated corridors' pooled BTIs. */
-  control_pre: Maybe<number>;
-  control_post: Maybe<number>;
-  /** (treated_post - treated_pre) - (control_post - control_pre), in BTI units. */
+  synthetic_pre: Maybe<number>;
+  synthetic_post: Maybe<number>;
+  /** (treated_post - synthetic_post) - (treated_pre - synthetic_pre), in BTI units. Null until "ok". */
   effect: Maybe<number>;
   ci_low: Maybe<number>;
   ci_high: Maybe<number>;
+  pre_rmspe: Maybe<number>;
+  post_rmspe: Maybe<number>;
+  rmspe_ratio: Maybe<number>;
+  /** Pre RMSPE with each pre block predicted by weights fitted on the others. */
+  cv_pre_rmspe?: Maybe<number>;
+  /** pre_rmspe / cv_pre_rmspe. */
+  overfit_ratio?: Maybe<number>;
+  /** True when the in-sample pre fit is much tighter than the held-out one: the weights may fit noise. */
+  pre_fit_overfit?: Maybe<boolean>;
+  /** Donors with a nonzero weight. */
+  n_active_donors?: Maybe<number>;
+  n_placebos: number;
+  /** (1 + placebos with a ratio at least as large) / (1 + placebos). */
+  placebo_p_value: Maybe<number>;
+  placebo_extreme: boolean;
+  /** A plain sentence written by the pipeline. Shown verbatim. */
+  placebo_verdict: Maybe<string>;
+  /** Treated rank by post/pre RMSPE ratio among treated + placebos; 1 is largest, ties count against the treated corridor. */
+  placebo_rank?: Maybe<number>;
+  /** The smallest attainable p: 1 / (n_placebos + 1). */
+  placebo_p_floor?: Maybe<number>;
+  /** Donors dropped for a pre block below the floor, and how they differ from the donors kept. */
+  n_excluded_incomplete_pre?: Maybe<number>;
+  included_pre_missing_rate?: Maybe<number>;
+  excluded_pre_missing_rate?: Maybe<number>;
+  included_pre_bti?: Maybe<number>;
+  excluded_pre_bti?: Maybe<number>;
+  /** Range of the effect across completeness-threshold variants. */
+  sensitivity_min_effect?: Maybe<number>;
+  sensitivity_max_effect?: Maybe<number>;
+  /** True when a variant's effect falls outside the headline interval or flips sign. */
+  sensitivity_material?: Maybe<boolean>;
+  /** Cross-check: the equal-weight mean of the same donors over the same periods. */
+  equal_control_pre: Maybe<number>;
+  equal_control_post: Maybe<number>;
+  equal_effect: Maybe<number>;
+  equal_ci_low: Maybe<number>;
+  equal_ci_high: Maybe<number>;
+  /** effect - equal_effect. */
+  estimator_gap: Maybe<number>;
+  estimators_disagree: Maybe<boolean>;
+  /** Always-valid confidence sequence over completed post blocks, published while status is "post_partial". */
+  cs_blocks: Maybe<number>;
+  cs_mean: Maybe<number>;
+  cs_low: Maybe<number>;
+  cs_high: Maybe<number>;
   alpha: number;
   resamples: number;
-  weights: Record<string, number>;
   low_confidence: boolean;
   method_version: string;
+}
+
+/** Why a corridor is not in the donor pool. */
+export type DonorExclusion = "treated" | "same_pair" | "incomplete_pre" | "insufficient_post";
+
+export interface AuditDonor {
+  corridor_id: string;
+  code: Maybe<string>;
+  included: boolean;
+  /** Non-negative, summing to one over included donors. Null when excluded. */
+  weight: Maybe<number>;
+  exclusion: Maybe<DonorExclusion>;
+  n_pre: Maybe<number>;
+  n_post: Maybe<number>;
+  pre_bti: Maybe<number>;
+  post_bti: Maybe<number>;
+  /** Mean pre-period missing rate. */
+  pre_missing_rate?: Maybe<number>;
+  /** Pre blocks below the floor. */
+  short_pre_blocks?: Maybe<number>;
+  /** Pooled peak-hour calls in the donor's thinnest pre block. */
+  min_pre_block_n?: Maybe<number>;
+}
+
+export type SensitivityVariant = "base" | "strict_125" | "strict_150" | "relaxed_one_block";
+
+/** The audit rerun at another completeness threshold for donor pre blocks. */
+export interface AuditSensitivity {
+  variant: SensitivityVariant | string;
+  block_floor: Maybe<number>;
+  max_short_blocks: Maybe<number>;
+  status: "ok" | "no_controls" | "too_few_blocks" | string;
+  n_donors: Maybe<number>;
+  n_fit_blocks: Maybe<number>;
+  effect: Maybe<number>;
+  ci_low: Maybe<number>;
+  ci_high: Maybe<number>;
+  equal_effect: Maybe<number>;
+  placebo_rank: Maybe<number>;
+  n_placebos: Maybe<number>;
+  placebo_p_value: Maybe<number>;
+}
+
+export interface AuditPlacebo {
+  corridor_id: string;
+  effect: Maybe<number>;
+  pre_rmspe: Maybe<number>;
+  cv_pre_rmspe?: Maybe<number>;
+  post_rmspe: Maybe<number>;
+  rmspe_ratio: Maybe<number>;
+  poor_pre_fit: boolean;
+  weights: Record<string, number>;
+}
+
+/** Columnar: every key is an array indexed by block position. */
+export interface AuditBlocks {
+  block: number[];
+  block_start: string[];
+  block_end: string[];
+  complete: boolean[];
+  n_treated: Col<number>;
+  treated_bti: Col<number>;
+  synthetic_bti: Col<number>;
+  gap: Col<number>;
+  running_mean: Col<number>;
+  cs_low: Col<number>;
+  cs_high: Col<number>;
 }
 
 export interface AuditResponse extends Envelope {
@@ -302,6 +430,10 @@ export interface AuditResponse extends Envelope {
   metric: "bti";
   floors: Maybe<Floors>;
   audit: Maybe<Audit>;
+  donors: AuditDonor[];
+  placebos: AuditPlacebo[];
+  blocks: { pre: AuditBlocks; post: AuditBlocks };
+  sensitivity?: AuditSensitivity[];
 }
 
 export interface ChainVerification {
