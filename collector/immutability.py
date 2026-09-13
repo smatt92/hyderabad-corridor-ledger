@@ -1,8 +1,8 @@
 """A corridor's geometry is permanent once it has been anything but a draft.
 
 Compares config/corridors.yaml with every committed version of it. Fails when
-an id that was ever non-draft now has a different origin, destination, via
-points or direction, or has vanished from the file. To change a measured
+an id that was ever non-draft now has a different origin, destination,
+via_points or direction, or has vanished from the file. To change a measured
 road, retire the corridor and declare a new id that supersedes it. Drafts can
 be edited freely until they are first activated.
 
@@ -22,7 +22,9 @@ REL_PATH = "config/corridors.yaml"
 
 
 def geometry(raw: dict) -> tuple:
-    via = tuple((float(p["lat"]), float(p["lon"])) for p in (raw.get("via") or ()))
+    # The field was named via until 0006; versions committed before then use it.
+    points = raw.get("via_points", raw.get("via")) or ()
+    via = tuple((float(p["lat"]), float(p["lon"])) for p in points)
     return (float(raw["origin_lat"]), float(raw["origin_lon"]), float(raw["dest_lat"]),
             float(raw["dest_lon"]), raw.get("direction"), via)
 

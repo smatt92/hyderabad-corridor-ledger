@@ -14,7 +14,7 @@ def test_rows_carry_every_declared_field_and_active_matches_status():
     panel = load_panel(FIXTURE)
     row = row_for(next(c for c in panel.corridors if c.id == "placeholder-02"))
     assert row["class"] == "alternate" and row["pair_id"] == "PL-01"
-    assert row["via"] == [{"lat": 17.464, "lon": 78.357}]
+    assert row["via_points"] == [{"lat": 17.464, "lon": 78.357}]
     assert row["active"] is False and row["status"] == "draft"
 
 

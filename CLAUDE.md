@@ -162,18 +162,23 @@ TomTom key.
 `config/corridors.yaml` is the only place a corridor is defined, validated by
 `collector/config.py`: `id`, `code`, `name`, `class` (core, alternate or
 donor), `tier` (A, B or C), `direction` (ab or ba), `pair_id`, origin and
-destination names and coordinates, `via`, `status` (draft, active, paused or
+destination names and coordinates, `via_points`, `status` (draft, active, paused or
 retired) and `supersedes`.
 
 - Alternates are declared, never derived. A pair holds one core and at most
   one alternate per direction, all sharing endpoints, and `ba` reverses `ab`.
   A one-corridor pair is valid: it means no measured alternate. Donors are
   never paired.
-- An alternate's road is pinned by its `via` points, which the collector sends
-  to TomTom as route stops. Via points are measurement inputs and never reach
-  a user. A corridor without via points measures whichever road TomTom picks
-  at that moment.
-- Geometry (endpoints, via, direction) freezes the first time a corridor is
+- Every corridor, core, alternate or donor, declares `via_points`: an ordered
+  list of lat/lon that the collector sends to calculateRoute as waypoints on
+  every call. Without them TomTom chooses the road and can silently choose a
+  different one between runs, so the series would not measure a fixed
+  corridor, and two corridors sharing endpoints would measure the same road
+  twice. A pair's members share endpoints and must differ in `via_points`:
+  identical `via_points` within a pair is an error in `collector/config.py`
+  and in the `corridors_check_pair` trigger (0006). `via_points` never reach
+  a user.
+- Geometry (endpoints, `via_points`, direction) freezes the first time a corridor is
   anything but a draft. To change a measured road, retire the corridor and
   declare a new id that `supersedes` it. `collector/immutability.py` compares
   every committed version in CI, and the `corridors_guard` trigger refuses the
@@ -358,6 +363,12 @@ A route we have not measured must never reach a user. Someone may drive it.
 - The map draws each pair as a straight connector between measured endpoints,
   captioned as such. We store `routeRepresentation=summaryOnly` and hold no
   route geometry. Real geometry would be separate, scoped work against OSM.
+- `via_points` do not change this. A person declares them in
+  `config/corridors.yaml`, and they are measured on every cycle for months.
+  Declared and measured is the opposite of derived at render time. The API
+  does not serve them, the frontend never constructs a route from them or
+  from anything else, and the Maps handoff still carries origin and
+  destination only. The route-construction ban is unchanged.
 
 Enforced by `web/src/lib/route.test.ts`, `web/src/lib/rules.test.ts` (no
 waypoints, haversine, midpoints, via nodes or great-circle trigonometry

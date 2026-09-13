@@ -23,7 +23,7 @@ def row_for(c: Corridor) -> dict:
         "direction": c.direction, "pair_id": c.pair_id, "origin_name": c.origin_name,
         "destination_name": c.destination_name, "origin_lat": c.origin_lat,
         "origin_lon": c.origin_lon, "dest_lat": c.dest_lat, "dest_lon": c.dest_lon,
-        "via": [{"lat": p.lat, "lon": p.lon} for p in c.via], "status": c.status,
+        "via_points": [{"lat": p.lat, "lon": p.lon} for p in c.via_points], "status": c.status,
         "active": c.status == "active", "supersedes": c.supersedes,
     }
 
@@ -45,7 +45,8 @@ def plan_sync(panel: Panel, existing: list[dict]) -> tuple[list[str], list[dict]
 
 def main() -> int:
     db = Database.from_env()
-    columns = "id,class,status,activated_at,origin_lat,origin_lon,dest_lat,dest_lon,via,direction"
+    columns = ("id,class,status,activated_at,origin_lat,origin_lon,dest_lat,dest_lon,"
+               "via_points,direction")
     _, existing = db.request("GET", "corridors", [("select", columns)])
     deletes, upserts = plan_sync(load_panel(), existing or [])
     for cid in deletes:

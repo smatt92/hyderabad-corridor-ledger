@@ -3,27 +3,33 @@
 # Rules (validated by collector/config.py, geometry immutability by
 # collector/immutability.py in CI):
 # - id is permanent. Once a corridor has been anything but a draft, its origin,
-#   destination, via points and direction never change and it is never removed.
-#   To change a measured road, retire it and declare a new id with supersedes.
+#   destination, via_points and direction never change and it is never
+#   removed. To change a measured road, retire it and declare a new id with
+#   supersedes.
+# - via_points: every corridor declares an ordered list of points on its road,
+#   in the direction of travel. The collector sends them to TomTom as waypoints
+#   on every call, so the corridor measures the same road for months instead of
+#   whichever road TomTom picks that minute. Place each point on the intended
+#   carriageway, away from junctions where the route could turn off.
 # - class: core | alternate | donor. An alternate is declared, never derived:
-#   it shares its pair's origin and destination and is pinned to its own road
-#   by via points, sent to TomTom as route stops and never shown to users.
-#   A pair holding one corridor is valid: no measured alternate. A donor is an
-#   unpaired control corridor for intervention audits.
+#   it shares its pair's origin and destination and must differ from the core
+#   in via_points, or both would measure the same road. A pair holding one
+#   corridor is valid: no measured alternate. A donor is an unpaired control
+#   corridor for intervention audits.
 # - tier: A every 15 min, B and C every 30 min, 06:30-10:30 and 16:30-21:00
 #   IST; every tier also every 30 min from 00:00 to 04:00 IST.
 # - direction ab | ba. A pair's ba corridors reverse its ab endpoints.
 # - status: draft (never collected) | active | paused | retired.
-# - Place via points on the intended carriageway, in the direction of travel.
 #
 # The ten corridors below are PLACEHOLDERS, all status draft, so nothing here
-# is collected. Replace them with the real panel before activating anything.
+# is collected. Their via_points show the shape only; they are not surveyed
+# roads. Replace them with the real panel before activating anything.
 
 version: 1
 corridors:
   - id: placeholder-01
     code: PL-01
-    name: "PLACEHOLDER: Miyapur to Hitec City"
+    name: "PLACEHOLDER: Miyapur to Hitec City via Hafeezpet"
     class: core
     tier: A
     direction: ab
@@ -34,7 +40,9 @@ corridors:
     origin_lon: 78.360
     dest_lat: 17.447
     dest_lon: 78.377
-    via: []
+    via_points:
+      - {lat: 17.484, lon: 78.357}
+      - {lat: 17.461, lon: 78.370}
     status: draft
     supersedes: null
 
@@ -51,14 +59,14 @@ corridors:
     origin_lon: 78.360
     dest_lat: 17.447
     dest_lon: 78.377
-    via:
+    via_points:
       - {lat: 17.464, lon: 78.357}
     status: draft
     supersedes: null
 
   - id: placeholder-03
     code: PL-03
-    name: "PLACEHOLDER: Hitec City to Miyapur"
+    name: "PLACEHOLDER: Hitec City to Miyapur via Hafeezpet"
     class: core
     tier: A
     direction: ba
@@ -69,7 +77,9 @@ corridors:
     origin_lon: 78.377
     dest_lat: 17.497
     dest_lon: 78.360
-    via: []
+    via_points:
+      - {lat: 17.461, lon: 78.370}
+      - {lat: 17.484, lon: 78.357}
     status: draft
     supersedes: null
 
@@ -86,13 +96,14 @@ corridors:
     origin_lon: 78.411
     dest_lat: 17.448
     dest_lon: 78.391
-    via: []
+    via_points:
+      - {lat: 17.468, lon: 78.400}
     status: draft
     supersedes: null
 
   - id: placeholder-05
     code: PL-05
-    name: "PLACEHOLDER: Gachibowli to Ameerpet"
+    name: "PLACEHOLDER: Gachibowli to Ameerpet via Madhapur"
     class: core
     tier: B
     direction: ab
@@ -103,7 +114,9 @@ corridors:
     origin_lon: 78.348
     dest_lat: 17.437
     dest_lon: 78.448
-    via: []
+    via_points:
+      - {lat: 17.446, lon: 78.381}
+      - {lat: 17.441, lon: 78.421}
     status: draft
     supersedes: null
 
@@ -120,14 +133,14 @@ corridors:
     origin_lon: 78.348
     dest_lat: 17.437
     dest_lon: 78.448
-    via:
+    via_points:
       - {lat: 17.431, lon: 78.407}
     status: draft
     supersedes: null
 
   - id: placeholder-07
     code: PL-07
-    name: "PLACEHOLDER: LB Nagar to Koti"
+    name: "PLACEHOLDER: LB Nagar to Koti via Dilsukhnagar"
     class: core
     tier: B
     direction: ab
@@ -138,13 +151,15 @@ corridors:
     origin_lon: 78.552
     dest_lat: 17.386
     dest_lon: 78.477
-    via: []
+    via_points:
+      - {lat: 17.368, lon: 78.527}
+      - {lat: 17.376, lon: 78.500}
     status: draft
     supersedes: null
 
   - id: placeholder-08
     code: PL-08
-    name: "PLACEHOLDER: Secunderabad to Uppal"
+    name: "PLACEHOLDER: Secunderabad to Uppal via Tarnaka"
     class: core
     tier: C
     direction: ab
@@ -155,7 +170,9 @@ corridors:
     origin_lon: 78.501
     dest_lat: 17.398
     dest_lon: 78.559
-    via: []
+    via_points:
+      - {lat: 17.427, lon: 78.529}
+      - {lat: 17.406, lon: 78.545}
     status: draft
     supersedes: null
 
@@ -172,7 +189,8 @@ corridors:
     origin_lon: 78.264
     dest_lat: 17.494
     dest_lon: 78.318
-    via: []
+    via_points:
+      - {lat: 17.515, lon: 78.290}
     status: draft
     supersedes: null
 
@@ -189,6 +207,7 @@ corridors:
     origin_lon: 78.559
     dest_lat: 17.368
     dest_lon: 78.524
-    via: []
+    via_points:
+      - {lat: 17.370, lon: 78.541}
     status: draft
     supersedes: null

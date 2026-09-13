@@ -37,7 +37,7 @@ class GeometryLeak(RuntimeError):
 
 def route_url(corridor: Corridor, key: str) -> str:
     stops = [(corridor.origin_lat, corridor.origin_lon),
-             *((p.lat, p.lon) for p in corridor.via),
+             *((p.lat, p.lon) for p in corridor.via_points),
              (corridor.dest_lat, corridor.dest_lon)]
     locations = ":".join(f"{lat},{lon}" for lat, lon in stops)
     return f"{BASE_URL}/{locations}/json?{urlencode({**QUERY, 'key': key})}"

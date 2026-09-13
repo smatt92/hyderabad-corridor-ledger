@@ -7,7 +7,8 @@ from immutability import committed_versions, violations
 
 def corridor(cid, status="active", lat=17.497, via=()):
     return {"id": cid, "status": status, "direction": "ab", "origin_lat": lat, "origin_lon": 78.36,
-            "dest_lat": 17.447, "dest_lon": 78.377, "via": [{"lat": a, "lon": b} for a, b in via]}
+            "dest_lat": 17.447, "dest_lon": 78.377,
+            "via_points": [{"lat": a, "lon": b} for a, b in via]}
 
 
 def test_active_geometry_is_frozen():
@@ -15,7 +16,14 @@ def test_active_geometry_is_frozen():
     assert violations(history, [corridor("a")]) == []
     assert violations(history, [corridor("a", lat=17.5)]) == [
         "a was active and its geometry has changed; declare a new corridor that supersedes it"]
-    assert violations(history, [corridor("a", via=[(17.46, 78.357)])])  # via points count too
+    assert violations(history, [corridor("a", via=[(17.46, 78.357)])])  # via_points count too
+
+
+def test_versions_committed_before_the_rename_still_freeze_via_points():
+    old = corridor("a", via=[(17.46, 78.357)])
+    old["via"] = old.pop("via_points")  # the field's name until 0006
+    assert violations([[old]], [corridor("a", via=[(17.46, 78.357)])]) == []
+    assert violations([[old]], [corridor("a", via=[(17.47, 78.357)])])
 
 
 def test_status_changes_are_allowed_but_removal_is_not():

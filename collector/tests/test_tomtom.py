@@ -41,9 +41,10 @@ def test_url_carries_declared_stops_and_summary_only_params():
     }
 
 
-def test_core_without_via_goes_origin_to_destination():
+def test_cores_are_routed_through_their_declared_via_points_too():
     url = urlparse(route_url(PANEL["placeholder-01"], "k"))
-    assert url.path.endswith("/17.497,78.36:17.447,78.377/json")
+    assert url.path.endswith("/17.497,78.36:17.484,78.357:17.461,78.37:17.447,78.377/json")
+    assert all(c.via_points for c in PANEL.values())
 
 
 def test_redact_hides_the_key_everywhere():

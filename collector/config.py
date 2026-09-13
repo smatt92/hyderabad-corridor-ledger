@@ -2,9 +2,15 @@
 
 The file is the only place a corridor is defined. Alternates are declared
 here, never derived at runtime, and a pair holding one corridor is valid: it
-means "no measured alternate". An alternate's road is pinned by declared via
-points, which the collector sends to TomTom as route stops. Via points are
-never shown to users as a route.
+means "no measured alternate".
+
+Every corridor, whatever its class, declares via_points: an ordered list of
+points the collector sends to TomTom as waypoints on every call. Without them
+TomTom picks the road each time and may pick a different one next time, so the
+series would not measure a fixed corridor, and two corridors sharing endpoints
+would measure the same road twice. The members of a pair share endpoints and
+must differ in via_points. via_points are declared by a person and measured
+for months; they are never shown to users as a route.
 """
 
 import sys
@@ -21,6 +27,7 @@ LAT_RANGE = (17.10, 17.75)
 LON_RANGE = (78.05, 78.85)
 ID_PATTERN = r"^[a-z0-9][a-z0-9-]{1,62}$"
 LABEL_PATTERN = r"^[A-Z]{2}-[0-9]{2,4}$"
+MAX_VIA_POINTS = 25  # 0006's corridors_via_points_valid holds the same limit
 
 
 def _check_in_hyderabad(lat: float, lon: float, what: str) -> None:
@@ -56,7 +63,7 @@ class Corridor(BaseModel):
     origin_lon: float
     dest_lat: float
     dest_lon: float
-    via: tuple[Point, ...] = ()
+    via_points: tuple[Point, ...]
     status: Literal["draft", "active", "paused", "retired"]
     supersedes: str | None = Field(default=None, pattern=ID_PATTERN)
 
@@ -66,9 +73,13 @@ class Corridor(BaseModel):
         _check_in_hyderabad(self.dest_lat, self.dest_lon, f"{self.id} destination")
         if (self.origin_lat, self.origin_lon) == (self.dest_lat, self.dest_lon):
             raise ValueError(f"{self.id}: origin and destination are the same point")
-        if self.corridor_class == "alternate" and (self.pair_id is None or not self.via):
-            raise ValueError(f"{self.id}: an alternate needs a pair_id and via points "
-                             "pinning its road")
+        if not self.via_points:
+            raise ValueError(f"{self.id}: no via_points, so TomTom would choose its road "
+                             "on every call")
+        if len(self.via_points) > MAX_VIA_POINTS:
+            raise ValueError(f"{self.id}: at most {MAX_VIA_POINTS} via_points")
+        if self.corridor_class == "alternate" and self.pair_id is None:
+            raise ValueError(f"{self.id}: an alternate needs a pair_id")
         if self.corridor_class == "donor" and self.pair_id is not None:
             raise ValueError(f"{self.id}: a donor corridor is never paired")
         if self.supersedes == self.id:
@@ -109,6 +120,13 @@ class Panel(BaseModel):
             if len({c.endpoints for c in group}) > 1:
                 raise ValueError(f"pair {pair} {direction}: corridors must share origin and "
                                  "destination")
+            declared: dict[tuple[Point, ...], str] = {}
+            for c in group:
+                if c.via_points in declared:
+                    raise ValueError(
+                        f"pair {pair} {direction}: {declared[c.via_points]} and {c.id} declare "
+                        "identical via_points, so they would measure the same road")
+                declared[c.via_points] = c.id
             cores[pair][direction] = next(c for c in group if c.corridor_class == "core")
         for pair, directions in cores.items():
             if "ab" in directions and "ba" in directions:

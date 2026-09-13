@@ -37,10 +37,24 @@ def test_seeded_panel_is_valid_and_collects_nothing():
 
 @pytest.mark.parametrize("mutate, message", [
     (lambda cs: cs.append(copy.deepcopy(cs[0])), "duplicate corridor id"),
-    (lambda cs: by_id(cs, "placeholder-02").update(via=[]), "via points"),
+    # every class needs via_points: TomTom must never choose a corridor's road
+    (lambda cs: by_id(cs, "placeholder-02").update(via_points=[]), "no via_points"),
+    (lambda cs: by_id(cs, "placeholder-01").update(via_points=[]), "no via_points"),
+    (lambda cs: by_id(cs, "placeholder-09").update(via_points=[]), "no via_points"),
+    (lambda cs: by_id(cs, "placeholder-04").pop("via_points"), "via_points"),
+    (lambda cs: by_id(cs, "placeholder-04").update(via_points=[{"lat": 17.46, "lon": 78.4}] * 26),
+     "at most 25"),
+    (lambda cs: by_id(cs, "placeholder-02").update(via_points=[{"lat": 18.2, "lon": 78.357}]),
+     "outside Greater Hyderabad"),
+    (lambda cs: by_id(cs, "placeholder-02").update(via=[{"lat": 17.464, "lon": 78.357}]),
+     "Extra inputs"),
+    # a pair whose members share via_points would measure one road twice
+    (lambda cs: by_id(cs, "placeholder-02").update(
+        via_points=copy.deepcopy(by_id(cs, "placeholder-01")["via_points"])),
+     "identical via_points"),
     (lambda cs: by_id(cs, "placeholder-09").update(pair_id="PL-09"), "never paired"),
     (lambda cs: by_id(cs, "placeholder-02").update(dest_lat=17.45), "share origin and destination"),
-    (lambda cs: by_id(cs, "placeholder-02").update({"class": "core", "via": []}), "one core"),
+    (lambda cs: by_id(cs, "placeholder-02").update({"class": "core"}), "one core"),
     (lambda cs: by_id(cs, "placeholder-03").update(dest_lat=17.490), "must reverse"),
     (lambda cs: by_id(cs, "placeholder-04").update(supersedes="placeholder-05"), "not retired"),
     (lambda cs: by_id(cs, "placeholder-04").update(supersedes="nowhere"), "not declared"),
