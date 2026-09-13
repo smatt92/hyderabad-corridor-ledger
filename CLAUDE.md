@@ -201,6 +201,31 @@ retired) and `supersedes`.
   real corridors replace them and are set `active`. Tests read the frozen
   copy in `collector/tests/fixtures/`, never the live file.
 
+### Seeding rule: bank the pre-period before the intervention opens
+
+An intervention audit compares a corridor with its donors over twelve 14-day
+blocks (168 days, 24 weeks) before the change. Samples are never backfilled, so
+an intervention that opens before its corridor has 24 weeks of Tier A data is
+unauditable, however good the estimator. This decides seeding order.
+
+- Seed first every corridor on or beside infrastructure already under
+  construction or due to open within about six months: flyovers, grade
+  separations, new links, metro works that take lanes. Each week of delay is a
+  week of pre-period that can never be recovered.
+- Those corridors, and the donors they will be compared with, are Tier A.
+  Tier B has 238 peak slots in a 14-day block, so a block misses the 200-call
+  floor once 16% of calls fail. In simulation 30-62% of Tier B audits were
+  withheld and a nominal 20 donors shrank to 9-12, too few for any placebo p to
+  reach 0.05.
+- An audit needs at least 19 usable donors after exclusions; declare 20 or
+  more, since failures exclude some. The budget (2,400 calls a day, 15% held
+  back, 42 calls a day per Tier A corridor) fits about 48 Tier A corridors.
+- What it can detect (simulation, Tier A, 28-day post period, 80% power): a BTI
+  change of 0.20, about a third of a typical corridor's BTI, needs 24 weeks of
+  pre-period at 20 donors (12 weeks at 40). 0.15 needs 30 weeks. 0.10 is not
+  reliably detected at any pre-period length up to 60 weeks. See
+  `docs/methodology.md`.
+
 ### Schedule, budget and retries
 
 - Slots, IST: 06:30-10:30 and 16:30-21:00, every 15 minutes for Tier A and
@@ -325,7 +350,9 @@ densities and requires no effect.
 - Every published p95, and every value built on one, carries a percentile
   bootstrap interval from 2,000 resamples, seeded from the statistic's key so
   it reproduces. The ledger shows the point value; the expanded row shows
-  "0.42 [0.31, 0.58]".
+  "0.42 [0.31, 0.58]". The intervention audit is the exception: its effect
+  compares corridors across weeks, where resampling calls understates the
+  spread, so it publishes a placebo rank and no interval.
 - Any view showing a p95-derived metric states its pooling window in visible
   text: the dates, what was pooled, and the count.
 - Tier A pooling yields ~360 calls per corridor-hour at 90 days. Tiers B and C
@@ -348,16 +375,19 @@ Other definitions worth knowing before changing them:
   TTI, so `before_after` may be read every day. A fixed-horizon p-value may
   not be.
 - The intervention audit (`metrics/audit.py`) is a synthetic control on pooled
-  BTI. Donor weights are fitted on six 14-day pre blocks, each block's BTI
+  BTI. Donor weights are fitted on twelve 14-day pre blocks, each block's BTI
   pooled at the p95 floor. The headline compares BTI pooled once over the whole
   pre and post periods. The donor pool excludes every treated corridor and the
   treated corridor's own pair: traffic diverting onto a paired alternate is a
   consequence of the intervention, so it is contaminated, not a control.
   Weights are published donor by donor, with every exclusion's reason.
 - Placebo runs repeat the procedure with each donor as the treated corridor.
-  The treated post/pre RMSPE ratio is ranked among them, and the published
-  verdict says plainly when the effect is not extreme, including when there
-  are too few placebos for any effect to be.
+  The statistic ranked is the standardised effect, |effect| over each
+  corridor's own leave-one-block-out pre RMSPE. Raw |effect| ranked a noisy
+  treated corridor as extreme on 11-12% of no-effect panels (40 donors); the
+  in-sample RMSPE ratio breaks on exact pre fits. The published verdict says
+  plainly when the effect is not extreme, including when there are too few
+  placebos for any effect to be.
 - A placebo p is never shown bare. With n placebos the smallest attainable p is
   1/(n+1), so p = 0.08 with 25 placebos means rank 2 of 26. Every p is
   published with the treated corridor's rank, the placebo count and that floor
@@ -372,20 +402,25 @@ Other definitions worth knowing before changing them:
   rate and BTI beside the donors', and the estimate rerun at stricter (1.25x
   and 1.5x the floor) and looser (one short block) completeness thresholds
   (`audit_sensitivity`). `sensitivity_material` is true when a variant's effect
-  leaves the headline interval or flips sign; the frontend then says the
+  flips sign or its placebo verdict changes; the frontend then says the
   estimate depends on the threshold.
 - The equal-weight mean of the same donors is published as a cross-check,
-  with the gap between the two estimates and whether they disagree.
+  with the gap between the two estimates and whether they point in opposite
+  directions (`estimators_disagree`).
 - There is no sequential test. The audit reports once, after the post period
   closes. The block confidence sequence was removed: at six pre blocks and 28
   post days it excluded zero on 12-18% of no-effect panels against a nominal
   5% (`docs/audit_power.md`). Do not reintroduce a sequential read without a
   calibration run that holds size.
-- The interval is a call-level percentile bootstrap. In simulation it held
-  size (6%) and coverage (97% mean, 91% worst) across Tiers A and B, 6-18 pre
-  blocks, 20-40 donors and 28-56 post days. Whole-week and whole-block
-  resampling did not (11% and 26% size): a post period has too few units.
-- An audit needs 84 pre days, 9 settling days and 28 post days of data. Until
+- No interval is published for the audit effect. A call-level bootstrap
+  interval held size (6%) and coverage (97%) when corridors drifted little from
+  week to week, and failed when weekly drift was 2.5 times larger (20% size,
+  80-86% coverage). Whole-week and whole-block resampling failed everywhere
+  (11% and 26% size). No observable diagnostic separated the two regimes, so
+  the inference is the placebo rank and its floor. Do not reintroduce an
+  interval without a calibration run on measured Hyderabad drift that holds
+  size and coverage.
+- An audit needs 168 pre days, 9 settling days and 28 post days of data. Until
   then its status says why it is withheld, and every period boundary is
   recorded, never inferred.
 
