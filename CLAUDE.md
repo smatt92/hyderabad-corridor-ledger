@@ -222,7 +222,8 @@ unauditable, however good the estimator. This decides seeding order.
 - An audit needs at least 19 usable donors after exclusions; declare 20 or
   more, since failures exclude some. The budget (2,400 calls a day, 15% held
   back, 42 calls a day per Tier A corridor) fits about 48 Tier A corridors.
-- What it can detect (simulation, Tier A, 28-day post period, 80% power): a BTI
+- What it can detect (simulation, Tier A, 28-day post period, 80% power; a
+  56-day post period is untested): a BTI
   change of 0.20, about a third of a typical corridor's BTI, needs 24 weeks of
   pre-period at 20 donors (12 weeks at 40). 0.15 needs 30 weeks. 0.10 is not
   reliably detected at any pre-period length up to 60 weeks. See
@@ -394,7 +395,14 @@ Other definitions worth knowing before changing them:
   treated corridor as extreme on 11-12% of no-effect panels (40 donors); the
   in-sample RMSPE ratio breaks on exact pre fits. The published verdict says
   plainly when the effect is not extreme, including when there are too few
-  placebos for any effect to be.
+  placebos for any effect to be, and ends by stating how many audits in n + 1
+  read extreme by chance with no effect (1 in 22 with 21 placebos): a single
+  extreme verdict is not a finding.
+- The audit view and `docs/methodology.md` open with the capability statement:
+  flyover-scale changes are detectable, a signal retiming is not, a "not
+  extreme" verdict for a small intervention says nothing about whether it
+  worked, Tier B cannot be audited, and a 56-day post period is untested. Keep
+  it prominent; it is the project's honest limit, not a footnote.
 - A placebo p is never shown bare. With n placebos the smallest attainable p is
   1/(n+1), so p = 0.08 with 25 placebos means rank 2 of 26. Every p is
   published with the treated corridor's rank, the placebo count and that floor

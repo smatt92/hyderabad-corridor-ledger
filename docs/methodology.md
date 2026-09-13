@@ -5,6 +5,27 @@ can detect. Every number in the power section comes from simulated panels
 (`scripts/dev/audit_power.py`, full tables in [audit_power.md](audit_power.md)),
 not from Hyderabad data. Re-estimate once real data covers a full audit.
 
+## What this audit can and cannot detect
+
+**It detects flyover-scale changes. It cannot detect a signal retiming.** With
+24 weeks of pre-period, 20 Tier A donor corridors and a 28-day post period, it
+reliably detects a change in the buffer time index of about 0.20, roughly a
+third of a typical corridor's value: the scale of a flyover or grade separation
+that removes a corridor's recurring breakdown. A signal retiming, an enforcement
+drive or a turning restriction is usually smaller than that. **A "not extreme"
+verdict for a small intervention says nothing about whether it worked.**
+
+**Tier B corridors cannot be audited.** Their 14-day blocks miss the 200-call
+floor too often: in simulation 30–62% of Tier B audits were withheld and too few
+donors remained for any placebo p to reach 0.05.
+
+**A single extreme verdict is not a finding.** With no effect at all, about 1
+audit in 20 reads "extreme" by chance: exactly floor(0.05 × (n + 1)) audits in
+n + 1 for n placebos, 1 in 22 with 21. Every published verdict says so.
+
+**These figures assume a 28-day post period. A 56-day post period is untested.**
+The evidence and its limits follow.
+
 ## What is estimated
 
 The audit asks whether a corridor's buffer time index (BTI, (p95 − mean) /
@@ -66,7 +87,11 @@ what comparable untreated corridors did over the same days.
   p = r / (n + 1); ties count against the treated corridor, and no p can be
   below 1 / (n + 1). With fewer than 19 placebos no effect can reach p ≤ 0.05.
   The published p is always shown with its rank, the placebo count and that
-  floor.
+  floor, and with how many audits in n + 1 would read extreme by chance with no
+  effect at all: floor(0.05 × (n + 1)), one in 22 with 21 placebos. The rank
+  rule holds that rate by construction, so the fixture's bus-lane audit reading
+  p = 0.045 with nothing injected in that direction is the rule working, not a
+  fault, and a single extreme verdict is not a finding.
 - **The ranked statistic is the standardised effect**, |effect| divided by the
   corridor's own leave-one-block-out pre RMSPE. Three candidates were tested
   (audit_power.md sections 3 and 4):
@@ -147,7 +172,7 @@ the hull problem.
 
 Minimum detectable effect (MDE): the smallest BTI change the standardised
 placebo rank detects in at least 80% of simulated panels, Tier A, 28-day post
-period, 50 panels per cell. Percentages are of 0.54, the median pooled peak BTI
+period, 50 panels per cell. A 56-day post period is untested for this rule. Percentages are of 0.54, the median pooled peak BTI
 of a simulated corridor (interquartile range 0.49–0.59); real Hyderabad values
 are unknown until data arrives.
 
