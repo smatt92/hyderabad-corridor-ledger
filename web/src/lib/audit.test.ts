@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { Audit, AuditBlocks, AuditDonor, AuditPlacebo } from "../api/types";
 import {
-  NO_INTERVAL, NO_SEQUENTIAL_TEST, auditPeriods, blockRows, blockSegments, dayNumber, donorStatusText, donorWeightText,
-  estimatorStatement, exclusionText, fmtRate, fmtSettling, incompletePreComparison, orderDonors, placeboFloor,
-  placeboResolutionText, postPeriodOpen, rankStdEffects, selectionBiasText, sensitivityStatement, sensitivityStatusText,
-  settlingWindow, statusNotice, thinnestBlock, variantText,
+  CAPABILITY, NO_INTERVAL, NO_SEQUENTIAL_TEST, auditPeriods, blockRows, blockSegments, chanceExtremeCount, chanceExtremeText,
+  dayNumber, donorStatusText, donorWeightText, estimatorStatement, exclusionText, fmtRate, fmtSettling, incompletePreComparison,
+  orderDonors, placeboResolutionText, placeboTestText, postPeriodOpen, rankStdEffects, selectionBiasText, sensitivityStatement,
+  sensitivityStatusText, settlingWindow, statusNotice, thinnestBlock, variantText,
 } from "./audit";
 import { MINUS } from "./format";
 import { EM_DASH } from "./route";
@@ -77,6 +77,15 @@ const donor = (over: Partial<AuditDonor>): AuditDonor => ({
 
 const placebo = (corridor_id: string, std_effect: number | null | undefined, poor_pre_fit = false, rmspe_ratio: number | null = 1.5): AuditPlacebo => ({
   corridor_id, effect: 0.01, pre_rmspe: 0.02, cv_pre_rmspe: 0.03, std_effect, post_rmspe: 0.03, rmspe_ratio, poor_pre_fit, weights: {},
+});
+
+describe("capability", () => {
+  it("states what the audit can and cannot detect, verbatim, including that a 56-day post period is untested", () => {
+    expect(CAPABILITY.title).toBe("What this audit can and cannot detect");
+    expect(CAPABILITY.body).toBe(
+      "With 24 weeks of pre-period, 20 Tier A donor corridors and a 28-day post period, it reliably detects a change in the buffer time index of about 0.20, roughly a third of a typical corridor's value. That is the scale of a flyover or grade separation that removes a corridor's recurring breakdown. It cannot detect a signal retiming or a change of similar size, so a “not extreme” verdict for a small intervention says nothing about whether it worked. Tier B corridors cannot be audited. These figures come from simulation with a 28-day post period; a 56-day post period is untested.",
+    );
+  });
 });
 
 describe("periods", () => {
@@ -238,8 +247,26 @@ describe("placebo ranking", () => {
     expect(placeboResolutionText(2 / 26, 2, 25, 1 / 26)).toBe("p = 0.08 · rank 2 of 26 · 25 placebos, floor 1/26 = 0.038");
     expect(placeboResolutionText(0.5, 1, 1, 0.5)).toBe("p = 0.50 · rank 1 of 2 · 1 placebo, floor 1/2 = 0.500");
     expect(placeboResolutionText(null, undefined, null, undefined)).toBe(`p = ${EM_DASH} · rank ${EM_DASH} of ${EM_DASH} · ${EM_DASH} placebos, floor 1/${EM_DASH} = ${EM_DASH}`);
-    expect(placeboFloor(25)).toBe(1 / 26);
-    expect(placeboFloor(null)).toBe(null);
+  });
+
+  it("counts the audits in n + 1 that would read extreme by chance", () => {
+    expect(chanceExtremeCount(21, 0.05)).toBe(1);
+    expect(chanceExtremeText(21, 0.05)).toBe("1 in 22 read extreme by chance");
+    expect(chanceExtremeCount(40, 0.05)).toBe(2);
+    expect(chanceExtremeText(40, 0.05)).toBe("2 in 41 read extreme by chance");
+    expect(chanceExtremeCount(3, 0.05)).toBe(0);
+    expect(chanceExtremeText(3, 0.05)).toBe("no effect can read extreme with 3 placebos");
+    // alpha × (n + 1) exactly whole: the 1e-9 keeps floating-point error from dropping it
+    expect(chanceExtremeText(19, 0.05)).toBe("1 in 20 read extreme by chance");
+    expect(chanceExtremeText(9, 0.1)).toBe("1 in 10 read extreme by chance");
+    expect(chanceExtremeText(21, undefined)).toBe("1 in 22 read extreme by chance");
+    expect(chanceExtremeText(1, 0.05)).toBe("no effect can read extreme with 1 placebo");
+    expect(chanceExtremeCount(null, 0.05)).toBe(null);
+  });
+
+  it("puts the chance expectation beside every placebo p line", () => {
+    expect(placeboTestText(1 / 22, 1, 21, 1 / 22, 0.05)).toBe("p = 0.05 · rank 1 of 22 · 21 placebos, floor 1/22 = 0.045 · 1 in 22 read extreme by chance");
+    expect(placeboTestText(0.5, 2, 3, 0.25, 0.05)).toBe("p = 0.50 · rank 2 of 4 · 3 placebos, floor 1/4 = 0.250 · no effect can read extreme with 3 placebos");
   });
 });
 

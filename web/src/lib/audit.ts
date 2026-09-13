@@ -4,10 +4,11 @@ import { EM_DASH } from "./route";
 
 /**
  * Pure helpers for the intervention audit. Every number they print comes from
- * the audit payload, except the placebo floor of a sensitivity variant, which
- * is 1 / (placebos + 1) by definition. A date is the one the pipeline recorded;
- * the only derived dates are settling boundaries the payload omits, and those
- * are always printed with the word INFERRED. Nothing fills in a missing value.
+ * the audit payload, except the count of audits that would read extreme by
+ * chance, which is floor(alpha × (placebos + 1)) by definition. A date is the
+ * one the pipeline recorded; the only derived dates are settling boundaries the
+ * payload omits, and those are always printed with the word INFERRED. Nothing
+ * fills in a missing value.
  */
 
 type Num = number | null | undefined;
@@ -25,6 +26,20 @@ export function fmtRate(v: Num): string {
   const r = finite(v);
   return r === null ? EM_DASH : `${Math.round(r * 100)}%`;
 }
+
+// ---------------------------------------------------------------------------
+// Capability
+
+/**
+ * What the audit can and cannot detect, from simulation. Shown prominently for
+ * every intervention and every status, so a "not extreme" verdict is never read
+ * as evidence that a small intervention did nothing. The figures hold only for
+ * a 28-day post period, and the text says so.
+ */
+export const CAPABILITY = {
+  title: "What this audit can and cannot detect",
+  body: "With 24 weeks of pre-period, 20 Tier A donor corridors and a 28-day post period, it reliably detects a change in the buffer time index of about 0.20, roughly a third of a typical corridor's value. That is the scale of a flyover or grade separation that removes a corridor's recurring breakdown. It cannot detect a signal retiming or a change of similar size, so a “not extreme” verdict for a small intervention says nothing about whether it worked. Tier B corridors cannot be audited. These figures come from simulation with a 28-day post period; a 56-day post period is untested.",
+} as const;
 
 // ---------------------------------------------------------------------------
 // Settling period
@@ -243,12 +258,6 @@ export function selectionBiasText(floor: number): string {
 // ---------------------------------------------------------------------------
 // Placebos
 
-/** The smallest attainable permutation p with this many placebos: 1 / (placebos + 1). */
-export function placeboFloor(nPlacebos: Num): number | null {
-  const n = finite(nPlacebos);
-  return n === null ? null : 1 / (n + 1);
-}
-
 /**
  * A permutation p-value is never shown bare: "p = 0.08 · rank 2 of 26 · 25
  * placebos, floor 1/26 = 0.038". Rank is among the treated corridor and its
@@ -260,6 +269,34 @@ export function placeboResolutionText(p: Num, rank: Num, nPlacebos: Num, pFloor:
   const f = finite(pFloor);
   const of = n === null ? EM_DASH : String(n + 1);
   return `p = ${fmtNum(p, 2)} · rank ${r ?? EM_DASH} of ${of} · ${n ?? EM_DASH} ${plural(n, "placebo", "placebos")}, floor 1/${of} = ${f === null ? EM_DASH : f.toFixed(3)}`;
+}
+
+const DEFAULT_ALPHA = 0.05;
+
+/**
+ * How many audits in placebos + 1 would read extreme with no effect at all:
+ * floor(alpha × (placebos + 1)), the 1e-9 absorbing floating-point error in the
+ * product. Zero when the floor 1 / (placebos + 1) is above alpha. Null when the
+ * placebo count is unpublished.
+ */
+export function chanceExtremeCount(nPlacebos: Num, alpha: Num): number | null {
+  const n = finite(nPlacebos);
+  if (n === null) return null;
+  return Math.floor((finite(alpha) ?? DEFAULT_ALPHA) * (n + 1) + 1e-9);
+}
+
+/** The false-positive expectation in short form: "1 in 22 read extreme by chance". */
+export function chanceExtremeText(nPlacebos: Num, alpha: Num): string {
+  const n = finite(nPlacebos);
+  const k = chanceExtremeCount(n, alpha);
+  if (n === null || k === null) return `${EM_DASH} in ${EM_DASH} read extreme by chance`;
+  if (k === 0) return `no effect can read extreme with ${n} ${plural(n, "placebo", "placebos")}`;
+  return `${k} in ${n + 1} read extreme by chance`;
+}
+
+/** Every placebo p line the view shows, with its false-positive expectation beside it. */
+export function placeboTestText(p: Num, rank: Num, nPlacebos: Num, pFloor: Num, alpha: Num): string {
+  return `${placeboResolutionText(p, rank, nPlacebos, pFloor)} · ${chanceExtremeText(nPlacebos, alpha)}`;
 }
 
 export interface RankedPlacebo {

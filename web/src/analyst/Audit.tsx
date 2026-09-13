@@ -6,8 +6,8 @@ import { BlockChart } from "../charts/BlockChart";
 import { PlaceboRanks } from "../charts/PlaceboRanks";
 import { SlopeChart } from "../charts/SlopeChart";
 import {
-  type BlockRow, NO_INTERVAL, NO_SEQUENTIAL_TEST, auditPeriods, blockRows, donorStatusText, donorWeightText, estimatorStatement,
-  fmtRate, fmtSettling, incompletePreComparison, orderDonors, placeboFloor, placeboResolutionText, postPeriodOpen, rankStdEffects,
+  type BlockRow, CAPABILITY, NO_INTERVAL, NO_SEQUENTIAL_TEST, auditPeriods, blockRows, donorStatusText, donorWeightText, estimatorStatement,
+  fmtRate, fmtSettling, incompletePreComparison, orderDonors, placeboTestText, postPeriodOpen, rankStdEffects,
   selectionBiasText, sensitivityStatement, sensitivityStatusText, settlingWindow, statusNotice, variantText,
 } from "../lib/audit";
 import { CARD, FAINT, INK, MID, MONO, RULE, RUST, SOFT, TEXT } from "../lib/color";
@@ -68,6 +68,19 @@ function Statement({ alert, headline, detail }: { alert: boolean; headline: stri
     <div style={{ borderLeft: `3px solid ${alert ? RUST : FAINT}`, background: alert ? "#f6ede4" : "transparent", padding: "8px 12px", fontSize: "13px", lineHeight: 1.55, color: TEXT, maxWidth: "80ch" }}>
       <div style={{ fontWeight: 600, color: alert ? RUST : INK, marginBottom: "2px" }}>{headline}</div>
       <div>{detail}</div>
+    </div>
+  );
+}
+
+/**
+ * What the audit can and cannot detect, bordered and placed under the intro,
+ * above the picker, so it is read before any verdict whatever the status.
+ */
+function Capability() {
+  return (
+    <div style={{ border: `1.5px solid ${INK}`, borderLeft: `4px solid ${RUST}`, background: CARD, padding: "12px 16px", maxWidth: "88ch", marginBottom: "16px" }}>
+      <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 600, color: INK }}>{CAPABILITY.title}</h3>
+      <p style={{ margin: "6px 0 0", fontSize: "13.5px", lineHeight: 1.55, color: TEXT }}>{CAPABILITY.body}</p>
     </div>
   );
 }
@@ -164,7 +177,7 @@ function DonorTable({ donors, floor }: { donors: AuditDonor[]; floor: number }) 
   );
 }
 
-function SensitivityTable({ rows }: { rows: AuditSensitivity[] }) {
+function SensitivityTable({ rows, alpha }: { rows: AuditSensitivity[]; alpha: number }) {
   return (
     <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "1080px" }}>
@@ -197,7 +210,7 @@ function SensitivityTable({ rows }: { rows: AuditSensitivity[] }) {
               <td style={num()}>{count(r.n_fit_blocks)}</td>
               <td style={num()}>{fmtSigned(r.effect)}</td>
               <td style={num()}>{fmtSigned(r.equal_effect)}</td>
-              <td style={cell({ whiteSpace: "nowrap" })}>{placeboResolutionText(r.placebo_p_value, r.placebo_rank, r.n_placebos, placeboFloor(r.n_placebos))}</td>
+              <td style={cell({ whiteSpace: "nowrap" })}>{placeboTestText(r.placebo_p_value, r.placebo_rank, r.n_placebos, r.placebo_p_floor, alpha)}</td>
             </tr>
           ))}
         </tbody>
@@ -246,15 +259,15 @@ export function Audit({ interventions, corridors }: { interventions: Interventio
   );
 
   const head = (
-    <SectionHead
-      title="Intervention audit"
-      sub={SUB}
-      right={
-        interventions.length ? (
+    <div>
+      <SectionHead title="Intervention audit" sub={SUB} />
+      <Capability />
+      {interventions.length ? (
+        <div style={{ marginBottom: "16px" }}>
           <Select label="Intervention" value={id} options={interventions.map((iv) => ({ value: iv.id, label: `${iv.description} · ${code(iv.corridor_id)}` }))} onChange={setId} />
-        ) : null
-      }
-    />
+        </div>
+      ) : null}
+    </div>
   );
 
   if (interventions.length === 0) {
@@ -335,7 +348,7 @@ export function Audit({ interventions, corridors }: { interventions: Interventio
       <div style={{ marginBottom: "14px" }}>
         <Statement alert={sensitivity.tone === "material"} headline={sensitivity.headline} detail={sensitivity.detail} />
       </div>
-      <SensitivityTable rows={sensitivityRows} />
+      <SensitivityTable rows={sensitivityRows} alpha={audit.alpha} />
     </Section>
   );
 
@@ -383,7 +396,7 @@ export function Audit({ interventions, corridors }: { interventions: Interventio
   }
 
   const estimators = estimatorStatement(audit);
-  const resolution = placeboResolutionText(audit.placebo_p_value, audit.placebo_rank, audit.n_placebos, audit.placebo_p_floor);
+  const resolution = placeboTestText(audit.placebo_p_value, audit.placebo_rank, audit.n_placebos, audit.placebo_p_floor, audit.alpha);
   const ranked = rankStdEffects({ corridor_id: corridor.id, stdEffect: audit.std_effect }, placebos);
 
   return (

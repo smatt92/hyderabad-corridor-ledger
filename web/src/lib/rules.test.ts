@@ -73,6 +73,15 @@ describe("intervention audit", () => {
       expect(code(join(SRC, name))).not.toMatch(interval);
     });
   }
+
+  it("the view states its capability in the heading shared by every status", () => {
+    const view = code(join(SRC, "analyst/Audit.tsx"));
+    expect(view).toMatch(/const head = \([\s\S]*?<Capability \/>[\s\S]*?<Select/);
+  });
+
+  it("the view prints no placebo p without the chance expectation beside it", () => {
+    expect(code(join(SRC, "analyst/Audit.tsx"))).not.toMatch(/placeboResolutionText\s*\(/);
+  });
 });
 
 describe("dependency boundaries", () => {

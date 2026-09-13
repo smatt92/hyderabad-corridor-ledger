@@ -325,7 +325,7 @@ export interface Audit {
   /** (1 + placebos with a standardised effect at least as large) / (1 + placebos). */
   placebo_p_value: Maybe<number>;
   placebo_extreme: boolean;
-  /** A plain sentence written by the pipeline. Shown verbatim. */
+  /** Plain sentences written by the pipeline, ending with the chance expectation when the floor is at most alpha. Shown verbatim. */
   placebo_verdict: Maybe<string>;
   /** Treated rank by std_effect among treated + placebos; 1 is largest, ties count against the treated corridor. Null when std_effect is null. */
   placebo_rank?: Maybe<number>;
@@ -393,6 +393,8 @@ export interface AuditSensitivity {
   placebo_rank: Maybe<number>;
   n_placebos: Maybe<number>;
   placebo_p_value: Maybe<number>;
+  /** The smallest attainable p for this variant: 1 / (n_placebos + 1). */
+  placebo_p_floor: Maybe<number>;
 }
 
 export interface AuditPlacebo {
