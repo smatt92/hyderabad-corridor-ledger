@@ -66,11 +66,13 @@ def cells_for(tti, missing=None):
     return cells
 
 
-def audit(frames, pairs=None, params=PARAMS, missing=None):
+def audit(frames, pairs=None, params=PARAMS, missing=None, treatment=None):
     tti = pd.concat(frames, ignore_index=True)
     ids = sorted(tti["corridor_id"].unique())
     corridors = pd.DataFrame({"corridor_id": ids,
-                              "pair_id": [(pairs or {}).get(c) for c in ids]})
+                              "pair_id": [(pairs or {}).get(c) for c in ids],
+                              "treatment_status": [(treatment or {}).get(c, "untreated")
+                                                   for c in ids]})
     interventions = pd.DataFrame({"id": ["works"], "corridor_id": ["t"],
                                   "effective_at": [EFFECTIVE]})
     return intervention_audits(tti, cells_for(tti, missing), corridors, interventions, params)
@@ -219,6 +221,18 @@ def test_excluded_donors_and_their_missingness_are_published():
     assert row["included_pre_missing_rate"] == 0.0
     assert row["excluded_pre_missing_rate"] == pytest.approx(50 / 1200)
     assert not np.isnan(row["excluded_pre_bti"]) and not np.isnan(row["included_pre_bti"])
+
+
+def test_roads_under_construction_or_treated_are_never_donors():
+    tables = audit(by_hand_panel(), PAIRS, missing=D3_MISSING,
+                   treatment={"d4": "under_construction", "d2": "treated", "d1": "will_be_treated"})
+    donors = tables["audit_donors"].set_index("corridor_id")
+    assert donors.loc["d4", "exclusion"] == "under_works" and not donors.loc["d4", "included"]
+    assert donors.loc["d2", "exclusion"] == "treated"
+    # works announced but not begun leave the road a valid control
+    assert donors.loc["d1", "included"]
+    variants = tables["audit_sensitivity"].set_index("variant")
+    assert (variants["n_donors"] <= 2).all()  # neither d2 nor d4 re-enters any variant
 
 
 def test_sensitivity_to_the_completeness_threshold():

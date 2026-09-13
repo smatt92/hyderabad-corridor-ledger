@@ -9,10 +9,11 @@ Periods are fixed by the intervention date:
   settle  audit_settle_days days from the change, excluded
   post    audit_post_blocks blocks after settling
 
-Donors are corridors that no intervention touches and that are not in the
-treated corridor's pair: traffic diverting onto a paired alternate is a
-consequence of the intervention, so that corridor is contaminated, not a
-control. A donor also needs every pre block at the floor and, once the post
+Donors are corridors that no intervention touches, whose road is not under
+construction or already treated (corridors.treatment_status, from the works
+register), and that are not in the treated corridor's pair: traffic diverting
+onto a paired alternate is a consequence of the intervention, so that corridor
+is contaminated, not a control. A donor also needs every pre block at the floor and, once the post
 period has closed, its pooled post BTI at the floor. Every corridor considered
 is published with its weight or the reason it was excluded.
 
@@ -484,7 +485,8 @@ class Audit:
 def audit_one(calls: Calls, cells: pd.DataFrame, pairs: dict, intervention_id: str,
               treated: str, treated_all: set[str], effective_day: pd.Timestamp,
               last_day: pd.Timestamp, params: Params,
-              sensitivity: bool = True) -> dict[str, list[dict]]:
+              sensitivity: bool = True,
+              under_works: frozenset[str] = frozenset()) -> dict[str, list[dict]]:
     a = Audit(calls, pairs, intervention_id, treated, effective_day, last_day, params)
     span, floor = a.span, params.p95_min_samples
     all_blocks = list(range(params.audit_pre_blocks))
@@ -524,6 +526,8 @@ def audit_one(calls: Calls, cells: pd.DataFrame, pairs: dict, intervention_id: s
         short = sum(n < floor for n in counts)
         if c in treated_all:
             reason = "treated"
+        elif c in under_works:
+            reason = "under_works"
         elif a.same_pair(treated, c):
             reason = "same_pair"
         elif short:
@@ -619,7 +623,8 @@ def audit_one(calls: Calls, cells: pd.DataFrame, pairs: dict, intervention_id: s
 
     if sensitivity:
         eligible = [c for c in donors
-                    if donors[c]["exclusion"] not in ("treated", "same_pair") and post_ok[c]]
+                    if donors[c]["exclusion"] not in ("treated", "under_works", "same_pair")
+                    and post_ok[c]]
         for name, multiple, max_short in VARIANTS:
             block_floor = math.ceil(multiple * floor)
             pool = [c for c in eligible if sum(n < block_floor for n in pre_counts[c]) <= max_short]
@@ -659,15 +664,19 @@ def intervention_audits(
     rows: dict[str, list[dict]] = {name: [] for name in TABLES}
     if not interventions.empty and not tti.empty:
         calls = Calls(tti[pooled.is_peak(tti["requested_at"], params)])
-        declared = corridors.reindex(columns=["corridor_id", "pair_id"])
+        declared = corridors.reindex(columns=["corridor_id", "pair_id", "treatment_status"])
         pairs = {r.corridor_id: (None if pd.isna(r.pair_id) else r.pair_id)
                  for r in declared.itertuples(index=False)}
+        status = dict(zip(declared["corridor_id"], declared["treatment_status"], strict=True))
+        under_works = frozenset(c for c, s in status.items() if s == "under_construction")
         last_day = cells.loc[cells["n_ok"] > 0, "day"].max()
-        treated_all = set(interventions["corridor_id"])
+        treated_all = set(interventions["corridor_id"]) | {c for c, s in status.items()
+                                                           if s == "treated"}
         for iv in interventions.itertuples(index=False):
             effective = local_day_hour(pd.to_datetime(pd.Series([iv.effective_at]), utc=True))
             result = audit_one(calls, cells, pairs, iv.id, iv.corridor_id, treated_all,
-                               effective["day"].iloc[0], last_day, params, sensitivity)
+                               effective["day"].iloc[0], last_day, params, sensitivity,
+                               under_works)
             for name, found in result.items():
                 rows[name].extend(found)
     return {name: pd.DataFrame(rows[name]).reindex(columns=columns)

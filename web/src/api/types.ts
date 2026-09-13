@@ -340,7 +340,7 @@ export interface Audit {
 }
 
 /** Why a corridor is not in the donor pool. */
-export type DonorExclusion = "treated" | "same_pair" | "incomplete_pre" | "insufficient_post";
+export type DonorExclusion = "treated" | "under_works" | "same_pair" | "incomplete_pre" | "insufficient_post";
 
 export interface AuditDonor {
   corridor_id: string;

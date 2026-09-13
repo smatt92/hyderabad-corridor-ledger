@@ -123,7 +123,7 @@ def load_archive(directory: Path) -> pd.DataFrame:
 
 
 def load_corridors(db: Supabase) -> pd.DataFrame:
-    columns = ["id", "tier", "pair_id", "class"]
+    columns = ["id", "tier", "pair_id", "class", "treatment_status"]
     rows = db.get("corridors", {"select": ",".join(columns), "order": "id.asc"})
     frame = pd.DataFrame(rows, columns=columns).rename(columns={"id": "corridor_id"})
     return with_pair_role(frame)

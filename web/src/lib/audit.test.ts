@@ -158,7 +158,8 @@ describe("blocks", () => {
 
 describe("donors", () => {
   it("says why each corridor is excluded, in plain words", () => {
-    expect(exclusionText("treated", 200)).toBe("Excluded: treated by a declared intervention, so not a control.");
+    expect(exclusionText("treated", 200)).toBe("Excluded: treated by a declared intervention or recorded as treated in the works register, so not a control.");
+    expect(exclusionText("under_works", 200)).toBe("Excluded: its road is under construction, so it is not a control.");
     expect(exclusionText("same_pair", 200)).toBe(
       "Excluded: on the treated corridor’s own pair. Traffic diverting onto the paired alternate is a consequence of the intervention, so this corridor is contaminated, not a control.",
     );

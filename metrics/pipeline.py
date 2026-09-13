@@ -29,7 +29,7 @@ from metrics.recovery import cox_model, km_by_corridor, recovery_events
 from metrics.seasonal import stl_decompose
 from metrics.worst15 import worst_15
 
-CORRIDOR_COLUMNS = ["corridor_id", "tier", "pair_id", "role"]
+CORRIDOR_COLUMNS = ["corridor_id", "tier", "pair_id", "role", "treatment_status"]
 METRICS_DAILY_COLUMNS = [
     "corridor_id", "day", "hour", "n_expected", "n_attempted", "n_ok", "missing_rate",
     "low_confidence", "tt_mean_s", "ff_tomtom_s", "ff_p5_s", "tti_tomtom", "tti_p5",

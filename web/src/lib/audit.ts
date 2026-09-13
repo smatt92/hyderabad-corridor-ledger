@@ -184,7 +184,9 @@ export function blockSegments(rows: readonly BlockRow[], pick: (row: BlockRow) =
 export function exclusionText(exclusion: DonorExclusion, floor: number): string {
   switch (exclusion) {
     case "treated":
-      return "Excluded: treated by a declared intervention, so not a control.";
+      return "Excluded: treated by a declared intervention or recorded as treated in the works register, so not a control.";
+    case "under_works":
+      return "Excluded: its road is under construction, so it is not a control.";
     case "same_pair":
       return "Excluded: on the treated corridor’s own pair. Traffic diverting onto the paired alternate is a consequence of the intervention, so this corridor is contaminated, not a control.";
     case "incomplete_pre":
@@ -206,7 +208,7 @@ export function donorWeightText(donor: AuditDonor, digits = 3): string {
   return donor.included && w !== null ? w.toFixed(digits) : EM_DASH;
 }
 
-const EXCLUSION_ORDER: Record<DonorExclusion, number> = { treated: 0, same_pair: 1, incomplete_pre: 2, insufficient_post: 3 };
+const EXCLUSION_ORDER: Record<DonorExclusion, number> = { treated: 0, under_works: 1, same_pair: 2, incomplete_pre: 3, insufficient_post: 4 };
 
 /**
  * Every donor row, none dropped: included donors first, heaviest weight first,
