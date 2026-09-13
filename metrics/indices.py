@@ -2,7 +2,8 @@
 
 Two free-flow references are computed and both are published:
   tomtom: TomTom's noTrafficTravelTimeInSeconds for the same call
-  p5:     the 5th percentile of observed travel times over a trailing window
+  p5:     the 5th percentile of observed night-slot travel times (00:00-04:00
+          local, when the roads are emptiest) over a trailing window
 They answer different questions and disagree in informative ways, so they are
 never averaged, reconciled or collapsed into one column.
 """
@@ -15,10 +16,14 @@ from metrics.params import Params
 
 
 def free_flow_p5(samples: pd.DataFrame, params: Params = Params()) -> pd.DataFrame:
-    """Per corridor and local day: p5 of successful travel times over the
-    trailing ff_p5_window_days (inclusive). NaN below ff_p5_min_samples."""
+    """Per corridor and local day: p5 of successful night-slot travel times, local
+    hours in ff_p5_night_hours, over the trailing ff_p5_window_days (inclusive).
+    NaN below ff_p5_min_samples."""
     ok = samples[samples["ok"]]
-    ok = ok.assign(day=local_day_hour(ok["requested_at"])["day"])
+    local = local_day_hour(ok["requested_at"])
+    start, end = params.ff_p5_night_hours
+    night = (local["hour"] >= start) & (local["hour"] < end)
+    ok = ok[night].assign(day=local.loc[night, "day"])
     window = np.timedelta64(params.ff_p5_window_days - 1, "D")
     parts = []
     for corridor_id, group in ok.groupby("corridor_id"):

@@ -9,14 +9,14 @@ from tests.helpers import parsed
 
 def test_free_flow_p5_trailing_window():
     samples = parsed([
-        ("a", "2026-09-01 12:00", 200, 100, 90),
-        ("a", "2026-09-01 12:15", 200, 200, 90),
-        ("a", "2026-09-01 12:30", 200, 300, 90),
-        ("a", "2026-09-01 12:45", 429, None, None),  # failures never enter p5
-        ("a", "2026-09-02 12:00", 200, 400, 90),
-        ("a", "2026-09-03 12:00", 200, 500, 90),
-        ("a", "2026-09-03 12:15", 200, 600, 90),
-        ("a", "2026-09-03 12:30", 200, 700, 90),
+        ("a", "2026-09-01 00:00", 200, 100, 90),
+        ("a", "2026-09-01 00:30", 200, 200, 90),
+        ("a", "2026-09-01 01:00", 200, 300, 90),
+        ("a", "2026-09-01 01:30", 429, None, None),  # failures never enter p5
+        ("a", "2026-09-02 02:00", 200, 400, 90),
+        ("a", "2026-09-03 03:00", 200, 500, 90),
+        ("a", "2026-09-03 03:30", 200, 600, 90),
+        ("a", "2026-09-03 03:59", 200, 700, 90),
     ])
     params = Params(ff_p5_window_days=2, ff_p5_min_samples=3)
     ff = free_flow_p5(samples, params).set_index("day")["ff_p5_s"]
@@ -27,8 +27,21 @@ def test_free_flow_p5_trailing_window():
     assert ff[pd.Timestamp("2026-09-03")] == pytest.approx(415.0)  # [400..700]: 400 + 0.15*100
 
 
+def test_free_flow_p5_uses_night_slots_only():
+    # Daytime calls are congested by definition; only 00:00-04:00 local is free flow.
+    samples = parsed([
+        ("a", "2026-09-01 00:30", 200, 300, 90),
+        ("a", "2026-09-01 03:30", 200, 400, 90),
+        ("a", "2026-09-01 04:00", 200, 10, 90),    # 04:00 is outside [00:00, 04:00)
+        ("a", "2026-09-01 08:15", 200, 20, 90),
+        ("a", "2026-09-01 23:59", 200, 30, 90),
+    ])
+    ff = free_flow_p5(samples, Params(ff_p5_window_days=1, ff_p5_min_samples=2))
+    assert ff["ff_p5_s"].tolist() == [pytest.approx(305.0)]  # [300, 400]: 300 + 0.05*100
+
+
 def test_free_flow_p5_is_nan_below_minimum_samples():
-    samples = parsed([("a", "2026-09-01 12:00", 200, 100, 90)])
+    samples = parsed([("a", "2026-09-01 01:00", 200, 100, 90)])
     ff = free_flow_p5(samples, Params(ff_p5_min_samples=2))
     assert np.isnan(ff["ff_p5_s"].iloc[0])
 

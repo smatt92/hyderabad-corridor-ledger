@@ -1,0 +1,135 @@
+"""Database access for the collector: Supabase REST with the service key.
+
+The only collector module that reads or writes the database. It runs in
+GitHub Actions and nowhere else; the service key never reaches Vercel.
+"""
+
+import json
+import os
+import urllib.error
+import urllib.parse
+import urllib.request
+from datetime import UTC, datetime
+
+PAGE_SIZE = 1000  # PostgREST's max-rows on Supabase
+OUTCOME_TABLES = ("samples", "failed_samples")
+
+
+class DatabaseError(RuntimeError):
+    """A request to the database failed. Never contains the key."""
+
+
+def iso(moment: datetime) -> str:
+    return moment.astimezone(UTC).isoformat()
+
+
+class Database:
+    def __init__(self, url: str, key: str, timeout: float = 30.0):
+        self.url = url.rstrip("/")
+        self.key = key
+        self.timeout = timeout
+
+    @classmethod
+    def from_env(cls) -> "Database":
+        url, key = os.environ.get("SUPABASE_URL"), os.environ.get("SUPABASE_SERVICE_KEY")
+        if not url or not key:
+            raise DatabaseError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set")
+        return cls(url, key)
+
+    def headers(self, content_type: str = "application/json") -> dict:
+        headers = {"apikey": self.key, "Content-Type": content_type}
+        if self.key.startswith("eyJ"):  # legacy JWT keys also go in Authorization
+            headers["Authorization"] = f"Bearer {self.key}"
+        return headers
+
+    def raw(self, method: str, path: str, data: bytes | None = None,
+            headers: dict | None = None) -> tuple[dict, bytes]:
+        """Any request under the project URL. (lowercased response headers, body)."""
+        req = urllib.request.Request(f"{self.url}/{path}", data=data, method=method,
+                                     headers={**self.headers(), **(headers or {})})
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                return {k.lower(): v for k, v in resp.headers.items()}, resp.read()
+        except urllib.error.HTTPError as exc:
+            detail = exc.read()[:500].decode(errors="replace")
+            raise DatabaseError(f"{method} {path}: HTTP {exc.code}: {detail}") from None
+        except (urllib.error.URLError, TimeoutError) as exc:
+            raise DatabaseError(f"{method} {path}: {exc}") from None
+
+    def request(self, method: str, path: str, params=(), body=None, prefer: str | None = None):
+        """A REST call. (response headers, parsed JSON body or None)."""
+        query = "?" + urllib.parse.urlencode(list(params)) if params else ""
+        headers = {"Accept": "application/json", **({"Prefer": prefer} if prefer else {})}
+        data = None if body is None else json.dumps(body).encode()
+        response_headers, payload = self.raw(method, f"rest/v1/{path}{query}", data, headers)
+        return response_headers, json.loads(payload) if payload else None
+
+    def select_all(self, table: str, params, order: str = "seq.asc") -> list[dict]:
+        rows: list[dict] = []
+        while True:
+            _, page = self.request("GET", table, [*params, ("order", order),
+                                                  ("limit", str(PAGE_SIZE)),
+                                                  ("offset", str(len(rows)))])
+            rows.extend(page or [])
+            if len(page or []) < PAGE_SIZE:
+                return rows
+
+
+class Ledger:
+    """What a collector run needs from the database."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    def count(self, table: str) -> int:
+        column = "seq" if table in OUTCOME_TABLES else "id"
+        headers, _ = self.db.request("GET", table, [("select", column), ("limit", "1")],
+                                     prefer="count=exact")
+        return int(headers.get("content-range", "*/0").rsplit("/", 1)[-1])
+
+    def recorded_corridors(self, slot: datetime, corridor_ids: list[str]) -> set[str]:
+        """Which of these corridors already have an outcome, sample or failure, for
+        this slot. Naming the corridors lets the (corridor_id, scheduled_slot) index
+        answer instead of a scan."""
+        found: set[str] = set()
+        for table in OUTCOME_TABLES:
+            _, rows = self.db.request("GET", table, [
+                ("select", "corridor_id"), ("corridor_id", f"in.({','.join(corridor_ids)})"),
+                ("scheduled_slot", f"eq.{iso(slot)}"),
+            ])
+            found.update(row["corridor_id"] for row in rows or [])
+        return found
+
+    def attempts_between(self, start: datetime, end: datetime) -> int:
+        """HTTP attempts spent on calls requested in [start, end): the budget used."""
+        return sum(
+            row["attempts"]
+            for table in OUTCOME_TABLES
+            for row in self.db.select_all(table, [
+                ("select", "attempts"), ("requested_at", f"gte.{iso(start)}"),
+                ("requested_at", f"lt.{iso(end)}"),
+            ])
+        )
+
+    def start_run(self, run_id: str, sha: str | None) -> None:
+        self.db.request("POST", "collector_runs", body={"id": run_id, "collector_sha": sha},
+                        prefer="return=minimal")
+
+    def finish_run(self, run_id: str, values: dict) -> None:
+        self.db.request("PATCH", "collector_runs", [("id", f"eq.{run_id}")],
+                        body={**values, "finished_at": iso(datetime.now(UTC))},
+                        prefer="return=minimal")
+
+    def _insert_once(self, table: str, row: dict) -> bool:
+        _, inserted = self.db.request(
+            "POST", table, [("on_conflict", "corridor_id,scheduled_slot")], body=row,
+            prefer="resolution=ignore-duplicates,return=representation",
+        )
+        return bool(inserted)
+
+    def insert_sample(self, row: dict) -> bool:
+        """False when the slot already has a sample: a retry never makes a second row."""
+        return self._insert_once("samples", row)
+
+    def insert_failure(self, row: dict) -> bool:
+        return self._insert_once("failed_samples", row)

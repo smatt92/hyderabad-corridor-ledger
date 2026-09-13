@@ -7,7 +7,7 @@ recomputes them from raw under the new version.
 
 from dataclasses import dataclass
 
-METHOD_VERSION = "p02.2"
+METHOD_VERSION = "p02.3"
 LOCAL_TZ = "Asia/Kolkata"
 BASES = ("tomtom", "p5")
 
@@ -17,7 +17,9 @@ class Params:
     # Informative missingness: flag, never impute.
     low_confidence_missing_rate: float = 0.15
 
-    # Observed free flow: p5 of successful travel times over a trailing window.
+    # Observed free flow: p5 of successful night-slot travel times over a trailing
+    # window. Night slots are local hours [start, end), sampled every 30 minutes.
+    ff_p5_night_hours: tuple[int, int] = (0, 4)
     ff_p5_window_days: int = 28
     ff_p5_min_samples: int = 20
 

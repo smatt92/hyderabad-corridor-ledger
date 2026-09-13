@@ -7,8 +7,8 @@ from store import READABLE, MemoryStore, StoreError, postgrest_params, store_fro
 COMPUTED = "2026-09-13T21:45:00+00:00"
 
 
-def corridor(cid, code, pair, role, lat=17.497, lon=78.360):
-    return {"id": cid, "code": code, "name": f"Demo — {cid}", "pair_id": pair, "role": role,
+def corridor(cid, code, pair, cls, lat=17.497, lon=78.360):
+    return {"id": cid, "code": code, "name": f"Demo — {cid}", "pair_id": pair, "class": cls,
             "origin_name": "Miyapur", "destination_name": "Hitec City", "origin_lat": lat,
             "origin_lon": lon, "dest_lat": 17.447, "dest_lon": 78.377, "active": True}
 
@@ -26,11 +26,18 @@ def profile_rows(cid):
              "tt_p95_s": 1800.0 + h, "bti": 0.38, "computed_at": COMPUTED} for h in range(24)]
 
 
+def walk(wid, table, at, rows, broken_at=None):
+    return {"id": wid, "table_name": table, "verified_at": at, "ok": broken_at is None,
+            "rows_checked": rows, "first_seq": 1, "head_seq": rows, "head_row_hash": "b" * 64,
+            "breaks": 0 if broken_at is None else 1, "first_break_seq": broken_at,
+            "first_break_problem": broken_at and "row_hash does not match row contents"}
+
+
 def tables():
     return {
-        "corridors": [corridor("miyapur-hitec", "HC-01", "PR-01", "primary"),
+        "corridors": [corridor("miyapur-hitec", "HC-01", "PR-01", "core"),
                       corridor("miyapur-hitec-alt", "HC-02", "PR-01", "alternate"),
-                      corridor("kukatpally-madhapur", "HC-03", "PR-02", "primary")],
+                      corridor("kukatpally-madhapur", "HC-03", "PR-02", "core")],
         "dataset_stats": [{"id": "window", "window_start": "2026-06-15",
                            "window_end": "2026-09-12", "n_corridors": 3, "n_expected": 300,
                            "n_ok": 270, "missing_rate": 0.1, "low_confidence": False,
@@ -62,12 +69,10 @@ def tables():
         "intervention_audit": [{"intervention_id": "signal-retiming", "status": "ok",
                                 "effect": -0.04, "missing_rate": 0.06, "computed_at": COMPUTED}],
         "chain_verifications": [
-            {"id": 1, "verified_at": "2026-09-12T22:00:00+00:00", "ok": True, "rows_checked": 9,
-             "first_seq": 1, "head_seq": 9, "head_row_hash": "a" * 64, "breaks": 0,
-             "first_break_seq": None},
-            {"id": 2, "verified_at": "2026-09-13T22:00:00+00:00", "ok": True, "rows_checked": 10,
-             "first_seq": 1, "head_seq": 10, "head_row_hash": "b" * 64, "breaks": 0,
-             "first_break_seq": None},
+            walk(1, "samples", "2026-09-12T22:00:00+00:00", 9),
+            walk(2, "failed_samples", "2026-09-12T22:00:00+00:00", 1),
+            walk(3, "samples", "2026-09-13T22:00:00+00:00", 10),
+            walk(4, "failed_samples", "2026-09-13T22:00:00+00:00", 2),
         ],
         "export_manifest": [{"format": "csv", "object_path": "ledger/metrics_daily.csv",
                              "window_start": "2026-06-15", "window_end": "2026-09-12",
@@ -184,7 +189,30 @@ def test_verify_reports_latest_walk(client):
     body = client.get("/api/verify").json()
     assert body["status"] == "ok"
     assert body["verification"]["head_seq"] == 10
+    assert body["chains"]["failed_samples"]["head_seq"] == 2
     assert body["as_of"] == "2026-09-13T22:00:00+00:00"
+
+
+def test_a_break_in_either_chain_is_reported():
+    t = tables()
+    t["chain_verifications"].append(
+        walk(5, "failed_samples", "2026-09-14T22:00:00+00:00", 3, broken_at=2))
+    api.app.dependency_overrides[api.get_store] = lambda: MemoryStore(t)
+    try:
+        body = TestClient(api.app).get("/api/verify").json()
+    finally:
+        api.app.dependency_overrides.clear()
+    assert body["status"] == "broken"
+    assert body["chains"]["failed_samples"]["first_break_seq"] == 2
+    assert body["verification"]["ok"] is True
+
+
+def test_pair_roles_come_from_declared_class(client):
+    by_id = {c["id"]: c for c in client.get("/api/corridors").json()["corridors"]}
+    assert by_id["miyapur-hitec"]["role"] == "primary"
+    assert by_id["miyapur-hitec-alt"]["role"] == "alternate"
+    assert api.pair_role({"class": "donor", "pair_id": None}) is None
+    assert api.pair_role({"class": "core", "pair_id": None}) is None
 
 
 def test_export_redirects_to_published_file(client):

@@ -1,0 +1,46 @@
+name: collector
+
+# The dispatcher. Every run measures each active corridor's slot that is due
+# and has no outcome yet, so a delayed or skipped run costs nothing as long as
+# a later one lands inside the slot's spacing. Slots it never reaches are
+# reported by the daily gap alarm; nothing is backfilled.
+#
+# Runs only across the collection windows (IST = UTC+05:30):
+#   18:00-22:55 UTC  covers night slots  00:00-04:00 IST
+#   01:00-04:55 UTC  covers the morning  06:30-10:30 IST
+#   11:00-15:55 UTC  covers the evening  16:30-21:00 IST
+# Minute 1 rather than 0 keeps clear of the top-of-hour scheduling queue.
+on:
+  schedule:
+    - cron: '1-56/5 18-22 * * *'
+    - cron: '1-56/5 1-4 * * *'
+    - cron: '1-56/5 11-15 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: collector
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    name: collect
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: collector
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
+      - run: uv sync --locked
+      - name: Measure every due slot
+        env:
+          TOMTOM_API_KEY: ${{ secrets.TOMTOM_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: uv run python fetch.py

@@ -23,9 +23,19 @@ DATE_COLUMNS = {
     "effective_day", "pre_start", "pre_end", "post_start", "post_end",
 }
 CORRIDOR_METADATA = [
-    "id", "code", "name", "pair_id", "role", "origin_name", "origin_lat", "origin_lon",
+    "id", "code", "name", "pair_id", "class", "origin_name", "origin_lat", "origin_lon",
     "destination_name", "dest_lat", "dest_lon",
 ]
+# corridors.class is the collector's vocabulary (core, alternate, donor). The
+# read model names a pair's two sides primary and alternate: a paired core
+# corridor is its pair's primary. Donors are never paired and have no role.
+PAIR_ROLE = {"core": "primary", "alternate": "alternate"}
+
+
+def with_pair_role(frame: pd.DataFrame) -> pd.DataFrame:
+    out = frame.copy()
+    out["role"] = out["class"].map(PAIR_ROLE).where(out["pair_id"].notna())
+    return out.drop(columns=["class"])
 
 
 class Supabase:
@@ -112,14 +122,16 @@ def load_archive(directory: Path) -> pd.DataFrame:
 
 
 def load_corridors(db: Supabase) -> pd.DataFrame:
-    columns = ["id", "cadence_s", "pair_id", "role"]
+    columns = ["id", "cadence_s", "pair_id", "class"]
     rows = db.get("corridors", {"select": ",".join(columns), "order": "id.asc"})
-    return pd.DataFrame(rows, columns=columns).rename(columns={"id": "corridor_id"})
+    frame = pd.DataFrame(rows, columns=columns).rename(columns={"id": "corridor_id"})
+    return with_pair_role(frame)
 
 
 def load_corridor_metadata(db: Supabase) -> pd.DataFrame:
     rows = db.get("corridors", {"select": ",".join(CORRIDOR_METADATA), "order": "id.asc"})
-    return pd.DataFrame(rows, columns=CORRIDOR_METADATA).rename(columns={"id": "corridor_id"})
+    frame = pd.DataFrame(rows, columns=CORRIDOR_METADATA).rename(columns={"id": "corridor_id"})
+    return with_pair_role(frame)
 
 
 def load_interventions(db: Supabase) -> pd.DataFrame:
@@ -166,16 +178,24 @@ def publish_exports(db: Supabase, tables: dict[str, pd.DataFrame], corridors: pd
         print(f"export {fmt}: {row['n_rows']} rows, {row['n_bytes']} bytes, sha256 {row['sha256']}")
 
 
-def record_chain_verification(db: Supabase) -> dict:
+def record_chain_verification(db: Supabase) -> list[dict]:
+    """One row per chain: samples and failed_samples."""
     result = db.request("POST", "rpc/record_chain_verification", body={})
-    return result[0] if isinstance(result, list) else result
+    return result if isinstance(result, list) else [result]
 
 
-def exit_on_broken_chain(result: dict) -> int:
-    summary = (f"chain walk: {result['rows_checked']} rows, head seq {result['head_seq']}, "
-               f"{result['breaks']} breaks")
-    if result["ok"]:
-        print(summary)
-        return 0
-    print(f"{summary}; first break at seq {result['first_break_seq']}", file=sys.stderr)
-    return 1
+def exit_on_broken_chain(results: list[dict]) -> int:
+    if {r["table_name"] for r in results} != {"samples", "failed_samples"}:
+        print("chain walk did not report both chains", file=sys.stderr)
+        return 1
+    status = 0
+    for r in results:
+        summary = (f"{r['table_name']} chain walk: {r['rows_checked']} rows, "
+                   f"head seq {r['head_seq']}, {r['breaks']} breaks")
+        if r["ok"]:
+            print(summary)
+        else:
+            print(f"{summary}; first break at seq {r['first_break_seq']}: "
+                  f"{r['first_break_problem']}", file=sys.stderr)
+            status = 1
+    return status

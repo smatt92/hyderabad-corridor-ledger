@@ -16,6 +16,7 @@ Rules for Claude, without exception:
 - NEVER configure a bot identity, a noreply address, or a second author.
 - NEVER create, request, or store signing keys. The private key stays on
   Sahil's machine and the signing agent is Sahil's.
+- One branch: `main`. Never create a feature branch.
 - Stage and commit. Do NOT push. End every unit of work by printing this
   command for Sahil to run, then stop:
 
@@ -50,9 +51,10 @@ logic cannot be attributed, the dataset it produced cannot be trusted either.
 
 - Supabase: project `hyderabad-corridor-ledger`, ref `duejdeswzjepliqfkjyf`,
   region `ap-south-1` (Mumbai), org `sutytlpyraimbvdqdicf`.
-- Vercel: project `hyderabad-corridor-ledger`, not Git-connected, and
-  `vercel.json` sets `git.deploymentEnabled: false`. It hosts `web/` and
-  `api/` as Vercel Services (P-04) and nothing else.
+- Vercel: not created or linked yet. When it is: project
+  `hyderabad-corridor-ledger`, not Git-connected, and `vercel.json` sets
+  `git.deploymentEnabled: false`. It hosts `web/` and `api/` as Vercel
+  Services (P-04) and nothing else.
 - GitHub: `smatt92/hyderabad-corridor-ledger`, public, with secret scanning
   and push protection on.
 
@@ -76,51 +78,138 @@ logic cannot be attributed, the dataset it produced cannot be trusted either.
 
 - Every table and schema change is a numbered migration in
   `supabase/migrations/`, named `NNNN_description.sql`, applied with
-  `supabase db push`. Never edit a migration that has been pushed.
+  `supabase db push`. A migration is immutable once applied to the linked
+  project, and freely editable before that.
 - RLS is enabled in the migration that creates a table. Public read on
-  `corridors`, `samples`, `interventions` and every derived metrics table
-  (0003). No write policy for `anon` or `authenticated` anywhere, and their
+  `corridors`, `samples`, `failed_samples`, the collector's run, gap,
+  archive and verification tables (0003), `interventions` and every derived
+  metrics table (0004, 0005). No write policy for `anon` or `authenticated` anywhere, and their
   write privileges are revoked as well.
 - `.mcp.json` configures the Supabase MCP server read-only. Use it to inspect
   schema and spot-check rows. Wanting to mutate through MCP means a migration
   is missing.
 
-## Sample hash chain (format v1)
+## Hash chains (samples v1, failed_samples f1)
 
-`samples` is append-only: UPDATE, DELETE and TRUNCATE raise. On insert, a
-trigger sets `seq`, `inserted_at`, `raw_gz_sha256`, `prev_hash` and `row_hash`
-under an advisory lock, so concurrent writers cannot fork the chain.
+`samples` and `failed_samples` are append-only. UPDATE and TRUNCATE always
+raise; DELETE raises everywhere except inside `public.prune_archived()`, and
+the service role's UPDATE, DELETE and TRUNCATE privileges are revoked too. On
+insert, a trigger sets `seq`, `inserted_at`, the payload digest, `prev_hash`
+and `row_hash` under an advisory lock, so concurrent writers cannot fork a
+chain.
 
-    row_hash = sha256(prev_hash || utf8(public.samples_canonical(row)))
+    row_hash = sha256(prev_hash || utf8(canonical(row)))
 
 - The genesis `prev_hash` is 32 zero bytes.
 - Canonical text: fields joined by `|`, NULL as empty, timestamps in UTC as
   `YYYY-MM-DDTHH:MM:SS.ffffffZ`, hashes as lowercase hex. Field order is
-  defined in `public.samples_canonical` and starts with the literal `v1`.
-- Check the chain with `select * from private.samples_chain_breaks();`. An
-  empty result means it is intact.
-- Pruning for the 90-day window will relax the DELETE guard in its own
-  migration, together with the archive job, and only for archived rows.
+  defined in `public.samples_canonical` (starts with `v1`) and
+  `public.failed_samples_canonical` (starts with `f1`). `collector/chain.py`
+  ports both; its tests hold vectors hashed by the database.
+- Format v1 was applied in 0001 and does not cover `samples.scheduled_slot`
+  or `samples.attempts`, which 0003 added. The append-only guard protects
+  those two, not the hash.
+- `public.record_chain_verification()` (service role) walks both chains,
+  records each head hash and first break in `chain_verifications`, and
+  returns them. `daily.yml` runs it nightly and copies the heads into the job
+  summary, outside the database.
+- Any change to a canonical function is a new format version.
 
 ## Storage budget (500 MB free tier)
 
-At ~2,220 calls/day the panel produces ~810k rows/year.
+The daily budget is 2,400 TomTom calls. At that ceiling the ledger gains about
+876k rows a year, and the 90-day hot window holds at most about 216k.
 
 - Always request `routeRepresentation=summaryOnly`; corridor paths come from
-  OSM. `samples.raw_gz` has a 4 KB check constraint, so a response carrying
+  OSM. The collector refuses a response over 4 KB gzipped and
+  `samples.raw_gz` has a 4 KB check constraint, so a response carrying
   geometry fails loudly instead of eating the quota.
 - Store raw responses gzipped in `bytea`, never `jsonb`, and read them through
   `metrics.raw.decompress_raw`.
-- Monthly archive (not built yet): samples older than 90 days export to
-  Parquet in Supabase Storage. The archive is the permanent record and the
-  table is a 90-day cache of it. Verify each archive reads back before
-  deleting any row.
+- Monthly archive (`collector/archive.py`, `.github/workflows/archive.yml`):
+  rows requested more than 90 days ago go to Parquet in the public `archive`
+  bucket, at most 20,000 rows a file. Each file is downloaded again and its
+  sha256 and hash chain re-checked before `sample_archives` records it. Only
+  then does `public.prune_archived()` delete, after checking the row count and
+  boundary hash itself. The archive is the permanent record and the tables are
+  a 90-day cache of it. The newest row of each table never leaves: it holds
+  the chain head.
 - `.github/workflows/db-size.yml` logs the database size through
   `public.log_db_size()` weekly and on every push to `main`, and fails at
   400 MB.
 - `metrics_daily` is hourly: about 8,800 rows per corridor per year. Derived
   tables are disposable, so they can be truncated and rebuilt if space runs
   short; samples cannot.
+
+## Collector (P-01)
+
+`collector/` is its own uv project and runs only in GitHub Actions, never on
+Vercel. It is the only code holding the service key and the server-side
+TomTom key.
+
+### Corridor declarations
+
+`config/corridors.yaml` is the only place a corridor is defined, validated by
+`collector/config.py`: `id`, `code`, `name`, `class` (core, alternate or
+donor), `tier` (A, B or C), `direction` (ab or ba), `pair_id`, origin and
+destination names and coordinates, `via`, `status` (draft, active, paused or
+retired) and `supersedes`.
+
+- Alternates are declared, never derived. A pair holds one core and at most
+  one alternate per direction, all sharing endpoints, and `ba` reverses `ab`.
+  A one-corridor pair is valid: it means no measured alternate. Donors are
+  never paired.
+- An alternate's road is pinned by its `via` points, which the collector sends
+  to TomTom as route stops. Via points are measurement inputs and never reach
+  a user. A corridor without via points measures whichever road TomTom picks
+  at that moment.
+- Geometry (endpoints, via, direction) freezes the first time a corridor is
+  anything but a draft. To change a measured road, retire the corridor and
+  declare a new id that `supersedes` it. `collector/immutability.py` compares
+  every committed version in CI, and the `corridors_guard` trigger refuses the
+  change again in the database.
+- `.github/workflows/corridors.yml` syncs the file into `corridors` on pushes
+  to `main`, after the same checks.
+- `placeholder-01` to `placeholder-10` are drafts. Nothing is measured until
+  real corridors replace them and are set `active`. Tests read the frozen
+  copy in `collector/tests/fixtures/`, never the live file.
+
+### Schedule, budget and retries
+
+- Slots, IST: 06:30-10:30 and 16:30-21:00, every 15 minutes for Tier A and
+  every 30 minutes for Tiers B and C; night slots every 30 minutes from 00:00
+  to 04:00 for every tier. Tier A owes 42 slots a day, Tiers B and C 25.
+- `.github/workflows/collector.yml` dispatches every 5 minutes across those
+  windows. Each run measures every active corridor whose latest slot is due,
+  meaning less than one slot spacing old, and has no outcome yet. GitHub
+  delays and drops scheduled runs. A slot no run reaches in time is missing,
+  and is never backfilled.
+- Idempotency: (corridor_id, scheduled_slot) is unique in `samples` and in
+  `failed_samples`, and a trigger allows one outcome per slot across the two.
+- Budget: a token bucket of 2,400 calls per IST day, released as slots come
+  due, with 15% held back for retries. Every HTTP attempt spends a token.
+  `python collector/config.py` fails in CI when the active panel cannot fit.
+- Retries: timeouts, connection errors, 429 and 5xx, three attempts with full
+  jitter backoff. When they run out, the slot goes to `failed_samples` with
+  its error class. A failure is never dropped.
+- `length_m` from the response is the only distance anywhere in the system.
+- A response with route points, or over 4 KB gzipped, is recorded as a
+  `geometry_leak` failure and fails the run.
+- The collector refuses to start if `samples` or `failed_samples` hold rows but
+  no collector run was ever recorded.
+
+### Checks that fail loudly
+
+| Check | Where |
+|---|---|
+| Slots missing from yesterday (IST) | `collector/gaps.py` in `daily.yml`; writes `gap_reports` |
+| Head hash and first break of both chains | `collector/chain.py` in `daily.yml` |
+| Database at or over 400 MB | `db-size.yml` |
+| A measured corridor's geometry changed | `immutability.py` in `tests.yml` and `corridors.yml` |
+| Scheduled workflows disabled after 60 idle days | `keepalive.yml` re-enables them through the API weekly |
+
+**Done** means seven unbroken days of real samples with a valid chain: the gap
+report prints the count of unbroken days, and both chains verify.
 
 ## Metrics engine (P-02)
 
@@ -150,7 +239,8 @@ only `metrics/io.py` reads or writes.
 
 **Why both free-flow series survive.** TTI and PTI are published against
 TomTom's `noTrafficTravelTimeInSeconds` (`*_tomtom`) and against the observed
-p5 over a trailing 28 days (`*_p5`), side by side. TomTom's figure is a
+p5 of night-slot samples (00:00-04:00 IST) over a trailing 28 days
+(`*_p5`), side by side. TomTom's figure is a
 modelled estimate nobody outside TomTom can audit. The p5 is observed but
 drifts up during long disruptions such as a monsoon month, which flatters
 TTI. Where the two disagree is itself a finding. Averaging them, reconciling
@@ -195,8 +285,8 @@ Other definitions worth knowing before changing them:
 ## Read API and frontend (P-04)
 
 Vercel hosts the frontend (`web/`) and the read API (`api/`) and nothing
-else. The collector, metrics, chain verification and exports run in GitHub
-Actions (`.github/workflows/metrics.yml`).
+else. The collector, chain verification, archive, metrics and exports run in
+GitHub Actions.
 
 ### Route construction: hard rule
 
@@ -219,7 +309,10 @@ A route we have not measured must never reach a user. Someone may drive it.
 Enforced by `web/src/lib/route.test.ts`, `web/src/lib/rules.test.ts` (no
 waypoints, haversine, midpoints, via nodes or great-circle trigonometry
 anywhere in `src/`) and `web/scripts/check-bundle.mjs` on the built bundle.
-Pairs sharing endpoints is enforced by the `corridors_check_pair` trigger.
+Pairs sharing endpoints is enforced by `collector/config.py` and the
+`corridors_check_pair` trigger. Payloads name a pair's sides `primary` and
+`alternate`: the primary is the pair's `class: core` corridor, mapped in
+`api/app.py` and `metrics/io.py`. Donor corridors have no role.
 
 ### Read API (`api/`)
 
@@ -234,9 +327,10 @@ Pairs sharing endpoints is enforced by the `corridors_check_pair` trigger.
 - `api/pyproject.toml` is FastAPI only, with `default-groups = []`, so a
   deploy build installs no dev tools. numpy and pandas never go in. If cold
   starts or bundle size become a problem, stop and tell Sahil.
-- `/api/verify` serves the latest chain walk, which `python -m metrics verify`
-  records nightly. Walking the chain reads every sample, so it never runs on
-  the read path.
+- `/api/verify` serves the latest walk of each chain, `samples` and
+  `failed_samples`. `daily.yml` records one nightly, and `python -m metrics
+  verify` records another before each backfill. Walking a chain reads every
+  row, so it never runs on the read path.
 - `/api/export.csv` and `/api/export.parquet` redirect to the files in the
   public `exports` bucket. `export_manifest` records each file's sha256. The
   CSV is gzipped (`.csv.gz`) to stay under the bucket's 50 MB file limit.

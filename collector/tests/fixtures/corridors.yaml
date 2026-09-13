@@ -1,0 +1,196 @@
+# Test fixture: a frozen copy of the seeded placeholder panel. Tests never read
+# config/corridors.yaml, which changes as real corridors are declared.
+# Corridor declarations: the only place a corridor is defined.
+#
+# Rules (validated by collector/config.py, geometry immutability by
+# collector/immutability.py in CI):
+# - id is permanent. Once a corridor has been anything but a draft, its origin,
+#   destination, via points and direction never change and it is never removed.
+#   To change a measured road, retire it and declare a new id with supersedes.
+# - class: core | alternate | donor. An alternate is declared, never derived:
+#   it shares its pair's origin and destination and is pinned to its own road
+#   by via points, sent to TomTom as route stops and never shown to users.
+#   A pair holding one corridor is valid: no measured alternate. A donor is an
+#   unpaired control corridor for intervention audits.
+# - tier: A every 15 min, B and C every 30 min, 06:30-10:30 and 16:30-21:00
+#   IST; every tier also every 30 min from 00:00 to 04:00 IST.
+# - direction ab | ba. A pair's ba corridors reverse its ab endpoints.
+# - status: draft (never collected) | active | paused | retired.
+# - Place via points on the intended carriageway, in the direction of travel.
+#
+# The ten corridors below are PLACEHOLDERS, all status draft, so nothing here
+# is collected. Replace them with the real panel before activating anything.
+
+version: 1
+corridors:
+  - id: placeholder-01
+    code: PL-01
+    name: "PLACEHOLDER: Miyapur to Hitec City"
+    class: core
+    tier: A
+    direction: ab
+    pair_id: PL-01
+    origin_name: Miyapur
+    destination_name: Hitec City
+    origin_lat: 17.497
+    origin_lon: 78.360
+    dest_lat: 17.447
+    dest_lon: 78.377
+    via: []
+    status: draft
+    supersedes: null
+
+  - id: placeholder-02
+    code: PL-02
+    name: "PLACEHOLDER: Miyapur to Hitec City, alternate via Kondapur"
+    class: alternate
+    tier: A
+    direction: ab
+    pair_id: PL-01
+    origin_name: Miyapur
+    destination_name: Hitec City
+    origin_lat: 17.497
+    origin_lon: 78.360
+    dest_lat: 17.447
+    dest_lon: 78.377
+    via:
+      - {lat: 17.464, lon: 78.357}
+    status: draft
+    supersedes: null
+
+  - id: placeholder-03
+    code: PL-03
+    name: "PLACEHOLDER: Hitec City to Miyapur"
+    class: core
+    tier: A
+    direction: ba
+    pair_id: PL-01
+    origin_name: Hitec City
+    destination_name: Miyapur
+    origin_lat: 17.447
+    origin_lon: 78.377
+    dest_lat: 17.497
+    dest_lon: 78.360
+    via: []
+    status: draft
+    supersedes: null
+
+  - id: placeholder-04
+    code: PL-04
+    name: "PLACEHOLDER: Kukatpally to Madhapur"
+    class: core
+    tier: A
+    direction: ab
+    pair_id: PL-02
+    origin_name: Kukatpally
+    destination_name: Madhapur
+    origin_lat: 17.485
+    origin_lon: 78.411
+    dest_lat: 17.448
+    dest_lon: 78.391
+    via: []
+    status: draft
+    supersedes: null
+
+  - id: placeholder-05
+    code: PL-05
+    name: "PLACEHOLDER: Gachibowli to Ameerpet"
+    class: core
+    tier: B
+    direction: ab
+    pair_id: PL-03
+    origin_name: Gachibowli
+    destination_name: Ameerpet
+    origin_lat: 17.440
+    origin_lon: 78.348
+    dest_lat: 17.437
+    dest_lon: 78.448
+    via: []
+    status: draft
+    supersedes: null
+
+  - id: placeholder-06
+    code: PL-06
+    name: "PLACEHOLDER: Gachibowli to Ameerpet, alternate via Jubilee Hills"
+    class: alternate
+    tier: B
+    direction: ab
+    pair_id: PL-03
+    origin_name: Gachibowli
+    destination_name: Ameerpet
+    origin_lat: 17.440
+    origin_lon: 78.348
+    dest_lat: 17.437
+    dest_lon: 78.448
+    via:
+      - {lat: 17.431, lon: 78.407}
+    status: draft
+    supersedes: null
+
+  - id: placeholder-07
+    code: PL-07
+    name: "PLACEHOLDER: LB Nagar to Koti"
+    class: core
+    tier: B
+    direction: ab
+    pair_id: PL-04
+    origin_name: LB Nagar
+    destination_name: Koti
+    origin_lat: 17.348
+    origin_lon: 78.552
+    dest_lat: 17.386
+    dest_lon: 78.477
+    via: []
+    status: draft
+    supersedes: null
+
+  - id: placeholder-08
+    code: PL-08
+    name: "PLACEHOLDER: Secunderabad to Uppal"
+    class: core
+    tier: C
+    direction: ab
+    pair_id: PL-05
+    origin_name: Secunderabad
+    destination_name: Uppal
+    origin_lat: 17.437
+    origin_lon: 78.501
+    dest_lat: 17.398
+    dest_lon: 78.559
+    via: []
+    status: draft
+    supersedes: null
+
+  - id: placeholder-09
+    code: PL-09
+    name: "PLACEHOLDER: Patancheru to BHEL (donor)"
+    class: donor
+    tier: C
+    direction: ab
+    pair_id: null
+    origin_name: Patancheru
+    destination_name: BHEL
+    origin_lat: 17.531
+    origin_lon: 78.264
+    dest_lat: 17.494
+    dest_lon: 78.318
+    via: []
+    status: draft
+    supersedes: null
+
+  - id: placeholder-10
+    code: PL-10
+    name: "PLACEHOLDER: Nagole to Dilsukhnagar (donor)"
+    class: donor
+    tier: C
+    direction: ab
+    pair_id: null
+    origin_name: Nagole
+    destination_name: Dilsukhnagar
+    origin_lat: 17.371
+    origin_lon: 78.559
+    dest_lat: 17.368
+    dest_lon: 78.524
+    via: []
+    status: draft
+    supersedes: null

@@ -1,0 +1,42 @@
+name: corridors
+
+# Declarations reach the database only from main, after the same checks CI
+# runs on every push. The corridors_guard trigger refuses a changed geometry
+# or a deleted corridor again on the database side.
+on:
+  push:
+    branches: [main]
+    paths:
+      - config/corridors.yaml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: corridors
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: sync
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: collector
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0  # the immutability check reads every committed version
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
+      - run: uv sync --locked
+      - name: Declarations validate and fit the daily budget
+        run: uv run python config.py
+      - name: Measured geometry is unchanged
+        run: uv run python immutability.py
+      - name: Sync declarations into corridors
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: uv run python sync.py

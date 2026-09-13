@@ -102,6 +102,8 @@ def declared_corridors() -> pd.DataFrame:
             rows.append({
                 "id": slug(f"{code} {origin} {dest}{' alt' if suffix else ''}"), "code": code,
                 "name": f"Demo — {origin} → {dest}{suffix}", "pair_id": pair_id, "role": role,
+                "class": "core" if role == "primary" else "alternate", "tier": "A",
+                "direction": "ab", "status": "active",
                 "origin_name": origin, "destination_name": dest,
                 "origin_lat": PLACES[origin][0], "origin_lon": PLACES[origin][1],
                 "dest_lat": PLACES[dest][0], "dest_lon": PLACES[dest][1],
@@ -177,14 +179,21 @@ def main() -> None:
 
     OUT.mkdir(parents=True, exist_ok=True)
     computed_at = datetime.now(UTC).replace(microsecond=0).isoformat()
-    declared = corridors.drop(columns=["length", "free_s"])
+    # The corridors fixture mirrors the table, which declares class; role is the
+    # pipeline's name for it and is derived again on read.
+    declared = corridors.drop(columns=["length", "free_s", "role"])
     tables_out = {name: to_records(frame) for name, frame in tables.items()}
     tables_out["corridors"] = json.loads(declared.to_json(orient="records"))
     tables_out["interventions"] = json.loads(interventions.to_json(orient="records"))
     tables_out["chain_verifications"] = [{
-        "id": 1, "verified_at": computed_at, "ok": True, "rows_checked": len(samples),
-        "first_seq": 1, "head_seq": len(samples), "head_row_hash": "0" * 64, "breaks": 0,
-        "first_break_seq": None,
+        "id": 1, "verified_at": computed_at, "table_name": "samples", "ok": True,
+        "rows_checked": len(samples), "first_seq": 1, "head_seq": len(samples),
+        "head_row_hash": "0" * 64, "breaks": 0, "first_break_seq": None,
+        "first_break_problem": None,
+    }, {
+        "id": 2, "verified_at": computed_at, "table_name": "failed_samples", "ok": True,
+        "rows_checked": 0, "first_seq": None, "head_seq": None, "head_row_hash": None,
+        "breaks": 0, "first_break_seq": None, "first_break_problem": None,
     }]
     for name, rows in tables_out.items():
         for row in rows:

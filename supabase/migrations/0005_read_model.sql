@@ -1,57 +1,12 @@
--- 0004_read_model.sql
+-- 0005_read_model.sql
 --
 -- P-04 read model. The read API selects rows from these tables and from
 -- corridors; it never reads samples and never computes. Everything derived
 -- below is written by the metrics pipeline in GitHub Actions and replaced
--- wholesale on backfill. chain_verifications is the exception: an
--- append-only history of chain walks.
-
--- Corridor declarations ------------------------------------------------------
+-- wholesale on backfill.
 --
--- A pair is one primary corridor and at most one declared alternate. Both
--- share origin and destination and are measured in their own right. A pair
--- that declares one corridor is valid; nothing downstream derives a second.
-
-alter table public.corridors
-  add column code             text unique check (code ~ '^[A-Z]{2}-[0-9]{2,4}$'),
-  add column pair_id          text check (pair_id ~ '^[A-Z]{2}-[0-9]{2,4}$'),
-  add column role             text check (role in ('primary', 'alternate')),
-  add column origin_name      text check (length(origin_name) between 1 and 80),
-  add column destination_name text check (length(destination_name) between 1 and 80),
-  add constraint corridors_pair_role check ((pair_id is null) = (role is null));
-
-create unique index corridors_pair_role_unique on public.corridors (pair_id, role);
-
-create function public.corridors_check_pair()
-returns trigger
-language plpgsql
-set search_path = ''
-as $$
-begin
-  if new.pair_id is null then
-    return new;
-  end if;
-  if exists (
-    select 1 from public.corridors c
-     where c.pair_id = new.pair_id and c.id <> new.id
-       and (c.origin_lat, c.origin_lon, c.dest_lat, c.dest_lon)
-           is distinct from (new.origin_lat, new.origin_lon, new.dest_lat, new.dest_lon)
-  ) then
-    raise exception 'corridors in pair % must share origin and destination', new.pair_id;
-  end if;
-  if new.role = 'alternate' and not exists (
-    select 1 from public.corridors c
-     where c.pair_id = new.pair_id and c.role = 'primary' and c.id <> new.id
-  ) then
-    raise exception 'pair % declares an alternate before its primary', new.pair_id;
-  end if;
-  return new;
-end;
-$$;
-
-create trigger corridors_check_pair
-  before insert or update on public.corridors
-  for each row execute function public.corridors_check_pair();
+-- Corridor declarations (code, class, pair_id, names, the corridors_check_pair
+-- trigger) and the chain_verifications history both come from 0003_collector.
 
 -- Derived columns on metrics_daily -------------------------------------------
 
@@ -217,50 +172,6 @@ create table public.intervention_audit (
   computed_at     timestamptz not null default now()
 );
 
--- Chain verification history -------------------------------------------------
---
--- Walking the chain reads every sample, so it never runs on the read path.
--- A scheduled job calls record_chain_verification() with the service key;
--- /verify serves the latest row.
-
-create table public.chain_verifications (
-  id               bigint generated always as identity primary key,
-  verified_at      timestamptz not null default now(),
-  rows_checked     bigint not null,
-  first_seq        bigint,
-  head_seq         bigint,
-  head_row_hash    text check (head_row_hash ~ '^[0-9a-f]{64}$'),
-  breaks           integer not null,
-  first_break_seq  bigint,
-  ok               boolean not null
-);
-
-create function public.record_chain_verification()
-returns public.chain_verifications
-language plpgsql
-security definer
-set search_path = ''
-as $$
-declare
-  result public.chain_verifications;
-begin
-  insert into public.chain_verifications
-    (rows_checked, first_seq, head_seq, head_row_hash, breaks, first_break_seq, ok)
-  select s.n, s.first_seq, s.head_seq,
-         (select encode(x.row_hash, 'hex') from public.samples x order by x.seq desc limit 1),
-         b.n, b.first_break, b.n = 0
-    from (select count(*) as n, min(seq) as first_seq, max(seq) as head_seq
-            from public.samples) s,
-         (select count(*)::integer as n, min(seq) as first_break
-            from private.samples_chain_breaks()) b
-  returning * into result;
-  return result;
-end;
-$$;
-
-revoke execute on function public.record_chain_verification() from public, anon, authenticated;
-grant execute on function public.record_chain_verification() to service_role;
-
 -- Open dataset exports -------------------------------------------------------
 --
 -- Files are written to the public exports bucket by the metrics workflow.
@@ -284,7 +195,7 @@ create table public.export_manifest (
   computed_at     timestamptz not null default now()
 );
 
--- Row level security: public read, no public write, as in 0001 and 0003.
+-- Row level security: public read, no public write, as in 0001 and 0004.
 do $$
 declare
   t text;
@@ -292,7 +203,7 @@ begin
   foreach t in array array[
     'dataset_stats', 'corridor_stats', 'metrics_day', 'profile_hourly',
     'heatmap_weekly', 'network_hourly', 'pair_advantage_hourly',
-    'intervention_audit', 'chain_verifications', 'export_manifest'
+    'intervention_audit', 'export_manifest'
   ] loop
     execute format('alter table public.%I enable row level security', t);
     execute format(

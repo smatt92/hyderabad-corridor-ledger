@@ -1,0 +1,29 @@
+[project]
+name = "hyderabad-corridor-ledger-collector"
+version = "0.1.0"
+description = "Collector for the Hyderabad corridor ledger: TomTom summaries into the hash-chained sample log"
+requires-python = ">=3.12,<3.13"
+# The collector runs every few minutes in GitHub Actions: keep it small.
+dependencies = ["pydantic>=2.13.5,<3", "pyyaml>=6.0.3,<7"]
+
+[dependency-groups]
+archive = [
+    "pyarrow>=25.0.1",
+]
+dev = ["pytest>=9.1.1", "ruff>=0.16.7", { include-group = "archive" }]
+
+[tool.uv]
+package = false
+default-groups = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]

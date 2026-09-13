@@ -1,4 +1,4 @@
--- 0003_metrics_engine.sql
+-- 0004_metrics_engine.sql
 --
 -- Tables for the P-02 metrics engine. Everything here except interventions
 -- is derived from raw samples and disposable: backfill deletes and rebuilds

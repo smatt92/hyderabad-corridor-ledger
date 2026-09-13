@@ -25,13 +25,22 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
       - run: uv sync --locked --no-dev
-      # Walk the chain first: a broken record fails the run before anything is
-      # recomputed or published from it. The result is what /verify serves.
-      - name: Walk the sample hash chain
+      # Walk both chains first: a broken record fails the run before anything is
+      # recomputed or published from it. The daily workflow walks them too, on
+      # its own schedule, so the collector's check never depends on this one.
+      - name: Walk the hash chains
         run: uv run python -m metrics verify
+      # Rows older than 90 days live only in the archive bucket. Each file is
+      # checked against its sha256 in sample_archives on the way down.
+      - name: Download the sample archive
+        run: uv run --locked --project collector python collector/archive.py download .archive
       # Every run recomputes all history from raw and republishes the open
-      # dataset. Once the archive job exists, download the archive here and pass
-      # --archive-dir; without it, backfill refuses to run as soon as the hot
-      # table no longer starts at seq 1.
+      # dataset. Backfill refuses to run if the hot table no longer starts at
+      # seq 1 and no archive covers the rows before it.
       - name: Recompute every derived table from raw and publish exports
-        run: uv run python -m metrics backfill
+        run: |
+          if compgen -G ".archive/samples/*.parquet" > /dev/null; then
+            uv run python -m metrics backfill --archive-dir .archive/samples
+          else
+            uv run python -m metrics backfill
+          fi

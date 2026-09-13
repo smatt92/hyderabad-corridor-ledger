@@ -22,6 +22,11 @@ CORRIDOR_ID = r"^[a-z0-9][a-z0-9-]{1,62}$"
 PAIR_ID = r"^[A-Z]{2}-[0-9]{2,4}$"
 INTERVENTION_ID = r"^[a-z0-9][a-z0-9-]{1,62}$"
 BASES = ("tomtom", "p5")
+CHAINS = ("samples", "failed_samples")
+# corridors.class is the collector's vocabulary (core, alternate, donor). Payloads
+# name a pair's two sides primary and alternate: a paired core corridor is its
+# pair's primary. Donors are never paired and have no role.
+PAIR_ROLE = {"core": "primary", "alternate": "alternate"}
 
 HOURLY_COLUMNS = [
     "day", "hour", "n_expected", "n_ok", "missing_rate", "low_confidence", "tt_mean_s", "tt_p95_s",
@@ -39,6 +44,11 @@ AUDIT_FIELDS = [
     "n_pre", "n_post", "n_controls", "treated_pre", "treated_post", "synthetic_pre",
     "synthetic_post", "effect", "cs_low", "cs_high", "alpha", "pre_rmse", "weights",
     "low_confidence", "method_version",
+]
+
+VERIFICATION_FIELDS = [
+    "verified_at", "ok", "rows_checked", "first_seq", "head_seq", "head_row_hash", "breaks",
+    "first_break_seq", "first_break_problem",
 ]
 
 app = FastAPI(
@@ -103,13 +113,17 @@ def corridor_or_404(store: Store, corridor_id: str) -> Row:
     return row
 
 
+def pair_role(row: Row) -> str | None:
+    return PAIR_ROLE.get(row.get("class")) if row.get("pair_id") else None
+
+
 def corridor_view(row: Row, stats: Row | None) -> dict:
     """length_meters is passed through from the measured value, or null. It is
     never derived from the coordinates."""
     stats = stats or {}
     return {
         "id": row["id"], "code": row.get("code"), "name": row["name"],
-        "pair_id": row.get("pair_id"), "role": row.get("role"),
+        "pair_id": row.get("pair_id"), "role": pair_role(row),
         "origin": {"name": row.get("origin_name"), "lat": row["origin_lat"],
                    "lon": row["origin_lon"]},
         "destination": {"name": row.get("destination_name"), "lat": row["dest_lat"],
@@ -233,7 +247,7 @@ def compare(
 ):
     """The pair's declared corridors only. One corridor is a valid answer:
     alternate is null and nothing is derived to stand in for it."""
-    members = {r["role"]: r for r in store.select("corridors", [("pair_id", "eq", pair_id)])}
+    members = {pair_role(r): r for r in store.select("corridors", [("pair_id", "eq", pair_id)])}
     if "primary" not in members:
         raise HTTPException(404, f"no pair {pair_id}")
 
@@ -318,19 +332,28 @@ def audit(store: StoreDep, intervention_id: Annotated[str, Path(pattern=INTERVEN
 
 @router.get("/verify")
 def verify(store: StoreDep):
-    """The latest walk of the sample hash chain. The walk runs in a scheduled job
-    because it reads every sample; this endpoint reports it and when it ran."""
+    """The latest walk of each hash chain: samples (format v1) and failed_samples
+    (format f1). The walks run in scheduled jobs because they read every row;
+    this endpoint reports them and when they ran. A break in either is a break."""
     ds = dataset(store)
-    row = one(store.select("chain_verifications", order=[("id", "desc")], limit=1))
+    latest = {t: one(store.select("chain_verifications", [("table_name", "eq", t)],
+                                  [("id", "desc")], limit=1)) for t in CHAINS}
+    walked = [r for r in latest.values() if r is not None]
+    status = ("never_verified" if latest["samples"] is None
+              else "ok" if all(r["ok"] for r in walked) else "broken")
     body = {
-        "status": "never_verified" if row is None else ("ok" if row["ok"] else "broken"),
-        "verification": row and {k: row[k] for k in (
-            "verified_at", "ok", "rows_checked", "first_seq", "head_seq", "head_row_hash",
-            "breaks", "first_break_seq")},
-        "method": "sha256 hash chain, format v1: row_hash = sha256(prev_hash || canonical row)",
-        "reproduce": "select * from private.samples_chain_breaks();  -- empty means intact",
+        "status": status,
+        "verification": latest["samples"] and {k: latest["samples"].get(k)
+                                               for k in VERIFICATION_FIELDS},
+        "chains": {t: r and {k: r.get(k) for k in VERIFICATION_FIELDS}
+                   for t, r in latest.items()},
+        "method": "sha256 hash chains: row_hash = sha256(prev_hash || canonical row); "
+                  "samples use format v1, failed_samples format f1",
+        "reproduce": "collector/chain.py re-verifies rows read from the public tables "
+                     "or the archive; an empty list of breaks means intact",
     }
-    return respond(store, body, row and row["verified_at"], ds and ds["missing_rate"])
+    return respond(store, body, latest["samples"] and latest["samples"]["verified_at"],
+                   ds and ds["missing_rate"])
 
 
 def export(store: Store, fmt: str, public_base: str) -> JSONResponse:
