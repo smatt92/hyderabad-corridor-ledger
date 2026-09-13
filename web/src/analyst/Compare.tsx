@@ -1,28 +1,72 @@
 import { useState } from "preact/hooks";
 import { useApi } from "../api/hooks";
-import type { CompareResponse, CompareSide, Corridor } from "../api/types";
+import type { CompareResponse, CompareSide, Corridor, Floors, Window } from "../api/types";
 import { SpreadBand } from "../charts/SpreadBand";
 import { AdvantageStrip } from "../encodings/AdvantageStrip";
-import { TIE_SECONDS, advantagePhrase, byHour } from "../lib/advantage";
+import { TIE_SECONDS, advantagePhrase, byHour, readAdvantage } from "../lib/advantage";
 import { CARD, FAINT, HATCH, INK, MID, MONO, RUST, SOFT, TEAL, TEXT } from "../lib/color";
-import { fmtCoverage, fmtDay, fmtHour, fmtMinutes, fmtNum } from "../lib/format";
+import { gate, gateOne, meetsFloor, resolveFloors } from "../lib/floors";
+import {
+  fmtCount, fmtCoverage, fmtDay, fmtHour, fmtInterval, fmtMinutes, fmtMinutesInterval, fmtSigned, fmtSignedInterval,
+  fmtWindow, insufficientText, windowDays,
+} from "../lib/format";
 import { EM_DASH, formatLength, mapsHandoffUrl } from "../lib/route";
 import { cache } from "./cache";
-import { Notice, SectionHead, Select, StatList, kicker, smallCaps } from "./common";
+import { Notice, PooledStat, SectionHead, Select, StatList, kicker, smallCaps } from "./common";
 
+const HOURS = Array.from({ length: 24 }, (_, h) => h);
 const big = { fontFamily: MONO, fontSize: "40px", fontWeight: 500, letterSpacing: "-.03em", lineHeight: 1, fontVariantNumeric: "tabular-nums" };
 
-function atHour(side: CompareSide, hour: number) {
+/** One side's pooled values by hour, each gated by its floor, and the readings at the selected hour. */
+function sideAt(side: CompareSide, hour: number, floors: Floors) {
   const p = side.profile;
+  const q = floors.p95_min_samples;
+  const n = byHour(p.hour, p.n_ok);
+  const at = (col: (number | null)[]) => byHour(p.hour, col)[hour] ?? null;
+  const nNow = n[hour] ?? null;
+  const p95 = gate(byHour(p.hour, p.tt_p95_s), n, q);
+  const median = gate(byHour(p.hour, p.tt_p50_s), n, floors.central_min_samples);
   return {
-    median: byHour(p.hour, p.tt_p50_s),
-    p95: byHour(p.hour, p.tt_p95_s),
-    bti: byHour(p.hour, p.bti)[hour] ?? null,
+    n,
+    nNow,
+    median,
+    p95,
+    medianNow: median[hour] ?? null,
+    p95Now: p95[hour] ?? null,
+    p95Lo: at(p.tt_p95_ci_low),
+    p95Hi: at(p.tt_p95_ci_high),
+    bti: gateOne(at(p.bti), nNow, q),
+    btiLo: at(p.bti_ci_low),
+    btiHi: at(p.bti_ci_high),
     low: byHour(p.hour, p.low_confidence)[hour] ?? true,
   };
 }
 
 const minutes = (v: (number | null)[]) => v.map((s) => (s == null ? null : s / 60));
+const perMinute = (s: number | null) => (s == null ? null : s / 60);
+
+function BigStat({ label, value, unit, detail, n, floor }: {
+  label: string;
+  value: string | null;
+  unit?: string;
+  detail: string;
+  n: number | null;
+  floor: number;
+}) {
+  const withheld = value === null;
+  return (
+    <div>
+      <div style={smallCaps}>{label}</div>
+      <div style={big}>
+        {withheld ? EM_DASH : value}
+        {!withheld && unit ? <span style={{ fontSize: "15px", color: MID }}> {unit}</span> : null}
+      </div>
+      <div style={{ fontFamily: MONO, fontSize: "10.5px", marginTop: "5px", color: withheld ? RUST : MID, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+        {withheld ? (meetsFloor(n, floor) ? "not published" : `insufficient samples · ${fmtCount(n, floor)}`) : detail}
+      </div>
+    </div>
+  );
+}
 
 export function Compare({ corridors, hour, windowEnd }: { corridors: Corridor[]; hour: number; windowEnd: string }) {
   const primaries = corridors.filter((c) => c.role === "primary" && c.pair_id);
@@ -36,9 +80,9 @@ export function Compare({ corridors, hour, windowEnd }: { corridors: Corridor[];
       right={<Select label="Pair" value={pairId} options={primaries.map((c) => ({ value: c.pair_id!, label: `${c.pair_id}  ${c.name}` }))} onChange={setPairId} />}
     />
   );
-  const footnote = (
+  const footnote = (window: Window | null) => (
     <div style={{ marginTop: "14px", fontSize: "11.5px", color: MID, maxWidth: "88ch", lineHeight: 1.5 }}>
-      We are not a live routing product. Every figure here is a distribution over the window ending {fmtDay(windowEnd)} at the selected hour, for two separately declared corridors. Alternates are declared in the payload and measured in their own right — never derived from geometry. The Maps button passes the corridor’s origin and destination only, with no intermediate points; if you want the fastest road right now, that is Google’s job, and it is a different question.
+      We are not a live routing product. Every figure here is computed on calls pooled over {window ? fmtWindow(window) : `the window ending ${fmtDay(windowEnd)}`} at the selected hour, for two separately declared corridors. Alternates are declared in the payload and measured in their own right — never derived from geometry. The Maps button passes the corridor’s origin and destination only, with no intermediate points; if you want the fastest road right now, that is Google’s job, and it is a different question.
     </div>
   );
 
@@ -47,11 +91,12 @@ export function Compare({ corridors, hour, windowEnd }: { corridors: Corridor[];
   }
   if (res === null) return <div>{head}<div style={{ fontFamily: MONO, fontSize: "12px", color: MID }}>loading…</div></div>;
   if (!res.ok) {
-    return <div>{head}<Notice kicker="Degraded" title="Comparison unavailable">The read API returned: {res.error}.</Notice>{footnote}</div>;
+    return <div>{head}<Notice kicker="Degraded" title="Comparison unavailable">The read API returned: {res.error}.</Notice>{footnote(null)}</div>;
   }
 
   const data = res.data;
   const primary = data.primary;
+  const window = data.window ?? null;
   const title = `${data.pair_id} · ${primary.origin.name ?? "origin"} → ${primary.destination.name ?? "destination"}`;
   if (!data.alternate) {
     return (
@@ -60,29 +105,77 @@ export function Compare({ corridors, hour, windowEnd }: { corridors: Corridor[];
         <Notice kicker="No measured alternate" title={title}>
           No measured alternate for this corridor. Pair {data.pair_id} declares one corridor only; we do not construct a second route to compare it against.
         </Notice>
-        {footnote}
+        {footnote(window)}
       </div>
     );
   }
 
+  const f = resolveFloors(data.floors);
+  const q = f.p95_min_samples;
   const sides = [primary, data.alternate] as const;
-  const values = sides.map((s) => atHour(s, hour));
-  const advantage = data.advantage ? byHour(data.advantage.hour, data.advantage.advantage_p95_s) : Array(24).fill(null);
-  const advLow = data.advantage ? byHour(data.advantage.hour, data.advantage.low_confidence).map((v) => v ?? true) : Array(24).fill(true);
-  const adv = advantage[hour] ?? null;
-  const better = adv == null ? null : adv > 0 ? 1 : 0;
-  const tie = adv != null && Math.abs(adv) < TIE_SECONDS;
-  const advNum = adv == null ? EM_DASH : tie ? "±0 min" : `${adv > 0 ? "+" : "−"}${(Math.abs(adv) / 60).toFixed(1)} min`;
-  const advColor = adv == null || tie ? MID : adv > 0 ? TEAL : RUST;
-  const phrase = advantagePhrase(advantage);
-  const advText =
-    adv == null
-      ? `No p95 travel time is published for both corridors at ${fmtHour(hour)}. `
-      : tie
-        ? "At this hour the two measured corridors are indistinguishable. Take either; the choice only matters at peak. "
-        : adv > 0
-          ? `In favour of the declared alternate: it arrives ${(adv / 60).toFixed(1)} min earlier at the 95th percentile — the number you plan around, not the median. `
-          : `In favour of the primary corridor: ${(-adv / 60).toFixed(1)} min less tail risk at this hour. `;
+  const values = sides.map((s) => sideAt(s, hour, f));
+  const A = data.advantage;
+  const nulls = HOURS.map(() => null);
+  const advRaw = A ? byHour(A.hour, A.advantage_p95_s) : nulls;
+  const advLo = A ? byHour(A.hour, A.advantage_ci_low) : nulls;
+  const advHi = A ? byHour(A.hour, A.advantage_ci_high) : nulls;
+  const pN = A ? byHour(A.hour, A.primary_n) : values[0]!.n;
+  const aN = A ? byHour(A.hour, A.alternate_n) : values[1]!.n;
+  const readings = HOURS.map((h) => readAdvantage(advRaw[h] ?? null, advLo[h] ?? null, advHi[h] ?? null, pN[h] ?? null, aN[h] ?? null, q));
+  const advantage = readings.map((r) => r.value);
+  const shownLo = readings.map((r, h) => (r.value == null ? null : (advLo[h] ?? null)));
+  const shownHi = readings.map((r, h) => (r.value == null ? null : (advHi[h] ?? null)));
+  const advLow = A ? byHour(A.hour, A.low_confidence).map((v) => v ?? true) : HOURS.map(() => true);
+
+  const reading = readings[hour]!;
+  const adv = reading.value;
+  const lo = shownLo[hour] ?? null;
+  const hi = shownHi[hour] ?? null;
+  const pn = pN[hour] ?? null;
+  const an = aN[hour] ?? null;
+  const lead = reading.kind === "alternate" || reading.kind === "primary";
+  const better = lead && !reading.uncertain ? (reading.kind === "alternate" ? 1 : 0) : null;
+  const tie = reading.kind === "tie";
+  const mins = (s: number) => (Math.abs(s) / 60).toFixed(1);
+  const advNum = adv == null ? EM_DASH : tie ? "±0 min" : `${adv > 0 ? "+" : "−"}${mins(adv)} min`;
+  const advColor = adv == null || tie || reading.uncertain ? MID : adv > 0 ? TEAL : RUST;
+  const advInterval = `${fmtSignedInterval(perMinute(adv), perMinute(lo), perMinute(hi), 1)} min`;
+  const counts = `primary ${fmtCount(pn, q)} · alternate ${fmtCount(an, q)}`;
+  const insufficientHours = readings.filter((r) => r.kind === "insufficient").length;
+  const noCallHours = readings.filter((r) => r.kind === "no_calls").length;
+  const phrase = advantagePhrase(advantage, TIE_SECONDS, shownLo);
+  const belowSides = [!meetsFloor(pn, q) ? "the primary corridor" : null, !meetsFloor(an, q) ? "the declared alternate" : null].filter((s): s is string => s != null);
+  const bounds = `${fmtSigned(perMinute(lo), 1)} to ${fmtSigned(perMinute(hi), 1)} min`;
+
+  let advText: string;
+  switch (reading.kind) {
+    case "insufficient":
+      advText = `No advantage is published at ${fmtHour(hour)}: ${belowSides.join(" and ")} ${belowSides.length > 1 ? "have" : "has"} fewer than ${q} pooled calls at this hour, too few for a 95th percentile. That is insufficient samples, not a tie. `;
+      break;
+    case "no_calls":
+      advText = `Neither corridor has pooled calls at ${fmtHour(hour)}, so nothing is published. `;
+      break;
+    case "unpublished":
+      advText = `No p95 travel time is published for both corridors at ${fmtHour(hour)}. `;
+      break;
+    case "tie":
+      advText = `At this hour the two measured corridors are indistinguishable: the p95 gap is under ${(TIE_SECONDS / 60).toFixed(1)} min. Take either; the choice only matters at peak. `;
+      break;
+    default:
+      advText = reading.uncertain
+        ? `The point estimate favours ${reading.kind === "alternate" ? "the declared alternate" : "the primary corridor"} by ${mins(adv!)} min at the 95th percentile, but its bootstrap interval (${bounds}) includes zero, so neither corridor is shown as more reliable at this hour. `
+        : reading.kind === "alternate"
+          ? `In favour of the declared alternate: it arrives ${mins(adv!)} min earlier at the 95th percentile — the number you plan around, not the median. Interval ${bounds}. `
+          : `In favour of the primary corridor: ${mins(adv!)} min less tail risk at this hour. Interval ${bounds}. `;
+  }
+
+  const badge = (i: number): string => {
+    if (better != null) return better === i ? "MORE RELIABLE AT THIS HOUR" : "WIDER SPREAD";
+    if (tie || reading.uncertain) return "NOT DISTINGUISHABLE AT THIS HOUR";
+    if (reading.kind === "insufficient") return meetsFloor([pn, an][i], q) ? "OTHER CORRIDOR BELOW FLOOR" : "INSUFFICIENT SAMPLES";
+    return "NO P95 AT THIS HOUR";
+  };
+  const days = windowDays(window);
 
   return (
     <div>
@@ -90,15 +183,19 @@ export function Compare({ corridors, hour, windowEnd }: { corridors: Corridor[];
       <div style={{ border: `1.5px solid ${INK}`, background: CARD }}>
         <div style={{ padding: "20px 24px", borderBottom: `1px solid ${FAINT}`, display: "flex", flexWrap: "wrap", gap: "18px", justifyContent: "space-between", alignItems: "baseline" }}>
           <div style={{ fontSize: "16px", fontWeight: 500 }}>{title}</div>
-          <div style={{ fontFamily: MONO, fontSize: "12px", color: MID, fontVariantNumeric: "tabular-nums" }}>{fmtHour(hour)} · window to {fmtDay(windowEnd)}</div>
+          <div style={{ fontFamily: MONO, fontSize: "12px", color: MID, fontVariantNumeric: "tabular-nums" }}>
+            {fmtHour(hour)} · pooled {window ? fmtWindow(window) : `to ${fmtDay(windowEnd)}`}
+          </div>
+        </div>
+        <div style={{ padding: "12px 24px", borderBottom: `1px solid ${FAINT}`, fontSize: "11.5px", color: TEXT, lineHeight: 1.5 }}>
+          {window ? `Pooled over ${fmtWindow(window)}${days ? ` (${days} days)` : ""}: ` : "Pooling window not published: "}
+          all successful calls at each local hour on each corridor, every day in the window. p95 and BTI are published from {q} pooled calls at the hour and medians from {f.central_min_samples}; intervals are bootstrap, {f.bootstrap_resamples} resamples.
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(290px,1fr))" }}>
           {sides.map((s, i) => {
             const v = values[i]!;
             const isBetter = better === i;
-            const median = v.median[hour] ?? null;
-            const p95 = v.p95[hour] ?? null;
             return (
               <div key={s.id} style={{ padding: "22px 24px", borderRight: i === 0 ? `1px solid ${FAINT}` : "none", background: v.low ? HATCH : isBetter ? "#f7f5f0" : "transparent" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "12px", marginBottom: "16px" }}>
@@ -109,23 +206,27 @@ export function Compare({ corridors, hour, windowEnd }: { corridors: Corridor[];
                       pair {s.pair_id} · length {formatLength(s.length_meters)} · free-flow {fmtMinutes(s.free_flow.tomtom_s)} min
                     </div>
                   </div>
-                  <div style={{ fontFamily: MONO, fontSize: "10px", letterSpacing: ".1em", padding: "5px 8px", whiteSpace: "nowrap", border: `1px solid ${isBetter ? INK : FAINT}`, background: isBetter ? INK : "transparent", color: isBetter ? "#fbfaf7" : MID }}>
-                    {better == null ? "NO P95 AT THIS HOUR" : isBetter ? "MORE RELIABLE AT THIS HOUR" : "WIDER SPREAD"}
+                  <div style={{ fontFamily: MONO, fontSize: "10px", letterSpacing: ".1em", padding: "5px 8px", whiteSpace: "nowrap", border: `1px solid ${isBetter ? INK : FAINT}`, background: isBetter ? INK : "transparent", color: isBetter ? "#fbfaf7" : reading.kind === "insufficient" && !meetsFloor([pn, an][i], q) ? RUST : MID }}>
+                    {badge(i)}
                   </div>
                 </div>
-                <div style={{ display: "flex", gap: "26px", flexWrap: "wrap", alignItems: "flex-end" }}>
-                  <div><div style={smallCaps}>Median</div><div style={big}>{fmtMinutes(median)}<span style={{ fontSize: "15px", color: MID }}> min</span></div></div>
-                  <div><div style={smallCaps}>p95 · plan for this</div><div style={big}>{fmtMinutes(p95)}<span style={{ fontSize: "15px", color: MID }}> min</span></div></div>
-                  <div><div style={smallCaps}>BTI</div><div style={big}>{fmtNum(v.bti)}</div></div>
+                <div style={{ display: "flex", gap: "26px", flexWrap: "wrap", alignItems: "flex-start" }}>
+                  <BigStat label="Median" value={v.medianNow == null ? null : fmtMinutes(v.medianNow)} unit="min" detail={`n = ${v.nNow ?? EM_DASH}`} n={v.nNow} floor={f.central_min_samples} />
+                  <BigStat label="p95 · plan for this" value={v.p95Now == null ? null : fmtMinutes(v.p95Now, 1)} unit="min" detail={`${fmtMinutesInterval(v.p95Now, v.p95Lo, v.p95Hi)} min`} n={v.nNow} floor={q} />
+                  <BigStat label="BTI" value={v.bti == null ? null : v.bti.toFixed(2)} detail={fmtInterval(v.bti, v.btiLo, v.btiHi)} n={v.nNow} floor={q} />
                 </div>
                 <div style={{ marginTop: "18px" }}>
-                  <div style={{ ...smallCaps, marginBottom: "6px" }}>Spread by hour · median to p95</div>
+                  <div style={{ ...smallCaps, marginBottom: "6px" }}>Spread by hour · median to p95 · gaps below floor</div>
                   <SpreadBand median={minutes(v.median)} p95={minutes(v.p95)} hour={hour} />
                 </div>
                 <div style={{ marginTop: "18px", paddingTop: "14px", borderTop: `1px solid ${FAINT}`, fontSize: "10.5px", color: SOFT, lineHeight: 1.45 }}>
-                  {p95 == null
-                    ? "No p95 published at this hour; nothing is estimated in its place."
-                    : `Budget ${fmtMinutes(p95)} min to arrive on time 19 trips out of 20${isBetter ? ", the more reliable of the two measured corridors at this hour." : "."}`}
+                  {v.p95Now == null ? (
+                    <span style={{ color: meetsFloor(v.nNow, q) ? SOFT : RUST }}>
+                      {meetsFloor(v.nNow, q) ? `${EM_DASH} no p95 published at this hour` : insufficientText(v.nNow, q)}; nothing is estimated in its place.
+                    </span>
+                  ) : (
+                    `Budget ${fmtMinutes(v.p95Now, 1)} min to arrive on time 19 trips out of 20${isBetter ? ", the more reliable of the two measured corridors at this hour." : "."}`
+                  )}
                   {v.low ? <div style={{ color: RUST, fontFamily: MONO, marginTop: "4px" }}>◌ low confidence at this hour · more than 15% of samples missing, not interpolated</div> : null}
                 </div>
               </div>
@@ -137,22 +238,46 @@ export function Compare({ corridors, hour, windowEnd }: { corridors: Corridor[];
           <div>
             <div style={{ ...kicker, marginBottom: "8px" }}>Reliability advantage at this hour</div>
             <div style={{ fontFamily: MONO, fontSize: "56px", lineHeight: 0.95, letterSpacing: "-.04em", fontWeight: 500, fontVariantNumeric: "tabular-nums", color: advColor }}>{advNum}</div>
+            <div style={{ fontFamily: MONO, fontSize: "11px", marginTop: "8px", lineHeight: 1.5, fontVariantNumeric: "tabular-nums", color: reading.kind === "insufficient" ? RUST : MID }}>
+              {adv != null ? (
+                <>
+                  <div>p95 advantage {advInterval}</div>
+                  <div>{counts}</div>
+                </>
+              ) : reading.kind === "insufficient" ? (
+                <>
+                  <div>{EM_DASH} insufficient samples</div>
+                  <div>{counts}</div>
+                </>
+              ) : reading.kind === "no_calls" ? (
+                <div>{EM_DASH} no calls pooled at this hour on either corridor</div>
+              ) : (
+                <>
+                  <div>{EM_DASH} not published</div>
+                  <div>{counts}</div>
+                </>
+              )}
+            </div>
             <div style={{ fontSize: "13px", color: TEXT, marginTop: "8px", maxWidth: "38ch", lineHeight: 1.5 }}>{advText}{phrase}</div>
           </div>
           <div>
             <div style={{ ...kicker, marginBottom: "8px" }}>Advantage across the day</div>
-            <AdvantageStrip values={advantage.map((v) => (v == null ? null : v / 60))} lowConfidence={advLow} cursor={hour} />
+            <AdvantageStrip values={advantage.map(perMinute)} ciLow={shownLo.map(perMinute)} ciHigh={shownHi.map(perMinute)} kinds={readings.map((r) => r.kind)} lowConfidence={advLow} cursor={hour} />
             <div style={{ fontSize: "10.5px", color: SOFT, marginTop: "6px", lineHeight: 1.45 }}>
-              Above the rule the alternate holds less tail risk; below it, the primary corridor does. Whether the winner changes with the hour is itself the finding.
+              Above the rule the alternate holds less tail risk; below it, the primary corridor does. Thin lines are each hour’s bootstrap interval, and a lead counts only where its interval excludes zero. Rust dotted marks are hours where either corridor has fewer than {q} pooled calls — insufficient samples, not ties ({insufficientHours} {insufficientHours === 1 ? "hour" : "hours"}). Grey dotted marks have no calls pooled ({noCallHours}). Whether the winner changes with the hour is itself the finding.
             </div>
           </div>
           <StatList
             items={[
               ["hour", fmtHour(hour)],
               ["pair id", data.pair_id],
-              ["primary p95", `${fmtMinutes(values[0]!.p95[hour] ?? null)} min`],
-              ["alternate p95", `${fmtMinutes(values[1]!.p95[hour] ?? null)} min`],
-              ["BTI primary / alt", `${fmtNum(values[0]!.bti)} / ${fmtNum(values[1]!.bti)}`],
+              ["pooling window", window ? fmtWindow(window) : EM_DASH],
+              ["primary p95", <PooledStat value={values[0]!.p95Now} n={values[0]!.nNow} floor={q} text={`${fmtMinutesInterval(values[0]!.p95Now, values[0]!.p95Lo, values[0]!.p95Hi)} min`} />],
+              ["alternate p95", <PooledStat value={values[1]!.p95Now} n={values[1]!.nNow} floor={q} text={`${fmtMinutesInterval(values[1]!.p95Now, values[1]!.p95Lo, values[1]!.p95Hi)} min`} />],
+              ["BTI primary", <PooledStat value={values[0]!.bti} n={values[0]!.nNow} floor={q} text={fmtInterval(values[0]!.bti, values[0]!.btiLo, values[0]!.btiHi)} />],
+              ["BTI alternate", <PooledStat value={values[1]!.bti} n={values[1]!.nNow} floor={q} text={fmtInterval(values[1]!.bti, values[1]!.btiLo, values[1]!.btiHi)} />],
+              ["p95 advantage", adv != null ? advInterval : reading.kind === "insufficient" ? <span style={{ color: RUST }}>{`${EM_DASH} insufficient samples`}</span> : EM_DASH],
+              ["pooled calls", `${fmtCount(pn, q)} · ${fmtCount(an, q)}`],
               ["coverage", `${fmtCoverage(primary.missingness_rate)} / ${fmtCoverage(data.alternate.missingness_rate)}`],
             ]}
           />
@@ -168,7 +293,7 @@ export function Compare({ corridors, hour, windowEnd }: { corridors: Corridor[];
           </div>
         </div>
       </div>
-      {footnote}
+      {footnote(window)}
     </div>
   );
 }

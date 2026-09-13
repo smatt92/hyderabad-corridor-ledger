@@ -34,13 +34,17 @@ export function extent(matrix: (number | null)[][]): [number, number] | null {
 
 /**
  * The 24 x 7 rhythm matrix: weekday rows (Sunday first), hour columns. Colour
- * encodes magnitude only, on a ramp with monotonic lightness. Cells with too
- * few days to publish are dashed and left empty, never filled in.
+ * encodes magnitude only, on a ramp with monotonic lightness. Cells with
+ * nothing published are dashed and left empty, never filled in. Given pooled
+ * counts and a floor, an empty cell that has calls but fewer than the floor is
+ * also struck through: insufficient samples rather than no calls.
  */
-export function RhythmMatrix({ matrix, style, highlight }: {
+export function RhythmMatrix({ matrix, style, highlight, counts, floor }: {
   matrix: (number | null)[][];
   style: RhythmStyle;
   highlight?: { dow: number; hour: number } | null;
+  counts?: readonly (readonly (number | null)[])[];
+  floor?: number;
 }) {
   const s = style;
   const width = s.padLeft + 24 * s.cellW;
@@ -64,6 +68,13 @@ export function RhythmMatrix({ matrix, style, highlight }: {
       const h = s.cellH - 2 * s.gap;
       if (v == null) {
         cells.push(<rect key={`n${dow}_${hour}`} x={x + s.gap} y={y + s.gap} width={w} height={h} fill={s.emptyFill} stroke={s.emptyStroke} stroke-dasharray="2 2" />);
+        const n = counts?.[dow]?.[hour] ?? null;
+        if (floor != null && n != null && n > 0 && n < floor) {
+          cells.push(
+            <line key={`i${dow}_${hour}`} x1={x + s.gap + 4} y1={y + s.gap + h - 4} x2={x + s.gap + w - 4} y2={y + s.gap + 4}
+              stroke={s.labelFill} stroke-width={1.2} opacity={0.55} />,
+          );
+        }
         continue;
       }
       cells.push(<rect key={`c${dow}_${hour}`} x={x + s.gap} y={y + s.gap} width={w} height={h} fill={ramp(s.stops, (v - lo) / span)} />);

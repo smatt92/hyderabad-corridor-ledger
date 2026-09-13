@@ -63,6 +63,52 @@ export function fmtMinutes(seconds: number | null | undefined, digits = 0): stri
   return present(seconds) ? (seconds / 60).toFixed(digits) : EM_DASH;
 }
 
+type Num = number | null | undefined;
+
+function interval(v: Num, lo: Num, hi: Num, f: (x: number) => string): string {
+  if (!present(v)) return EM_DASH;
+  const bound = (b: Num) => (present(b) ? f(b) : EM_DASH);
+  return `${f(v)} [${bound(lo)}, ${bound(hi)}]`;
+}
+
+/** A pooled estimate with its bootstrap interval: "0.42 [0.31, 0.58]". An em dash when unpublished. */
+export function fmtInterval(v: Num, lo: Num, hi: Num, digits = 2): string {
+  return interval(v, lo, hi, (x) => x.toFixed(digits));
+}
+
+/** A signed estimate with its interval: "+0.12 [−0.03, +0.25]". */
+export function fmtSignedInterval(v: Num, lo: Num, hi: Num, digits = 2): string {
+  return interval(v, lo, hi, (x) => fmtSigned(x, digits));
+}
+
+/** Seconds as minutes with an interval: "31.2 [29.8, 33.0]". */
+export function fmtMinutesInterval(seconds: Num, lo: Num, hi: Num, digits = 1): string {
+  return interval(seconds, lo, hi, (x) => (x / 60).toFixed(digits));
+}
+
+/** A pooled call count against its publication floor: "n = 180 / 200". */
+export function fmtCount(n: Num, floor: number): string {
+  return `n = ${present(n) ? Math.round(n) : EM_DASH} / ${floor}`;
+}
+
+/** The explicit withheld state of a statistic below its sample floor. */
+export function insufficientText(n: Num, floor: number): string {
+  return `${EM_DASH} insufficient samples · ${fmtCount(n, floor)}`;
+}
+
+/** A pooling window, inclusive: "15 Jun–12 Sep 2026", with both years when they differ. */
+export function fmtWindow(window: { start: string; end: string } | null | undefined): string {
+  if (!window?.start || !window.end) return EM_DASH;
+  const sameYear = window.start.slice(0, 4) === window.end.slice(0, 4);
+  return `${fmtDay(window.start, sameYear)}–${fmtDay(window.end)}`;
+}
+
+/** Days in an inclusive window. */
+export function windowDays(window: { start: string; end: string } | null | undefined): number | null {
+  if (!window?.start || !window.end) return null;
+  return Math.round((parseDay(window.end).getTime() - parseDay(window.start).getTime()) / 86_400_000) + 1;
+}
+
 /** The Hyderabad local calendar day of an instant, as the API's days are. */
 export function istDay(iso: string): string {
   return new Date(new Date(iso).getTime() + IST_OFFSET_MS).toISOString().slice(0, 10);

@@ -102,12 +102,12 @@ def declared_corridors() -> pd.DataFrame:
             rows.append({
                 "id": slug(f"{code} {origin} {dest}{' alt' if suffix else ''}"), "code": code,
                 "name": f"Demo — {origin} → {dest}{suffix}", "pair_id": pair_id, "role": role,
-                "class": "core" if role == "primary" else "alternate", "tier": "A",
+                "class": "core" if role == "primary" else "alternate", "tier": "B",
                 "direction": "ab", "status": "active",
                 "origin_name": origin, "destination_name": dest,
                 "origin_lat": PLACES[origin][0], "origin_lon": PLACES[origin][1],
                 "dest_lat": PLACES[dest][0], "dest_lon": PLACES[dest][1],
-                "cadence_s": CADENCE_S, "active": True, "osm_path": None,
+                "active": True, "osm_path": None,
                 "length": length, "free_s": free,
             })
     return pd.DataFrame(rows)

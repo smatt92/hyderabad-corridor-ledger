@@ -7,7 +7,7 @@ recomputes them from raw under the new version.
 
 from dataclasses import dataclass
 
-METHOD_VERSION = "p02.3"
+METHOD_VERSION = "p02.4"
 LOCAL_TZ = "Asia/Kolkata"
 BASES = ("tomtom", "p5")
 
@@ -22,6 +22,18 @@ class Params:
     ff_p5_night_hours: tuple[int, int] = (0, 4)
     ff_p5_window_days: int = 28
     ff_p5_min_samples: int = 20
+
+    # Pooled distributions (metrics.pooled). BTI, PTI and every p95 are properties
+    # of a distribution, not of a day: they are computed over pooled calls and
+    # published only at or above their floor. Percentiles are empirical.
+    p95_min_samples: int = 200
+    central_min_samples: int = 30
+    bootstrap_resamples: int = 2000
+    bootstrap_alpha: float = 0.05
+    bootstrap_seed: int = 20260913
+    # Peak hours pooled for the ledger and the audit, local minutes after
+    # midnight, [start, end): 06:30-10:30 and 16:30-21:00.
+    peak_minutes: tuple[tuple[int, int], ...] = ((390, 630), (990, 1260))
 
     worst_window: str = "15min"
 
@@ -48,13 +60,20 @@ class Params:
     cs_before_days: int = 28
     cs_rho_target_days: int = 28
 
-    # Read model served by the P-04 API.
+    # Read model served by the P-04 API. The read window pools the ledger's
+    # peak-hour statistics; the profile window pools each hour of the day, and is
+    # longer because an hour holds at most four calls a day.
     read_window_days: int = 90
-    heatmap_min_days: int = 2
+    profile_window_days: int = 120
     network_baseline_weeks: int = 8
     network_baseline_min: int = 3
     network_state_band_pct: float = 7.0
 
-    # Intervention audit (synthetic control).
+    # Intervention audit: BTI pooled once over each fixed period.
+    audit_pre_days: int = 28
     audit_settle_days: int = 9
-    audit_min_pre_days: int = 14
+    audit_post_days: int = 28
+
+    def __post_init__(self) -> None:
+        if self.p95_min_samples < self.central_min_samples:
+            raise ValueError("p95_min_samples must be at least central_min_samples")

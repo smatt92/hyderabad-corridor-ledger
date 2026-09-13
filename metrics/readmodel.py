@@ -1,8 +1,18 @@
 """Read model for the P-04 API.
 
 The API selects rows; it never computes. Everything a view shows is
-precomputed here over the read window: the trailing read_window_days ending
-on the last local day with a successful call. Pure like the rest of metrics/.
+precomputed here, pure like the rest of metrics/.
+
+Pooling windows end on the last local day with a successful call:
+  read window, read_window_days (90): dataset and corridor stats, the ledger's
+      pooled peak-hour statistics, the rhythm matrix and network state.
+  profile window, profile_window_days (120): the 24-hour profile and the pair
+      comparison, which pool every call at each local hour across the window.
+
+BTI, PTI and every p95 exist only as statistics of pooled calls
+(metrics.pooled): never computed from one day or one hour cell, published only
+at or above their floor, and always with a bootstrap interval. Pooled counts
+are published beside them, so a withheld value says why.
 
 TTI appears against both free-flow bases wherever it appears. Quantities that
 need no free-flow reference (travel time, BTI, travel time against a
@@ -12,22 +22,34 @@ corridor's own normal) carry no basis.
 import numpy as np
 import pandas as pd
 
+from metrics import pooled
 from metrics.cells import local_day_hour
 from metrics.params import BASES, Params
 
-QUANTILES = (0.25, 0.5, 0.75, 0.95)
 MISSING = ["n_expected", "n_ok", "missing_rate", "low_confidence"]
+CENTRAL_QUANTILES = {"p25": 0.25, "p50": 0.5, "p75": 0.75}
 
+LEDGER_TRAVEL = [
+    "n_peak", "tt_mean_peak_s", "tt_p95_peak_s", "tt_p95_peak_ci_low", "tt_p95_peak_ci_high",
+    "bti_peak", "bti_peak_ci_low", "bti_peak_ci_high",
+]
+LEDGER_PTI = [f"pti_{b}_peak{s}" for b in BASES for s in ("", "_ci_low", "_ci_high")]
 STATS_COLUMNS = [
     "corridor_id", "window_start", "window_end", *MISSING, "length_meters", "ff_tomtom_s",
-    "ff_p5_s",
+    "ff_p5_s", *LEDGER_TRAVEL, *LEDGER_PTI,
 ]
-DAY_COLUMNS = ["corridor_id", "day", *MISSING, "tt_mean_s", "tti_tomtom", "tti_p5", "bti"]
-PROFILE_COLUMNS = [
-    "corridor_id", "hour", "window_start", "window_end", *MISSING, "tt_mean_s", "tt_p50_s",
-    "tt_p95_s", "bti",
-    *[f"tti_{b}_p{round(q * 100)}" for b in BASES for q in QUANTILES],
+DATASET_COLUMNS = [
+    "id", "window_start", "window_end", "n_corridors", "n_expected", "n_ok", "missing_rate",
+    "low_confidence", "p95_min_samples", "central_min_samples", "bootstrap_resamples",
 ]
+DAY_COLUMNS = ["corridor_id", "day", *MISSING, "tt_mean_s", "tti_tomtom", "tti_p5"]
+PROFILE_STATS = [
+    "n_tti_p5", "tt_mean_s", "tt_p50_s", "tt_p95_s", "tt_p95_ci_low", "tt_p95_ci_high", "bti",
+    "bti_ci_low", "bti_ci_high",
+    *[f"tti_{b}_{s}" for b in BASES
+      for s in ("p25", "p50", "p75", "p95", "p95_ci_low", "p95_ci_high")],
+]
+PROFILE_COLUMNS = ["corridor_id", "hour", "window_start", "window_end", *MISSING, *PROFILE_STATS]
 HEATMAP_COLUMNS = [
     "scope", "corridor_id", "dow", "hour", "window_start", "window_end", "n_days",
     "tti_tomtom_p50", "tti_p5_p50", *MISSING,
@@ -37,8 +59,9 @@ NETWORK_COLUMNS = [
     "tti_p5_p50", *MISSING,
 ]
 PAIR_COLUMNS = [
-    "pair_id", "hour", "primary_id", "alternate_id", "primary_tt_p95_s", "alternate_tt_p95_s",
-    "advantage_p95_s", "low_confidence",
+    "pair_id", "hour", "window_start", "window_end", "primary_id", "alternate_id", "primary_n",
+    "alternate_n", "primary_tt_p95_s", "alternate_tt_p95_s", "advantage_p95_s",
+    "advantage_ci_low", "advantage_ci_high", "low_confidence",
 ]
 
 
@@ -51,6 +74,12 @@ def read_window(
         raise ValueError("no successful calls to build a read window from")
     end = days.max()
     return end - pd.Timedelta(days=params.read_window_days - 1), end
+
+
+def profile_window(window, params: Params = Params()) -> tuple[pd.Timestamp, pd.Timestamp]:
+    """The profile's pooling window: profile_window_days ending with the read window."""
+    end = window[1]
+    return end - pd.Timedelta(days=params.profile_window_days - 1), end
 
 
 def in_window(frame: pd.DataFrame, window) -> pd.DataFrame:
@@ -70,10 +99,6 @@ def missingness(cells: pd.DataFrame, keys: list[str], params: Params = Params())
 def sunday_first(day: pd.Series) -> pd.Series:
     """Weekday with Sunday = 0, the order the rhythm matrix is drawn in."""
     return (day.dt.dayofweek + 1) % 7
-
-
-def _quantile(p: float):
-    return lambda x: x.quantile(p)
 
 
 def add_hourly_context(indexed: pd.DataFrame, window) -> pd.DataFrame:
@@ -98,6 +123,22 @@ def add_hourly_context(indexed: pd.DataFrame, window) -> pd.DataFrame:
     return out.drop(columns=["tti_tomtom_wk", "tti_p5_wk", "own_median_s"])
 
 
+def ledger_stats(calls: pd.DataFrame, params: Params = Params()) -> pd.DataFrame:
+    """The ledger's pooled statistics: every successful peak-hour call in calls, one
+    distribution per corridor."""
+    peak = calls[pooled.is_peak(calls["requested_at"], params)]
+    rows = []
+    for corridor_id, group in peak.groupby("corridor_id"):
+        s = pooled.travel(group["travel_time_s"], params, ("ledger", corridor_id))
+        rows.append({
+            "corridor_id": corridor_id, "n_peak": s["n"], "tt_mean_peak_s": s["mean"],
+            "tt_p95_peak_s": s["p95"], "tt_p95_peak_ci_low": s["p95_ci_low"],
+            "tt_p95_peak_ci_high": s["p95_ci_high"], "bti_peak": s["bti"],
+            "bti_peak_ci_low": s["bti_ci_low"], "bti_peak_ci_high": s["bti_ci_high"],
+        })
+    return pd.DataFrame(rows, columns=["corridor_id", *LEDGER_TRAVEL]).set_index("corridor_id")
+
+
 def corridor_stats(
     samples: pd.DataFrame,
     indexed: pd.DataFrame,
@@ -105,8 +146,13 @@ def corridor_stats(
     window,
     params: Params = Params(),
 ) -> pd.DataFrame:
-    """Per corridor over the window. length_meters is the median lengthInMeters that
-    TomTom measured on successful calls: measured, never derived from coordinates."""
+    """Per corridor over the read window.
+
+    length_meters is the median lengthInMeters that TomTom measured on successful
+    calls: measured, never derived from coordinates. The ledger's BTI and PTI pool
+    every successful peak-hour call in the window; PTI divides that pooled p95, and
+    its interval, by each free-flow reference.
+    """
     start, end = window
     ok = samples[samples["ok"]]
     ok = in_window(ok.join(local_day_hour(ok["requested_at"])), window)
@@ -122,11 +168,20 @@ def corridor_stats(
     )
     out = missingness(in_window(indexed, window), ["corridor_id"], params)
     out = out.join(measured, how="left").join(latest_p5, how="left")
+    out = out.join(ledger_stats(ok, params), how="left")
     out["length_meters"] = out["length_meters"].round().astype("Int64")
+    out["n_peak"] = out["n_peak"].fillna(0).astype("int64")  # a count, not a measurement
+    for col in LEDGER_TRAVEL[1:]:
+        out[col] = out[col].astype(float)
+    for basis, reference in (("tomtom", "ff_tomtom_s"), ("p5", "ff_p5_s")):
+        for suffix, source in (("", "tt_p95_peak_s"), ("_ci_low", "tt_p95_peak_ci_low"),
+                               ("_ci_high", "tt_p95_peak_ci_high")):
+            out[f"pti_{basis}_peak{suffix}"] = out[source] / out[reference].astype(float)
     return out.reset_index().assign(window_start=start, window_end=end)[STATS_COLUMNS]
 
 
 def dataset_stats(indexed: pd.DataFrame, window, params: Params = Params()) -> pd.DataFrame:
+    """The read window's coverage, and the floors every published number was held to."""
     start, end = window
     cells = in_window(indexed, window)
     n_expected, n_ok = int(cells["n_expected"].sum()), int(cells["n_ok"].sum())
@@ -136,55 +191,78 @@ def dataset_stats(indexed: pd.DataFrame, window, params: Params = Params()) -> p
         "n_corridors": int(cells["corridor_id"].nunique()), "n_expected": n_expected,
         "n_ok": n_ok, "missing_rate": rate,
         "low_confidence": bool(np.isnan(rate) or rate > params.low_confidence_missing_rate),
-    }])
+        "p95_min_samples": params.p95_min_samples,
+        "central_min_samples": params.central_min_samples,
+        "bootstrap_resamples": params.bootstrap_resamples,
+    }])[DATASET_COLUMNS]
 
 
 def metrics_day(indexed: pd.DataFrame, params: Params = Params()) -> pd.DataFrame:
     """Daily means over the hours that have a value, as the STL series uses."""
     keys = ["corridor_id", "day"]
-    means = indexed.groupby(keys)[["tt_mean_s", "tti_tomtom", "tti_p5", "bti"]].mean()
+    means = indexed.groupby(keys)[["tt_mean_s", "tti_tomtom", "tti_p5"]].mean()
     out = missingness(indexed, keys, params).join(means, how="left")
     return out.reset_index()[DAY_COLUMNS]
+
+
+def hour_stats(corridor_id: str, hour: int, calls: pd.DataFrame, params: Params) -> dict:
+    """One corridor-hour of the profile, pooled over its calls."""
+    travel = pooled.travel(calls["travel_time_s"], params, ("profile", corridor_id, hour))
+    row = {
+        "corridor_id": corridor_id, "hour": hour, "n_tti_p5": int(calls["tti_p5"].notna().sum()),
+        "tt_mean_s": travel["mean"], "tt_p50_s": travel["p50"], "tt_p95_s": travel["p95"],
+        "tt_p95_ci_low": travel["p95_ci_low"], "tt_p95_ci_high": travel["p95_ci_high"],
+        "bti": travel["bti"], "bti_ci_low": travel["bti_ci_low"],
+        "bti_ci_high": travel["bti_ci_high"],
+    }
+    for basis in BASES:
+        values = calls[f"tti_{basis}"]
+        for name, q in CENTRAL_QUANTILES.items():
+            row[f"tti_{basis}_{name}"] = pooled.quantile(values, q, params)
+        p95, low, high = pooled.tail(values, pooled.p95_rows, params,
+                                     ("profile", corridor_id, hour, basis))
+        row |= {f"tti_{basis}_p95": p95, f"tti_{basis}_p95_ci_low": low,
+                f"tti_{basis}_p95_ci_high": high}
+    return row
 
 
 def profile_hourly(
     tti: pd.DataFrame, indexed: pd.DataFrame, window, params: Params = Params()
 ) -> pd.DataFrame:
-    """24-hour profile over the window, from individual successful calls:
-    travel-time median and p95, BTI, and TTI quartiles and p95 for both bases."""
+    """24-hour profile over the profile window: every successful call at each local
+    hour, pooled. Mean, median and TTI quartiles at the central floor; p95 travel time,
+    BTI and TTI p95, each with its interval, at the p95 floor."""
     start, end = window
     keys = ["corridor_id", "hour"]
-    agg = {
-        "tt_mean_s": ("travel_time_s", "mean"),
-        "tt_p50_s": ("travel_time_s", _quantile(0.5)),
-        "tt_p95_s": ("travel_time_s", _quantile(0.95)),
-    }
-    for basis in BASES:
-        for q in QUANTILES:
-            agg[f"tti_{basis}_p{round(q * 100)}"] = (f"tti_{basis}", _quantile(q))
-    stats = in_window(tti, window).groupby(keys).agg(**agg)
-    stats["bti"] = (stats["tt_p95_s"] - stats["tt_mean_s"]) / stats["tt_mean_s"]
+    rows = [hour_stats(corridor_id, hour, calls, params)
+            for (corridor_id, hour), calls in in_window(tti, window).groupby(keys)]
+    stats = pd.DataFrame(rows, columns=keys + PROFILE_STATS).set_index(keys)
     out = missingness(in_window(indexed, window), keys, params).join(stats, how="left")
+    out["n_tti_p5"] = out["n_tti_p5"].fillna(0).astype("int64")  # a count
+    for col in PROFILE_STATS[1:]:
+        out[col] = out[col].astype(float)
     return out.reset_index().assign(window_start=start, window_end=end)[PROFILE_COLUMNS]
 
 
-def heatmap_weekly(indexed: pd.DataFrame, window, params: Params = Params()) -> pd.DataFrame:
-    """Median TTI per weekday and hour over the window, for each corridor and for
-    all corridors pooled. Cells with fewer than heatmap_min_days days are left
-    empty: published as NULL, not estimated."""
+def heatmap_weekly(
+    tti: pd.DataFrame, indexed: pd.DataFrame, window, params: Params = Params()
+) -> pd.DataFrame:
+    """Median TTI per weekday and hour over the read window, for each corridor and for
+    all corridors pooled: the median of every successful call in the cell, published
+    only at the central floor. NULL below it, never estimated."""
     start, end = window
     cells = in_window(indexed, window).assign(dow=lambda f: sunday_first(f["day"]))
+    calls = in_window(tti, window).assign(dow=lambda f: sunday_first(f["day"]))
 
     def matrix(keys: list[str]) -> pd.DataFrame:
-        valued = cells[cells["tt_mean_s"].notna()]
-        stats = valued.groupby(keys).agg(n_days=("day", "nunique"))
+        stats = cells[cells["n_ok"] > 0].groupby(keys).agg(n_days=("day", "nunique"))
         for basis in BASES:
             col = f"tti_{basis}"
-            by_basis = valued[valued[col].notna()].groupby(keys).agg(
-                days=("day", "nunique"), p50=(col, "median")
-            )
-            published = by_basis["p50"].where(by_basis["days"] >= params.heatmap_min_days)
-            stats = stats.join(published.rename(f"{col}_p50"), how="left")
+            if calls.empty:
+                stats[f"{col}_p50"] = np.nan
+                continue
+            medians = calls.groupby(keys)[col].agg(lambda v: pooled.quantile(v, 0.5, params))
+            stats = stats.join(medians.rename(f"{col}_p50"), how="left")
         out = missingness(cells, keys, params).join(stats, how="left")
         out["n_days"] = out["n_days"].fillna(0).astype("int64")  # a count, not a measurement
         return out.reset_index()
@@ -233,12 +311,18 @@ def network_hourly(indexed: pd.DataFrame, window, params: Params = Params()) -> 
     return out.reset_index()[NETWORK_COLUMNS]
 
 
-def pair_advantage_hourly(profile: pd.DataFrame, corridors: pd.DataFrame) -> pd.DataFrame:
-    """p95 travel time of the primary minus the declared alternate, per hour.
+def pair_advantage_hourly(
+    tti: pd.DataFrame, profile: pd.DataFrame, corridors: pd.DataFrame, window,
+    params: Params = Params(),
+) -> pd.DataFrame:
+    """p95 travel time of the primary minus the declared alternate, per local hour.
+    Each side pools its calls at that hour over the profile window; the difference
+    carries an interval from independent resamples of the two sides.
 
     Only pairs that declare an alternate appear. A pair with one corridor has
     nothing to compare against, and no second route is ever derived for it.
     """
+    start, end = window
     declared = corridors.dropna(subset=["pair_id", "role"])
     primary = declared.loc[declared["role"] == "primary", ["pair_id", "corridor_id"]]
     alternate = declared.loc[declared["role"] == "alternate", ["pair_id", "corridor_id"]]
@@ -248,21 +332,25 @@ def pair_advantage_hourly(profile: pd.DataFrame, corridors: pd.DataFrame) -> pd.
     if pairs.empty:
         return pd.DataFrame(columns=PAIR_COLUMNS)
 
-    grid = pairs.merge(pd.DataFrame({"hour": range(24)}), how="cross")
-    p95 = profile[["corridor_id", "hour", "tt_p95_s", "low_confidence"]]
-    for role in ("primary", "alternate"):
-        grid = grid.merge(
-            p95.rename(columns={
-                "corridor_id": f"{role}_id", "tt_p95_s": f"{role}_tt_p95_s",
-                "low_confidence": f"{role}_low_confidence",
-            }),
-            on=[f"{role}_id", "hour"],
-            how="left",
-        )
-    grid["advantage_p95_s"] = grid["primary_tt_p95_s"] - grid["alternate_tt_p95_s"]
-    # no profile row for an hour means nothing measured: low confidence
-    confident = (
-        grid["primary_low_confidence"].eq(False) & grid["alternate_low_confidence"].eq(False)
-    )
-    grid["low_confidence"] = ~confident
-    return grid[PAIR_COLUMNS]
+    calls = {key: group["travel_time_s"].to_numpy()
+             for key, group in in_window(tti, window).groupby(["corridor_id", "hour"])}
+    confident = profile.set_index(["corridor_id", "hour"])["low_confidence"].eq(False)
+    rows = []
+    for pair in pairs.itertuples(index=False):
+        for hour in range(24):
+            p = pooled.clean(calls.get((pair.primary_id, hour), []))
+            a = pooled.clean(calls.get((pair.alternate_id, hour), []))
+            advantage, low, high = pooled.difference(p, a, pooled.p95_rows, params,
+                                                     ("pair", pair.pair_id, hour))
+            # no profile row for an hour means nothing measured: low confidence
+            both = (bool(confident.get((pair.primary_id, hour), False))
+                    and bool(confident.get((pair.alternate_id, hour), False)))
+            rows.append({
+                "pair_id": pair.pair_id, "hour": hour, "primary_id": pair.primary_id,
+                "alternate_id": pair.alternate_id, "primary_n": len(p), "alternate_n": len(a),
+                "primary_tt_p95_s": pooled.quantile(p, 0.95, params),
+                "alternate_tt_p95_s": pooled.quantile(a, 0.95, params),
+                "advantage_p95_s": advantage, "advantage_ci_low": low, "advantage_ci_high": high,
+                "low_confidence": not both,
+            })
+    return pd.DataFrame(rows).assign(window_start=start, window_end=end)[PAIR_COLUMNS]

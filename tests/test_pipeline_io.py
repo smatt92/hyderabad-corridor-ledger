@@ -3,7 +3,7 @@ import pandas as pd
 import pytest
 
 from metrics.io import _bytea, to_records
-from metrics.params import METHOD_VERSION
+from metrics.params import METHOD_VERSION, Params
 from metrics.pipeline import compute_all
 from tests.helpers import parsed
 
@@ -24,13 +24,18 @@ def synthetic_panel(days=35):
     return parsed(rows)
 
 
+# 35 days of hourly calls is a small panel: floors and audit periods scaled to it.
+SMALL = Params(p95_min_samples=50, central_min_samples=10, bootstrap_resamples=200,
+               audit_pre_days=14, audit_settle_days=3, audit_post_days=7)
+
+
 def test_compute_all_end_to_end_invariants():
     samples = synthetic_panel()
-    corridors = pd.DataFrame({"corridor_id": ["a", "b"], "cadence_s": [3600, 3600],
+    corridors = pd.DataFrame({"corridor_id": ["a", "b"], "tier": ["B", "B"],
                               "pair_id": ["PR-01", "PR-01"], "role": ["primary", "alternate"]})
     interventions = pd.DataFrame({"id": ["a-retiming"], "corridor_id": ["a"],
                                   "effective_at": ["2026-08-22T00:00:00+05:30"]})
-    tables = compute_all(samples, corridors, interventions)
+    tables = compute_all(samples, corridors, interventions, SMALL)
 
     assert set(tables) == {
         "metrics_daily", "worst15_daily", "corridor_rankings", "stl_daily", "change_points",
@@ -43,10 +48,11 @@ def test_compute_all_end_to_end_invariants():
     assert all((t["method_version"] == METHOD_VERSION).all() for t in tables.values())
 
     md = tables["metrics_daily"]
-    assert {"tti_tomtom", "tti_p5", "pti_tomtom", "pti_p5"} <= set(md.columns)
+    assert {"tti_tomtom", "tti_p5"} <= set(md.columns)
+    assert not {"tt_p95_s", "bti", "pti_tomtom", "pti_p5"} & set(md.columns)  # never per cell
     lost = md[(md.corridor_id == "b") & (md.n_ok == 0)]
     assert len(lost) == 10  # 5 Fridays x 2 peak hours
-    assert lost[["tt_mean_s", "tti_tomtom", "tti_p5", "bti"]].isna().all().all()  # not imputed
+    assert lost[["tt_mean_s", "tti_tomtom", "tti_p5"]].isna().all().all()  # not imputed
     assert lost["low_confidence"].all()
 
     stl = tables["stl_daily"]
@@ -57,6 +63,11 @@ def test_compute_all_end_to_end_invariants():
         assert group.sort_values("rank")["shrunk"].is_monotonic_decreasing
 
     assert not tables["before_after"].empty
+
+    ledger = tables["corridor_stats"].set_index("corridor_id")
+    assert ledger.loc["a", "n_peak"] == 35 * 8  # 07:00-10:00 and 17:00-20:00, every day
+    assert ledger.loc["a", "bti_peak_ci_low"] <= ledger.loc["a", "bti_peak"] \
+        <= ledger.loc["a", "bti_peak_ci_high"]
 
 
 def test_compute_all_refuses_empty_input():

@@ -265,14 +265,52 @@ modelled, is drawn from the calmer readings around the gap. It understates
 congestion exactly when congestion is worst, and it looks like data. So a
 cell with no successful call has NULL metrics, every metric row carries
 `missing_rate`, and `low_confidence` is true above 15%. Missingness is counted
-against scheduled slots (`corridors.cadence_s`), so a collector run that never
-started still counts as missing. STL runs only on contiguous segments and
+against the collector's schedule for each corridor's tier
+(`metrics/schedule.py`, checked against `collector/schedule.py`), so a
+collector run that never started still counts as missing. STL runs only on contiguous segments and
 recovery censors at gaps, rather than bridging them. No `fillna`,
 interpolation or forward-fill is ever applied to a measurement.
 
+**BTI is a property of a distribution, not of a day.** BTI, PTI and every
+p95 are computed once over pooled successful calls (`metrics/pooled.py`),
+never per corridor-hour-day cell and never as an average of daily values. A
+cell holds two to four calls. The empirical p95 of three draws is effectively
+their maximum and biased low by an amount that depends on the count, so cell
+BTIs of 0.01-0.09 were wrong, not merely low. Averaging them is wrong twice:
+the mean of ratios is not the ratio of means, and a change in sample density
+between two periods manufactures an effect out of the estimator.
+`tests/test_audit.py` draws both periods from one distribution with different
+densities and requires no effect.
+
+- Pooling units: the 24-hour profile pools every call at each local hour over
+  the profile window (120 days). The ledger pools peak-hour calls
+  (06:30-10:30, 16:30-21:00 IST) over the trailing 90 days, one distribution
+  per corridor. The audit pools peak-hour calls over each fixed 28-day period
+  and computes BTI once per period.
+- Floors by quantile: p95-derived statistics need 200 pooled calls; mean and
+  median need 30. Below a floor the value is NULL and the pooled count is
+  published beside it. The frontend renders an em dash, an insufficient-samples
+  state and the count, never a number.
+- Percentiles are empirical, linear between order statistics. Do not use
+  Harrell-Davis: at p95 its weights concentrate on the top order statistics,
+  so it inherits the sparsity it was meant to fix and overshoots.
+- Every published p95, and every value built on one, carries a percentile
+  bootstrap interval from 2,000 resamples, seeded from the statistic's key so
+  it reproduces. The ledger shows the point value; the expanded row shows
+  "0.42 [0.31, 0.58]".
+- Any view showing a p95-derived metric states its pooling window in visible
+  text: the dates, what was pooled, and the count.
+- Tier A pooling yields ~360 calls per corridor-hour at 90 days. Tiers B and C
+  yield ~180 and cross the p95 floor at roughly 100 days, so their tail
+  metrics legitimately show insufficient samples for about three months. The
+  profile window is 120 days so that they do cross it; a 90-day window never
+  would.
+- The hourly and daily series carry TTI and mean travel time with their counts
+  (`n_ok`), and no tail statistic.
+
 Other definitions worth knowing before changing them:
-- Shrinkage: continuous indices use normal-normal empirical Bayes, and
-  congested shares use beta-binomial. Raw and shrunk are both published;
+- Shrinkage: TTI uses normal-normal empirical Bayes over hourly cells, and
+  congested shares use beta-binomial. BTI and PTI are never ranked from cells. Raw and shrunk are both published;
   rank 1 is the worst corridor by shrunk value.
 - STL runs on the daily mean of hourly TTI with period 7. Trend statements
   use `stl_daily.trend` only, never `observed`.
@@ -281,6 +319,11 @@ Other definitions worth knowing before changing them:
 - Before/after uses always-valid confidence sequences on STL-adjusted daily
   TTI, so `before_after` may be read every day. A fixed-horizon p-value may
   not be.
+- The intervention audit (`metrics/audit.py`) is a different estimator. It
+  pools BTI once per fixed 28-day period, takes a difference in differences
+  against the equal-weight mean of untreated corridors, and reports a
+  bootstrap interval. It publishes no effect until the post period has
+  closed, so re-reading it cannot change the answer.
 
 ## Read API and frontend (P-04)
 
@@ -322,6 +365,11 @@ Pairs sharing endpoints is enforced by `collector/config.py` and the
 - It needs only `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`, and refuses to
   start if `SUPABASE_SERVICE_KEY` is present.
 - Every response, errors included, carries `as_of` and `missingness_rate`.
+- Tail statistics (p95, BTI, PTI) come only from the pooled tables:
+  `corridor_stats` (the ledger), `profile_hourly`, `pair_advantage_hourly`
+  and `intervention_audit`, each with its window, count and interval. Hourly
+  and daily series never carry them. A payload that includes one also
+  carries `floors` from `dataset_stats`.
 - Data responses are `Cache-Control: public, max-age=0, s-maxage=3600,
   stale-while-revalidate=86400`. `/api/health` and errors are `no-store`.
 - `api/pyproject.toml` is FastAPI only, with `default-groups = []`, so a
@@ -359,6 +407,10 @@ Pairs sharing endpoints is enforced by `collector/config.py` and the
   one basis at a time (rhythm matrix, map) has a basis selector and labels the
   basis it shows. Network pulse and the wall's network state use travel time
   against each corridor's own normal, which needs no basis.
+- A p95-derived number appears only as the API publishes it: the point value
+  in compact views, its interval in expanded ones, and its pooling window
+  stated in visible text. Below its floor it is an em dash with the
+  insufficient-samples state and the count, never a number.
 - Staleness and low confidence are rendered, never hidden. Metrics older than
   30 hours show as STALE, low-confidence cells are hatched and dimmed, and an
   unreachable API shows a degraded notice rather than an empty page.

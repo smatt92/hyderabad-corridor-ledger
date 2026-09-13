@@ -8,12 +8,6 @@
 -- per corridor per local hour, so it is rebuilt rather than altered.
 drop table public.metrics_daily;
 
--- Seconds between scheduled calls for a corridor: the missingness
--- denominator. Null means only attempted calls count, which cannot see a
--- collector run that never started.
-alter table public.corridors
-  add column cadence_s integer check (cadence_s > 0);
-
 -- Input, not derived: before/after comparisons are made around these.
 create table public.interventions (
   id            text primary key check (id ~ '^[a-z0-9][a-z0-9-]{1,62}$'),
@@ -24,7 +18,10 @@ create table public.interventions (
 );
 
 -- Per corridor, per local (Asia/Kolkata) hour. Both free-flow bases are kept
--- side by side and never collapsed.
+-- side by side and never collapsed. Missingness counts against the collector's
+-- schedule for the corridor's tier (0003). An hour holds a handful of calls,
+-- too few for a p95: BTI, PTI and p95 travel time exist only in the pooled
+-- tables of 0005, never per cell.
 create table public.metrics_daily (
   corridor_id     text not null references public.corridors (id),
   day             date not null,
@@ -35,14 +32,10 @@ create table public.metrics_daily (
   missing_rate    double precision,
   low_confidence  boolean not null,
   tt_mean_s       double precision,
-  tt_p95_s        double precision,
   ff_tomtom_s     double precision,
   ff_p5_s         double precision,
   tti_tomtom      double precision,
   tti_p5          double precision,
-  bti             double precision,
-  pti_tomtom      double precision,
-  pti_p5          double precision,
   method_version  text not null,
   computed_at     timestamptz not null default now(),
   primary key (corridor_id, day, hour)

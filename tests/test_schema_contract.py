@@ -40,7 +40,7 @@ def declared_columns() -> dict[str, set[str]]:
 
 
 def test_published_columns_exist_in_migrations():
-    corridors = pd.DataFrame({"corridor_id": ["a", "b"], "cadence_s": [3600, 3600],
+    corridors = pd.DataFrame({"corridor_id": ["a", "b"], "tier": ["B", "B"],
                               "pair_id": ["PR-01", "PR-01"], "role": ["primary", "alternate"]})
     interventions = pd.DataFrame({"id": ["a-retiming"], "corridor_id": ["a"],
                                   "effective_at": ["2026-08-22T00:00:00+05:30"]})

@@ -6,8 +6,8 @@ archive plus the hot samples table), replaces them wholesale and republishes
 the open dataset. Raw is the source of truth, so a changed metric definition
 only needs a new METHOD_VERSION and another backfill.
 
-verify walks the sample hash chain in the database, records the result for
-/verify, and exits non-zero if the chain is broken.
+verify walks both hash chains in the database, records the result for
+/verify, and exits non-zero if either is broken.
 """
 
 import argparse

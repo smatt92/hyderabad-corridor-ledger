@@ -6,6 +6,7 @@ one dataframe per table out. metrics.io does the reading and writing.
 
 import pandas as pd
 
+from metrics.audit import intervention_audits
 from metrics.cells import daily_missingness, hourly_cells
 from metrics.confseq import before_after
 from metrics.control import change_points
@@ -21,19 +22,18 @@ from metrics.readmodel import (
     network_hourly,
     pair_advantage_hourly,
     profile_hourly,
+    profile_window,
     read_window,
 )
 from metrics.recovery import cox_model, km_by_corridor, recovery_events
 from metrics.seasonal import stl_decompose
-from metrics.synthetic import intervention_audits
 from metrics.worst15 import worst_15
 
-CORRIDOR_COLUMNS = ["corridor_id", "cadence_s", "pair_id", "role"]
+CORRIDOR_COLUMNS = ["corridor_id", "tier", "pair_id", "role"]
 METRICS_DAILY_COLUMNS = [
     "corridor_id", "day", "hour", "n_expected", "n_attempted", "n_ok", "missing_rate",
-    "low_confidence", "tt_mean_s", "tt_p95_s", "ff_tomtom_s", "ff_p5_s", "tti_tomtom",
-    "tti_p5", "bti", "pti_tomtom", "pti_p5", "tti_tomtom_delta_wk", "tti_p5_delta_wk",
-    "tt_ratio_own_median",
+    "low_confidence", "tt_mean_s", "ff_tomtom_s", "ff_p5_s", "tti_tomtom", "tti_p5",
+    "tti_tomtom_delta_wk", "tti_p5_delta_wk", "tt_ratio_own_median",
 ]
 
 
@@ -55,10 +55,11 @@ def compute_all(
     tti = sample_tti(samples, ff_p5)
     daily_missing = daily_missingness(cells, params)
     window = read_window(cells, params)
+    hours_window = profile_window(window, params)
     stl = stl_decompose(indexed, daily_missing, params)
     events = recovery_events(tti, daily_missing, params)
     day = metrics_day(indexed, params)
-    profile = profile_hourly(tti, indexed, window, params)
+    profile = profile_hourly(tti, indexed, hours_window, params)
 
     tables = {
         "metrics_daily": add_hourly_context(indexed, window)[METRICS_DAILY_COLUMNS],
@@ -76,9 +77,11 @@ def compute_all(
         "corridor_stats": corridor_stats(samples, indexed, ff_p5, window, params),
         "metrics_day": day,
         "profile_hourly": profile,
-        "heatmap_weekly": heatmap_weekly(indexed, window, params),
+        "heatmap_weekly": heatmap_weekly(tti, indexed, window, params),
         "network_hourly": network_hourly(indexed, window, params),
-        "pair_advantage_hourly": pair_advantage_hourly(profile, corridors),
-        "intervention_audit": intervention_audits(day, interventions, params),
+        "pair_advantage_hourly": pair_advantage_hourly(
+            tti, profile, corridors, hours_window, params
+        ),
+        "intervention_audit": intervention_audits(tti, cells, interventions, params),
     }
     return {name: frame.assign(method_version=METHOD_VERSION) for name, frame in tables.items()}

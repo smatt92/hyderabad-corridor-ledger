@@ -52,7 +52,6 @@ def test_cell_indices_keep_both_free_flow_bases():
         "day": [pd.Timestamp("2026-09-01")] * 2,
         "hour": [8, 9],
         "tt_mean_s": [900.0, np.nan],
-        "tt_p95_s": [1170.0, np.nan],
         "ff_tomtom_s": [500.0, np.nan],
     })
     ff = pd.DataFrame({"corridor_id": ["a"], "day": [pd.Timestamp("2026-09-01")],
@@ -61,11 +60,10 @@ def test_cell_indices_keep_both_free_flow_bases():
 
     assert out.loc[8, "tti_tomtom"] == pytest.approx(1.8)    # 900 / 500
     assert out.loc[8, "tti_p5"] == pytest.approx(2.0)        # 900 / 450
-    assert out.loc[8, "bti"] == pytest.approx(0.3)           # (1170 - 900) / 900
-    assert out.loc[8, "pti_tomtom"] == pytest.approx(2.34)   # 1170 / 500
-    assert out.loc[8, "pti_p5"] == pytest.approx(2.6)        # 1170 / 450
+    # BTI and PTI need a pooled distribution; a cell never carries them
+    assert not {"bti", "pti_tomtom", "pti_p5"} & set(out.columns)
     # a cell with no successful call stays NaN on every index
-    assert out.loc[9, ["tti_tomtom", "tti_p5", "bti", "pti_tomtom", "pti_p5"]].isna().all()
+    assert out.loc[9, ["tti_tomtom", "tti_p5"]].isna().all()
 
 
 def test_sample_tti_per_call():

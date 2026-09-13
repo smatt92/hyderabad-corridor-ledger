@@ -13,17 +13,31 @@ def corridor(cid, code, pair, cls, lat=17.497, lon=78.360):
             "origin_lon": lon, "dest_lat": 17.447, "dest_lon": 78.377, "active": True}
 
 
-def stats(cid, length):
-    return {"corridor_id": cid, "window_start": "2026-06-15", "window_end": "2026-09-12",
-            "n_expected": 100, "n_ok": 90, "missing_rate": 0.1, "low_confidence": False,
-            "length_meters": length, "ff_tomtom_s": 1100.0, "ff_p5_s": 1050.0,
-            "computed_at": COMPUTED}
+TAIL_STATS = ["tt_p95_peak_s", "bti_peak", "pti_tomtom_peak", "pti_p5_peak"]
+
+
+def stats(cid, length, n_peak=620):
+    row = {"corridor_id": cid, "window_start": "2026-06-15", "window_end": "2026-09-12",
+           "n_expected": 100, "n_ok": 90, "missing_rate": 0.1, "low_confidence": False,
+           "length_meters": length, "ff_tomtom_s": 1100.0, "ff_p5_s": 1050.0,
+           "n_peak": n_peak, "tt_mean_peak_s": 1500.0,
+           "tt_p95_peak_s": 2130.0, "tt_p95_peak_ci_low": 2010.0, "tt_p95_peak_ci_high": 2290.0,
+           "bti_peak": 0.42, "bti_peak_ci_low": 0.31, "bti_peak_ci_high": 0.58,
+           "pti_tomtom_peak": 1.94, "pti_tomtom_peak_ci_low": 1.83, "pti_tomtom_peak_ci_high": 2.08,
+           "pti_p5_peak": 2.03, "pti_p5_peak_ci_low": 1.91, "pti_p5_peak_ci_high": 2.18,
+           "computed_at": COMPUTED}
+    if n_peak < 200:  # below the p95 floor the pipeline publishes nulls
+        row |= {f"{k}{s}": None for k in TAIL_STATS for s in ("", "_ci_low", "_ci_high")}
+    return row
 
 
 def profile_rows(cid):
-    return [{"corridor_id": cid, "hour": h, "n_expected": 90, "n_ok": 80, "missing_rate": 0.11,
-             "low_confidence": False, "tt_mean_s": 1300.0 + h, "tt_p50_s": 1250.0 + h,
-             "tt_p95_s": 1800.0 + h, "bti": 0.38, "computed_at": COMPUTED} for h in range(24)]
+    return [{"corridor_id": cid, "hour": h, "window_start": "2026-05-16",
+             "window_end": "2026-09-12", "n_expected": 400, "n_ok": 360, "n_tti_p5": 350,
+             "missing_rate": 0.1, "low_confidence": False, "tt_mean_s": 1300.0 + h,
+             "tt_p50_s": 1250.0 + h, "tt_p95_s": 1800.0 + h, "tt_p95_ci_low": 1750.0 + h,
+             "tt_p95_ci_high": 1850.0 + h, "bti": 0.38, "bti_ci_low": 0.3, "bti_ci_high": 0.46,
+             "computed_at": COMPUTED} for h in range(24)]
 
 
 def walk(wid, table, at, rows, broken_at=None):
@@ -41,8 +55,10 @@ def tables():
         "dataset_stats": [{"id": "window", "window_start": "2026-06-15",
                            "window_end": "2026-09-12", "n_corridors": 3, "n_expected": 300,
                            "n_ok": 270, "missing_rate": 0.1, "low_confidence": False,
-                           "method_version": "p02.2", "computed_at": COMPUTED}],
-        "corridor_stats": [stats("miyapur-hitec", 9800), stats("miyapur-hitec-alt", None),
+                           "p95_min_samples": 200, "central_min_samples": 30,
+                           "bootstrap_resamples": 2000, "method_version": "p02.4",
+                           "computed_at": COMPUTED}],
+        "corridor_stats": [stats("miyapur-hitec", 9800), stats("miyapur-hitec-alt", None, 180),
                            stats("kukatpally-madhapur", 11200)],
         "corridor_rankings": [{"corridor_id": "miyapur-hitec", "index_name": "tti_tomtom",
                                "n": 90, "raw": 1.9, "shrunk": 1.8, "city_mean": 1.5, "rank": 1}],
@@ -61,13 +77,17 @@ def tables():
              "n_corridors": 3, "tti_tomtom_p50": 1.6, "tti_p5_p50": 1.7, "missing_rate": 0.08,
              "low_confidence": False, "computed_at": COMPUTED},
         ],
-        "pair_advantage_hourly": [{"pair_id": "PR-01", "hour": h, "advantage_p95_s": 60.0,
+        "pair_advantage_hourly": [{"pair_id": "PR-01", "hour": h, "primary_n": 360,
+                                   "alternate_n": 360, "advantage_p95_s": 60.0,
+                                   "advantage_ci_low": 20.0, "advantage_ci_high": 100.0,
                                    "low_confidence": False} for h in range(24)],
         "interventions": [{"id": "signal-retiming", "corridor_id": "miyapur-hitec",
                            "effective_at": "2026-08-01T00:00:00+05:30",
                            "description": "Signal retiming, 6 junctions"}],
         "intervention_audit": [{"intervention_id": "signal-retiming", "status": "ok",
-                                "effect": -0.04, "missing_rate": 0.06, "computed_at": COMPUTED}],
+                                "effect": -0.04, "ci_low": -0.09, "ci_high": 0.01,
+                                "resamples": 2000, "missing_rate": 0.06,
+                                "computed_at": COMPUTED}],
         "chain_verifications": [
             walk(1, "samples", "2026-09-12T22:00:00+00:00", 9),
             walk(2, "failed_samples", "2026-09-12T22:00:00+00:00", 1),
@@ -151,7 +171,47 @@ def test_pair_with_declared_alternate(client):
     assert body["alternate"]["id"] == "miyapur-hitec-alt"
     assert len(body["primary"]["profile"]["tt_p95_s"]) == 24
     assert body["advantage"]["advantage_p95_s"][8] == 60.0
+    assert body["advantage"]["advantage_ci_low"][8] == 20.0
+    assert body["window"] == {"start": "2026-05-16", "end": "2026-09-12"}
+    assert body["primary"]["profile"]["bti_ci_high"][8] == 0.46
     assert body["primary"]["origin"] == {"name": "Miyapur", "lat": 17.497, "lon": 78.36}
+
+
+def test_ledger_serves_pooled_peak_hours_with_intervals_and_floors(client):
+    body = client.get("/api/corridors").json()
+    assert body["floors"] == {"p95_min_samples": 200, "central_min_samples": 30,
+                              "bootstrap_resamples": 2000}
+    by_id = {c["id"]: c for c in body["corridors"]}
+    ledger = by_id["miyapur-hitec"]["ledger"]
+    assert ledger["window"] == {"start": "2026-06-15", "end": "2026-09-12"}
+    assert ledger["n"] == 620 and ledger["hours"].startswith("06:30-10:30")
+    assert ledger["bti"] == {"value": 0.42, "ci_low": 0.31, "ci_high": 0.58}
+    thin = by_id["miyapur-hitec-alt"]["ledger"]
+    assert thin["n"] == 180  # the count that fell short of the floor
+    assert thin["bti"] == {"value": None, "ci_low": None, "ci_high": None}
+
+
+def test_series_never_carry_cell_level_tail_statistics(client):
+    hourly = client.get("/api/corridors/miyapur-hitec/series").json()["series"]
+    assert not {"tt_p95_s", "bti", "pti_tomtom", "pti_p5"} & set(hourly)
+    daily = client.get("/api/corridors/miyapur-hitec/series?granularity=day").json()["series"]
+    assert "bti" not in daily
+
+
+def test_profile_states_its_own_pooling_window(client):
+    body = client.get("/api/corridors/miyapur-hitec/profile").json()
+    assert body["window"] == {"start": "2026-05-16", "end": "2026-09-12"}
+    assert "each local hour" in body["pooling"]
+    assert body["profile"]["bti_ci_low"][8] == 0.3
+    assert body["floors"]["p95_min_samples"] == 200
+
+
+def test_audit_reports_the_pooled_estimate_and_its_interval(client):
+    body = client.get("/api/interventions/signal-retiming/audit").json()
+    audit = body["audit"]
+    assert (audit["effect"], audit["ci_low"], audit["ci_high"]) == (-0.04, -0.09, 0.01)
+    assert not {"cs_low", "cs_high", "synthetic_pre", "pre_rmse"} & set(audit)
+    assert body["floors"]["bootstrap_resamples"] == 2000
 
 
 def test_unknown_pair_and_bad_hour(client):

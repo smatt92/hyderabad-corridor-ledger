@@ -5,7 +5,9 @@ import pandas as pd
 from metrics.params import Params
 from metrics.shrinkage import beta_binomial_eb, normal_eb
 
-CONTINUOUS = ["tti_tomtom", "tti_p5", "bti", "pti_tomtom", "pti_p5"]
+# BTI and PTI are not ranked here: they exist only as pooled statistics with
+# floors and intervals (corridor_stats), never as a mean of hourly cells.
+CONTINUOUS = ["tti_tomtom", "tti_p5"]
 PROPORTIONS = {"congested_share_tomtom": "tti_tomtom", "congested_share_p5": "tti_p5"}
 COLUMNS = [
     "window_end", "window_days", "index_name", "corridor_id", "n", "raw", "shrunk",

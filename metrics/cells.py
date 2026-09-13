@@ -4,11 +4,15 @@ API failures cluster during peak congestion, so missingness correlates with
 the quantity being measured. Every cell carries its missingness rate and a
 low-confidence flag. Nothing is imputed: a cell with no successful sample
 has NaN metrics, not an estimate.
+
+A cell holds a handful of calls, too few for a tail statistic. BTI, PTI and
+p95 travel time are computed only over pooled calls (metrics.pooled).
 """
 
 import numpy as np
 import pandas as pd
 
+from metrics import schedule
 from metrics.params import LOCAL_TZ, Params
 
 KEYS = ["corridor_id", "day", "hour"]
@@ -35,25 +39,22 @@ def daily_missingness(cells: pd.DataFrame, params: Params = Params()) -> pd.Data
 
 
 def expected_slots(samples: pd.DataFrame, corridors: pd.DataFrame) -> pd.Series:
-    """Scheduled call slots per cell, between a corridor's first and last call.
+    """Scheduled call slots per cell, from the slot a corridor's first call answered
+    through its last call.
 
-    The slot grid is anchored at the corridor's first call, not at UTC clock
-    boundaries: Asia/Kolkata is UTC+5:30, so an hourly schedule floored to UTC
-    hours would invent a missed slot before collection began.
-
-    Corridors without a cadence_s contribute nothing; their denominator falls
-    back to attempted calls in hourly_cells.
+    The slots are the collector's schedule for the corridor's tier
+    (metrics.schedule), on local wall-clock time, so a run that never started
+    still counts as missing. Corridors without a tier contribute nothing; their
+    denominator falls back to attempted calls in hourly_cells.
     """
-    cadence = corridors.set_index("corridor_id")["cadence_s"]
+    tiers = corridors.set_index("corridor_id")["tier"]
     parts = []
     for corridor_id, group in samples.groupby("corridor_id"):
-        seconds = cadence.get(corridor_id)
-        if seconds is None or pd.isna(seconds):
+        tier = tiers.get(corridor_id)
+        if not isinstance(tier, str):
             continue
-        step = pd.Timedelta(seconds=int(seconds))
-        slots = pd.Series(
-            pd.date_range(group["requested_at"].min(), group["requested_at"].max(), freq=step)
-        )
+        first, last = group["requested_at"].min(), group["requested_at"].max()
+        slots = pd.Series(schedule.slots_between(tier, first, last))
         cells = local_day_hour(slots).assign(corridor_id=corridor_id)
         parts.append(cells.groupby(KEYS).size())
     if not parts:
@@ -75,7 +76,6 @@ def hourly_cells(
     stats = ok.groupby(KEYS).agg(
         n_ok=("travel_time_s", "size"),
         tt_mean_s=("travel_time_s", "mean"),
-        tt_p95_s=("travel_time_s", lambda x: x.quantile(0.95)),
         ff_tomtom_s=("no_traffic_travel_time_s", "mean"),
     )
     slots = expected_slots(samples, corridors)
@@ -92,6 +92,6 @@ def hourly_cells(
     cells["low_confidence"] = cells["missing_rate"] > params.low_confidence_missing_rate
     cols = [
         "n_expected", "n_attempted", "n_ok", "missing_rate", "low_confidence",
-        "tt_mean_s", "tt_p95_s", "ff_tomtom_s",
+        "tt_mean_s", "ff_tomtom_s",
     ]
     return cells[cols].reset_index().sort_values(KEYS, ignore_index=True)

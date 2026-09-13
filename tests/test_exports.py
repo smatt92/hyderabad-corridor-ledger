@@ -15,7 +15,7 @@ CORRIDORS = pd.DataFrame({
     "corridor_id": ["a", "b"], "code": ["HC-01", "HC-02"], "name": ["A", "B"],
     "pair_id": ["PR-01", "PR-01"], "role": ["primary", "alternate"], "origin_name": "Miyapur",
     "origin_lat": 17.497, "origin_lon": 78.36, "destination_name": "Hitec City",
-    "dest_lat": 17.447, "dest_lon": 78.377, "cadence_s": 900,
+    "dest_lat": 17.447, "dest_lon": 78.377, "tier": "A",
 })
 STATS = pd.DataFrame({"corridor_id": ["a", "b"], "length_meters": pd.array([9800, None], "Int64")})
 DATASET = pd.DataFrame([{"window_start": pd.Timestamp("2026-06-04"),
@@ -26,7 +26,7 @@ def test_open_dataset_joins_identity_and_measured_length_in_stable_order():
     out = open_dataset(METRICS, CORRIDORS, STATS)
     leading = ["corridor_id", "code", "name", "pair_id", "role", "day", "hour"]
     assert list(out.columns[:7]) == leading
-    assert "cadence_s" not in out.columns
+    assert "tier" not in out.columns  # identity columns only
     order = list(zip(out["corridor_id"], out["hour"], strict=True))
     assert order == [("a", 8), ("a", 9), ("b", 8)]
     assert out["length_meters"].tolist()[:2] == [9800, 9800]

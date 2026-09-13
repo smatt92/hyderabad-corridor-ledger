@@ -51,13 +51,11 @@ def free_flow_p5(samples: pd.DataFrame, params: Params = Params()) -> pd.DataFra
 
 
 def cell_indices(cells: pd.DataFrame, ff_p5: pd.DataFrame) -> pd.DataFrame:
-    """TTI against both references, BTI, and PTI against both references."""
+    """TTI against both references. A cell has too few calls for BTI or PTI, which
+    exist only as pooled statistics (metrics.readmodel, metrics.audit)."""
     out = cells.merge(ff_p5, on=["corridor_id", "day"], how="left")
     out["tti_tomtom"] = out["tt_mean_s"] / out["ff_tomtom_s"]
     out["tti_p5"] = out["tt_mean_s"] / out["ff_p5_s"]
-    out["bti"] = (out["tt_p95_s"] - out["tt_mean_s"]) / out["tt_mean_s"]
-    out["pti_tomtom"] = out["tt_p95_s"] / out["ff_tomtom_s"]
-    out["pti_p5"] = out["tt_p95_s"] / out["ff_p5_s"]
     return out
 
 

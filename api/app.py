@@ -28,22 +28,36 @@ CHAINS = ("samples", "failed_samples")
 # pair's primary. Donors are never paired and have no role.
 PAIR_ROLE = {"core": "primary", "alternate": "alternate"}
 
+# An hour or a day holds too few calls for a p95: tail statistics are served only
+# from the pooled tables, each with its window, count and interval.
 HOURLY_COLUMNS = [
-    "day", "hour", "n_expected", "n_ok", "missing_rate", "low_confidence", "tt_mean_s", "tt_p95_s",
-    "tti_tomtom", "tti_p5", "bti", "pti_tomtom", "pti_p5", "tti_tomtom_delta_wk",
-    "tti_p5_delta_wk", "tt_ratio_own_median",
+    "day", "hour", "n_expected", "n_ok", "missing_rate", "low_confidence", "tt_mean_s",
+    "tti_tomtom", "tti_p5", "tti_tomtom_delta_wk", "tti_p5_delta_wk", "tt_ratio_own_median",
 ]
 DAILY_COLUMNS = ["day", "n_expected", "n_ok", "missing_rate", "low_confidence", "tt_mean_s",
-                 "tti_tomtom", "tti_p5", "bti"]
+                 "tti_tomtom", "tti_p5"]
 PROFILE_COLUMNS = [
-    "hour", "n_expected", "n_ok", "missing_rate", "low_confidence", "tt_mean_s", "tt_p50_s",
-    "tt_p95_s", "bti", *[f"tti_{b}_p{q}" for b in BASES for q in (25, 50, 75, 95)],
+    "hour", "n_expected", "n_ok", "missing_rate", "low_confidence", "n_tti_p5", "tt_mean_s",
+    "tt_p50_s", "tt_p95_s", "tt_p95_ci_low", "tt_p95_ci_high", "bti", "bti_ci_low", "bti_ci_high",
+    *[f"tti_{b}_{s}" for b in BASES
+      for s in ("p25", "p50", "p75", "p95", "p95_ci_low", "p95_ci_high")],
 ]
+COMPARE_PROFILE_COLUMNS = [
+    "hour", "n_ok", "tt_p50_s", "tt_p95_s", "tt_p95_ci_low", "tt_p95_ci_high", "bti",
+    "bti_ci_low", "bti_ci_high", "missing_rate", "low_confidence",
+]
+ADVANTAGE_COLUMNS = [
+    "hour", "primary_n", "alternate_n", "primary_tt_p95_s", "alternate_tt_p95_s",
+    "advantage_p95_s", "advantage_ci_low", "advantage_ci_high", "low_confidence",
+]
+FLOOR_FIELDS = ("p95_min_samples", "central_min_samples", "bootstrap_resamples")
+PEAK_HOURS = "06:30-10:30, 16:30-21:00 IST"
+PROFILE_POOLING = "all successful calls at each local hour across the window"
 AUDIT_FIELDS = [
     "status", "effective_day", "settle_days", "pre_start", "pre_end", "post_start", "post_end",
-    "n_pre", "n_post", "n_controls", "treated_pre", "treated_post", "synthetic_pre",
-    "synthetic_post", "effect", "cs_low", "cs_high", "alpha", "pre_rmse", "weights",
-    "low_confidence", "method_version",
+    "n_pre", "n_post", "n_controls", "treated_pre", "treated_post", "control_pre", "control_post",
+    "effect", "ci_low", "ci_high", "alpha", "resamples", "weights", "low_confidence",
+    "method_version",
 ]
 
 VERIFICATION_FIELDS = [
@@ -106,6 +120,17 @@ def dataset(store: Store) -> Row | None:
     return one(store.select("dataset_stats", limit=1))
 
 
+def floors(ds: Row | None) -> dict | None:
+    """The floors and resample count the published numbers were held to, as recorded
+    by the pipeline that computed them."""
+    return ds and {k: ds.get(k) for k in FLOOR_FIELDS}
+
+
+def interval(row: Row, value: str, prefix: str) -> dict:
+    return {"value": row.get(value), "ci_low": row.get(f"{prefix}_ci_low"),
+            "ci_high": row.get(f"{prefix}_ci_high")}
+
+
 def corridor_or_404(store: Store, corridor_id: str) -> Row:
     row = one(store.select("corridors", [("id", "eq", corridor_id)], limit=1))
     if row is None:
@@ -119,8 +144,17 @@ def pair_role(row: Row) -> str | None:
 
 def corridor_view(row: Row, stats: Row | None) -> dict:
     """length_meters is passed through from the measured value, or null. It is
-    never derived from the coordinates."""
+    never derived from the coordinates. ledger holds the pooled peak-hour statistics:
+    null values below their floor, with the pooled count beside them."""
     stats = stats or {}
+    ledger = stats and {
+        "window": {"start": stats["window_start"], "end": stats["window_end"]},
+        "hours": PEAK_HOURS, "n": stats.get("n_peak"), "tt_mean_s": stats.get("tt_mean_peak_s"),
+        "tt_p95_s": interval(stats, "tt_p95_peak_s", "tt_p95_peak"),
+        "bti": interval(stats, "bti_peak", "bti_peak"),
+        "pti_tomtom": interval(stats, "pti_tomtom_peak", "pti_tomtom_peak"),
+        "pti_p5": interval(stats, "pti_p5_peak", "pti_p5_peak"),
+    }
     return {
         "id": row["id"], "code": row.get("code"), "name": row["name"],
         "pair_id": row.get("pair_id"), "role": pair_role(row),
@@ -132,6 +166,7 @@ def corridor_view(row: Row, stats: Row | None) -> dict:
         "free_flow": {"tomtom_s": stats.get("ff_tomtom_s"), "p5_s": stats.get("ff_p5_s")},
         "missingness_rate": stats.get("missing_rate"),
         "low_confidence": stats.get("low_confidence"),
+        "ledger": ledger or None,
     }
 
 
@@ -149,6 +184,7 @@ def corridors(store: StoreDep):
         "window": ds and {"start": ds["window_start"], "end": ds["window_end"]},
         "low_confidence": ds and ds["low_confidence"],
         "method_version": ds and ds["method_version"],
+        "floors": floors(ds),
         "corridors": [
             corridor_view(r, stats.get(r["id"])) | {"rankings": rankings.get(r["id"], {})}
             for r in rows
@@ -196,9 +232,12 @@ def profile(store: StoreDep, corridor_id: Annotated[str, Path(pattern=CORRIDOR_I
     corridor_or_404(store, corridor_id)
     stats = one(store.select("corridor_stats", [("corridor_id", "eq", corridor_id)], limit=1))
     rows = store.select("profile_hourly", [("corridor_id", "eq", corridor_id)], [("hour", "asc")])
+    first = one(rows)
     body = {
         "corridor_id": corridor_id,
-        "window": stats and {"start": stats["window_start"], "end": stats["window_end"]},
+        "window": first and {"start": first["window_start"], "end": first["window_end"]},
+        "pooling": PROFILE_POOLING,
+        "floors": floors(dataset(store)),
         "profile": columnar(rows, PROFILE_COLUMNS),
     }
     return respond(store, body, stats and stats["computed_at"], stats and stats["missing_rate"])
@@ -216,7 +255,7 @@ def heatmap_body(rows: list[Row]) -> dict:
         "days": ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
         "window": first and {"start": first["window_start"], "end": first["window_end"]},
         "tti_tomtom_p50": matrix("tti_tomtom_p50"), "tti_p5_p50": matrix("tti_p5_p50"),
-        "n_days": matrix("n_days"), "missing_rate": matrix("missing_rate"),
+        "n_days": matrix("n_days"), "n_ok": matrix("n_ok"), "missing_rate": matrix("missing_rate"),
         "low_confidence": matrix("low_confidence"),
     }
 
@@ -227,7 +266,7 @@ def heatmap(store: StoreDep, corridor_id: Annotated[str, Path(pattern=CORRIDOR_I
     stats = one(store.select("corridor_stats", [("corridor_id", "eq", corridor_id)], limit=1))
     rows = store.select("heatmap_weekly", [("scope", "eq", "corridor"),
                                            ("corridor_id", "eq", corridor_id)])
-    body = {"corridor_id": corridor_id} | heatmap_body(rows)
+    body = {"corridor_id": corridor_id} | heatmap_body(rows) | {"floors": floors(dataset(store))}
     return respond(store, body, stats and stats["computed_at"], stats and stats["missing_rate"])
 
 
@@ -235,7 +274,7 @@ def heatmap(store: StoreDep, corridor_id: Annotated[str, Path(pattern=CORRIDOR_I
 def network_heatmap(store: StoreDep):
     ds = dataset(store)
     rows = store.select("heatmap_weekly", [("scope", "eq", "network")])
-    return respond(store, {"scope": "network"} | heatmap_body(rows),
+    return respond(store, {"scope": "network"} | heatmap_body(rows) | {"floors": floors(ds)},
                    ds and ds["computed_at"], ds and ds["missing_rate"])
 
 
@@ -257,19 +296,21 @@ def compare(
         stats = one(store.select("corridor_stats", [("corridor_id", "eq", row["id"])], limit=1))
         prof = store.select("profile_hourly", [("corridor_id", "eq", row["id"])],
                             [("hour", "asc")])
-        return corridor_view(row, stats) | {"profile": columnar(
-            prof, ["hour", "tt_p50_s", "tt_p95_s", "bti", "missing_rate", "low_confidence"])}
+        return corridor_view(row, stats) | {"profile": columnar(prof, COMPARE_PROFILE_COLUMNS)}
 
     primary, alternate = side(members["primary"]), side(members.get("alternate"))
     advantage = None
     if alternate is not None:
         rows = store.select("pair_advantage_hourly", [("pair_id", "eq", pair_id)],
                             [("hour", "asc")])
-        advantage = columnar(rows, ["hour", "primary_tt_p95_s", "alternate_tt_p95_s",
-                                    "advantage_p95_s", "low_confidence"])
+        advantage = columnar(rows, ADVANTAGE_COLUMNS)
     stats = one(store.select("corridor_stats", [("corridor_id", "eq", members["primary"]["id"])],
                              limit=1))
-    body = {"pair_id": pair_id, "hour": hour, "primary": primary, "alternate": alternate,
+    pooled = one(store.select("profile_hourly", [("corridor_id", "eq", members["primary"]["id"])],
+                              limit=1))
+    body = {"pair_id": pair_id, "hour": hour,
+            "window": pooled and {"start": pooled["window_start"], "end": pooled["window_end"]},
+            "floors": floors(dataset(store)), "primary": primary, "alternate": alternate,
             "advantage": advantage}
     return respond(store, body, stats and stats["computed_at"], primary["missingness_rate"])
 
@@ -325,6 +366,7 @@ def audit(store: StoreDep, intervention_id: Annotated[str, Path(pattern=INTERVEN
         "intervention": {k: iv[k] for k in ("id", "corridor_id", "effective_at", "description")},
         "corridor": {"id": corridor["id"], "code": corridor.get("code"), "name": corridor["name"]},
         "metric": "bti",
+        "floors": floors(dataset(store)),
         "audit": row and {k: row.get(k) for k in AUDIT_FIELDS},
     }
     return respond(store, body, row and row["computed_at"], row and row["missing_rate"])

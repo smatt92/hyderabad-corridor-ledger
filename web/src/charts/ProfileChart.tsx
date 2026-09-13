@@ -1,25 +1,30 @@
 import { useMemo } from "preact/hooks";
 import type uPlot from "uplot";
-import type { Profile } from "../api/types";
+import type { Floors, Profile } from "../api/types";
 import { FAINT, GHOST, INK, RUST } from "../lib/color";
+import { gateProfile } from "../lib/floors";
 import { UPlot } from "./UPlot";
-import { hidden, line, monoAxis, rules } from "./plugins";
+import { dots, hidden, line, monoAxis, rules } from "./plugins";
 
 interface Props {
   profile: Profile;
+  floors: Floors;
   hour: number;
 }
 
 /**
- * 24-hour profile over the read window, TomTom basis: p25-p75 band, median,
+ * 24-hour profile over the pooling window, TomTom basis: p25-p75 band, median,
  * dashed p95. The observed-p5 basis median runs alongside in grey, so neither
- * free-flow reference is dropped.
+ * free-flow reference is dropped. Every value is drawn only where its pooled
+ * count meets its floor; elsewhere the line breaks. A published hour with no
+ * published neighbour is drawn as a dot.
  */
-export function ProfileChart({ profile, hour }: Props) {
+export function ProfileChart({ profile, floors, hour }: Props) {
+  const shown = useMemo(() => gateProfile(profile, floors), [profile, floors]);
   const hi = useMemo(() => {
-    const values = [...profile.tti_tomtom_p95, ...profile.tti_p5_p50].filter((v): v is number => v != null);
+    const values = [...shown.tti_tomtom_p95, ...shown.tti_tomtom_p75, ...shown.tti_p5_p50].filter((v): v is number => v != null);
     return values.length ? Math.max(...values) * 1.05 : 2;
-  }, [profile]);
+  }, [shown]);
 
   const options = useMemo<Omit<uPlot.Options, "width" | "height">>(
     () => ({
@@ -37,21 +42,21 @@ export function ProfileChart({ profile, hour }: Props) {
       ],
       series: [{}, hidden, hidden, line(INK, 1.4), line(RUST, 1.4, [5, 3]), line(GHOST, 1)],
       bands: [{ series: [2, 1], fill: "rgba(216,212,203,.85)" }],
-      plugins: [rules(() => [{ x: hour, color: INK, alpha: 0.55 }])],
+      plugins: [rules(() => [{ x: hour, color: INK, alpha: 0.55 }]), dots(4, RUST, 1.8), dots(3, INK, 1.6)],
     }),
     [hi, hour],
   );
 
   const data = useMemo<uPlot.AlignedData>(
     () => [
-      profile.hour,
-      profile.tti_tomtom_p25,
-      profile.tti_tomtom_p75,
-      profile.tti_tomtom_p50,
-      profile.tti_tomtom_p95,
-      profile.tti_p5_p50,
+      shown.hour,
+      shown.tti_tomtom_p25,
+      shown.tti_tomtom_p75,
+      shown.tti_tomtom_p50,
+      shown.tti_tomtom_p95,
+      shown.tti_p5_p50,
     ],
-    [profile],
+    [shown],
   );
 
   return <UPlot options={options} data={data} height={150} />;

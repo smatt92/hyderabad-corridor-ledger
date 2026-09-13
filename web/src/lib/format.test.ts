@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  MINUS, addDays, daysBetween, fmtCoverage, fmtDay, fmtHour, fmtIst, fmtMinutes, fmtNum, fmtPercent,
-  fmtSigned, fmtWeekday, isStale, istDay,
+  MINUS, addDays, daysBetween, fmtCount, fmtCoverage, fmtDay, fmtHour, fmtInterval, fmtIst, fmtMinutes,
+  fmtMinutesInterval, fmtNum, fmtPercent, fmtSigned, fmtSignedInterval, fmtWeekday, fmtWindow, insufficientText,
+  isStale, istDay, windowDays,
 } from "./format";
 import { EM_DASH } from "./route";
 
@@ -54,5 +55,37 @@ describe("staleness", () => {
     expect(isStale("2026-09-13T21:45:00Z", now)).toBe(false);
     expect(isStale("2026-09-12T21:45:00Z", now)).toBe(true);
     expect(isStale(null, now)).toBe(true);
+  });
+});
+
+describe("pooled statistics", () => {
+  it("formats a point value with its interval", () => {
+    expect(fmtInterval(0.42, 0.31, 0.58)).toBe("0.42 [0.31, 0.58]");
+    expect(fmtInterval(1.8412, 1.7, 2.019, 3)).toBe("1.841 [1.700, 2.019]");
+    expect(fmtSignedInterval(0.12, -0.03, 0.25)).toBe(`+0.12 [${MINUS}0.03, +0.25]`);
+    expect(fmtMinutesInterval(1872, 1788, 1980)).toBe("31.2 [29.8, 33.0]");
+  });
+
+  it("never prints a number for an unpublished estimate, and marks a missing bound", () => {
+    for (const fmt of [fmtInterval, fmtSignedInterval, fmtMinutesInterval]) {
+      expect(fmt(null, 0.3, 0.5)).toBe(EM_DASH);
+      expect(fmt(Number.NaN, 0.3, 0.5)).toBe(EM_DASH);
+    }
+    expect(fmtInterval(0.42, null, 0.58)).toBe(`0.42 [${EM_DASH}, 0.58]`);
+  });
+
+  it("states the count against the floor", () => {
+    expect(fmtCount(180, 200)).toBe("n = 180 / 200");
+    expect(fmtCount(null, 30)).toBe(`n = ${EM_DASH} / 30`);
+    expect(insufficientText(180, 200)).toBe(`${EM_DASH} insufficient samples · n = 180 / 200`);
+    expect(insufficientText(0, 30)).toBe(`${EM_DASH} insufficient samples · n = 0 / 30`);
+  });
+
+  it("names a pooling window by its dates", () => {
+    expect(fmtWindow({ start: "2026-06-16", end: "2026-09-13" })).toBe("16 Jun–13 Sep 2026");
+    expect(fmtWindow({ start: "2025-12-20", end: "2026-03-19" })).toBe("20 Dec 2025–19 Mar 2026");
+    expect(fmtWindow(null)).toBe(EM_DASH);
+    expect(windowDays({ start: "2026-06-16", end: "2026-09-13" })).toBe(90);
+    expect(windowDays(null)).toBe(null);
   });
 });

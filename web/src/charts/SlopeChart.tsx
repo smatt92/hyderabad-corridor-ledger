@@ -5,19 +5,24 @@ import { UPlot } from "./UPlot";
 
 interface Props {
   treated: [number, number];
-  synthetic: [number, number];
+  control: [number, number];
   treatedLabel: string;
+  controlLabel: string;
+  /** The pre period's dates, drawn under PRE. */
+  preLabel: string;
+  /** The post period's dates, drawn under POST. */
+  postLabel: string;
   changeDate: string;
   changeLabel: string;
 }
 
 /**
- * Pre/post slope chart, treated corridor against its synthetic control. Every
- * annotation is drawn on the chart itself, not in a tooltip, so a printed page
- * still carries the argument.
+ * Pre/post slope chart, treated corridor against the equal-weight control.
+ * Every annotation is drawn on the chart itself, not in a tooltip, so a printed
+ * page still carries the argument.
  */
-export function SlopeChart({ treated, synthetic, treatedLabel, changeDate, changeLabel }: Props) {
-  const all = [...treated, ...synthetic];
+export function SlopeChart({ treated, control, treatedLabel, controlLabel, preLabel, postLabel, changeDate, changeLabel }: Props) {
+  const all = [...treated, ...control];
   const lo = Math.min(...all) * 0.9;
   const hi = Math.max(...all) * 1.1;
 
@@ -33,13 +38,21 @@ export function SlopeChart({ treated, synthetic, treatedLabel, changeDate, chang
         ctx.textAlign = align;
         ctx.fillText(s, x, y);
       };
+      // When two values sit close together, stack the treated one above the
+      // control one (or below, following their order) so neither is drawn over the other.
+      const stack = (t: number, c: number, gap: number, shift: number): [number, number] => {
+        if (Math.abs(Y(t) - Y(c)) > gap * px) return [0, 0];
+        return Y(t) <= Y(c) ? [-shift, shift] : [shift, -shift];
+      };
       ctx.save();
       const top = u.bbox.top;
       const bottom = u.bbox.top + u.bbox.height;
       text("PRE", X(0), top - 26 * px, MID, 10, "center");
       text("POST", X(1), top - 26 * px, MID, 10, "center");
+      text(preLabel, X(0), bottom + 22 * px, MID, 9.5, "center");
+      text(postLabel, X(1), bottom + 22 * px, MID, 9.5, "center");
       text("BTI", X(0) - 46 * px, top + 10 * px, MID, 10, "left");
-      // change date rule
+      // change date rule, halfway between the periods
       const mx = Math.round(X(0.5)) + 0.5;
       ctx.strokeStyle = RUST;
       ctx.lineWidth = px;
@@ -49,19 +62,16 @@ export function SlopeChart({ treated, synthetic, treatedLabel, changeDate, chang
       ctx.stroke();
       text(changeDate, mx + 6 * px, top - 2 * px, RUST, 10);
       text(changeLabel, mx + 6 * px, top + 11 * px, RUST, 10.5, "left", false);
-      // endpoint values and series labels
-      text(treated[0].toFixed(2), X(0) - 10 * px, Y(treated[0]) + 4 * px, INK, 12, "right");
-      // When the two post values sit close together, stack treated above and
-      // synthetic below so neither label nor value is drawn over the other.
-      const apart = Math.abs(Y(treated[1]) - Y(synthetic[1])) > 44 * px;
-      const treatedAbove = Y(treated[1]) <= Y(synthetic[1]);
-      const tShift = apart ? 0 : treatedAbove ? -16 : 16;
-      const sShift = apart ? 0 : treatedAbove ? 16 : -16;
-      text(treated[1].toFixed(2), X(1) + 10 * px, Y(treated[1]) + (4 + tShift) * px, INK, 12);
-      text(synthetic[1].toFixed(2), X(1) + 10 * px, Y(synthetic[1]) + (4 + sShift) * px, GHOST, 12);
-      text(`Treated · ${treatedLabel}`, X(1) + 52 * px, Y(treated[1]) + (4 + tShift) * px, INK, 11.5, "left", false);
-      text("Synthetic control", X(1) + 52 * px, Y(synthetic[1]) + (4 + sShift) * px, GHOST, 11.5, "left", false);
-      text("shared pre-period, by construction", X(0) + 10 * px, Y(treated[0]) + 17 * px, GHOST, 9.5);
+      // pre values
+      const [tPre, cPre] = stack(treated[0], control[0], 18, 9);
+      text(treated[0].toFixed(2), X(0) - 10 * px, Y(treated[0]) + (4 + tPre) * px, INK, 12, "right");
+      text(control[0].toFixed(2), X(0) - 10 * px, Y(control[0]) + (4 + cPre) * px, GHOST, 12, "right");
+      // post values and series labels
+      const [tPost, cPost] = stack(treated[1], control[1], 44, 16);
+      text(treated[1].toFixed(2), X(1) + 10 * px, Y(treated[1]) + (4 + tPost) * px, INK, 12);
+      text(control[1].toFixed(2), X(1) + 10 * px, Y(control[1]) + (4 + cPost) * px, GHOST, 12);
+      text(`Treated · ${treatedLabel}`, X(1) + 52 * px, Y(treated[1]) + (4 + tPost) * px, INK, 11.5, "left", false);
+      text(controlLabel, X(1) + 52 * px, Y(control[1]) + (4 + cPost) * px, GHOST, 11.5, "left", false);
       ctx.restore();
     };
     return {
@@ -77,8 +87,8 @@ export function SlopeChart({ treated, synthetic, treatedLabel, changeDate, chang
       ],
       plugins: [{ hooks: { draw: [annotate] } }],
     };
-  }, [treated, synthetic, treatedLabel, changeDate, changeLabel, lo, hi]);
+  }, [treated, control, treatedLabel, controlLabel, preLabel, postLabel, changeDate, changeLabel, lo, hi]);
 
-  const data = useMemo<uPlot.AlignedData>(() => [[0, 1], [...treated], [...synthetic]], [treated, synthetic]);
+  const data = useMemo<uPlot.AlignedData>(() => [[0, 1], [...treated], [...control]], [treated, control]);
   return <UPlot options={options} data={data} height={310} />;
 }

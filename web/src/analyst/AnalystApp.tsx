@@ -169,7 +169,7 @@ export function AnalystApp() {
                 {seriesSet.failed.length} corridor series failed to load; their rows show no data rather than an estimate.
               </div>
             ) : null}
-            {view === "ledger" ? <Ledger corridors={corridors} views={views} days={days} dayIndex={index} hour={hour} narrow={narrow} interventions={interventions} /> : null}
+            {view === "ledger" ? <Ledger corridors={corridors} views={views} days={days} dayIndex={index} hour={hour} narrow={narrow} interventions={interventions} floors={data?.floors ?? null} /> : null}
             {view === "pulse" ? <Pulse corridors={corridors} views={views} days={days} dayIndex={index} hour={hour} /> : null}
             {view === "rhythm" ? <Rhythm corridors={corridors} day={day} hour={hour} /> : null}
             {view === "compare" ? <Compare corridors={corridors} hour={hour} windowEnd={days.at(-1)!} /> : null}
@@ -180,7 +180,7 @@ export function AnalystApp() {
 
         <div style={{ marginTop: "60px", paddingTop: "16px", borderTop: `1px solid ${INK}`, display: "flex", flexWrap: "wrap", gap: "24px", justifyContent: "space-between", fontSize: "11px", color: MID, lineHeight: 1.55 }}>
           <div style={{ maxWidth: "62ch" }}>
-            Method: probe travel times from TomTom calculateRoute (summary only) at each corridor’s declared cadence, aggregated to hourly cells. Indices are computed against two free-flow references, both published: TomTom’s no-traffic time and the observed 5th percentile over a trailing 28 days. Corridor length is the payload’s measured length_meters and is shown as an em dash when absent. Missing samples are never interpolated.
+            Method: probe travel times from TomTom calculateRoute (summary only) at each corridor’s scheduled slots, aggregated to hourly cells. Indices are computed against two free-flow references, both published: TomTom’s no-traffic time and the observed 5th percentile of night-slot calls (00:00–04:00 IST) over a trailing 28 days. A 95th percentile, and BTI and PTI with it, is never computed on an hourly cell of two to four calls: it is computed on calls pooled over a stated window, published only above a sample floor, and shown with its bootstrap interval where there is room. Corridor length is the payload’s measured length_meters and is shown as an em dash when absent. Missing samples are never interpolated.
           </div>
           <div style={{ ...mono, display: "flex", flexDirection: "column", gap: "4px", alignItems: "flex-end" }}>
             <span>
