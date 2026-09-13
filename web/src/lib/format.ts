@@ -65,25 +65,20 @@ export function fmtMinutes(seconds: number | null | undefined, digits = 0): stri
 
 type Num = number | null | undefined;
 
-function interval(v: Num, lo: Num, hi: Num, f: (x: number) => string): string {
-  if (!present(v)) return EM_DASH;
-  const bound = (b: Num) => (present(b) ? f(b) : EM_DASH);
-  return `${f(v)} [${bound(lo)}, ${bound(hi)}]`;
+const grouped = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+
+/** A count with thousands separators: "1,530". An em dash when absent. */
+export function fmtInt(n: Num): string {
+  return present(n) ? grouped.format(Math.round(n)) : EM_DASH;
 }
 
-/** A pooled estimate with its bootstrap interval: "0.42 [0.31, 0.58]". An em dash when unpublished. */
-export function fmtInterval(v: Num, lo: Num, hi: Num, digits = 2): string {
-  return interval(v, lo, hi, (x) => x.toFixed(digits));
-}
-
-/** A signed estimate with its interval: "+0.12 [−0.03, +0.25]". */
-export function fmtSignedInterval(v: Num, lo: Num, hi: Num, digits = 2): string {
-  return interval(v, lo, hi, (x) => fmtSigned(x, digits));
-}
-
-/** Seconds as minutes with an interval: "31.2 [29.8, 33.0]". */
-export function fmtMinutesInterval(seconds: Num, lo: Num, hi: Num, digits = 1): string {
-  return interval(seconds, lo, hi, (x) => (x / 60).toFixed(digits));
+/**
+ * A pooled point value with the calls it pools and, when known, the window's
+ * length: "0.42 · 1,530 pooled peak-hour calls, 90 days". No interval is
+ * published for it; callers show it only once the value is published.
+ */
+export function fmtPooled(value: string, n: Num, calls: string, days?: number | null): string {
+  return `${value} · ${fmtInt(n)} ${calls}${days ? `, ${days} days` : ""}`;
 }
 
 /** A pooled call count against its publication floor: "n = 180 / 200". */

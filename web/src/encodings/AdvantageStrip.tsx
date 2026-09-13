@@ -8,22 +8,19 @@ const PAD = 5;
 
 /**
  * Reliability advantage by hour: the published p95 gap between a pair's two
- * measured corridors. Above the rule the alternate holds less tail risk, below
- * it the primary does. A thin line through a bar is its bootstrap interval.
- * Hours with no published advantage draw a dotted gap mark: rust where either
- * corridor is below the sample floor (insufficient samples, not a tie), grey
- * elsewhere. Low-confidence hours are faded.
+ * measured corridors, primary minus alternate, as a point estimate. Above the
+ * rule the alternate's p95 is lower, below it the primary's. No interval is
+ * drawn and no hour is classified as a lead. Hours with no published advantage
+ * draw a dotted gap mark: rust where either corridor is below the sample floor
+ * (insufficient samples, not a tie), grey elsewhere. Low-confidence hours are faded.
  */
-export function AdvantageStrip({ values, ciLow, ciHigh, kinds, lowConfidence, cursor }: {
+export function AdvantageStrip({ values, kinds, lowConfidence, cursor }: {
   values: (number | null)[];
-  ciLow?: (number | null)[];
-  ciHigh?: (number | null)[];
   kinds?: AdvantageKind[];
   lowConfidence: boolean[];
   cursor: number;
 }) {
-  const extent = values.flatMap((v, h) => (v == null ? [] : [v, ciLow?.[h] ?? v, ciHigh?.[h] ?? v]));
-  const m = Math.max(1, ...extent.map(Math.abs));
+  const m = Math.max(1, ...values.flatMap((v) => (v == null ? [] : [Math.abs(v)])));
   const x = (h: number) => PAD + (h / 23) * (W - 2 * PAD);
   const zero = (H - BOTTOM) / 2;
   const y = (v: number) => zero - (v / m) * (zero - 3);
@@ -38,13 +35,8 @@ export function AdvantageStrip({ values, ciLow, ciHigh, kinds, lowConfidence, cu
               stroke={insufficient ? RUST : GHOST} stroke-width={insufficient ? 1.5 : 1} stroke-dasharray={insufficient ? "2 1.5" : "1 2"} />
           );
         }
-        const lo = ciLow?.[h] ?? null;
-        const hi = ciHigh?.[h] ?? null;
         return (
-          <g key={h} opacity={lowConfidence[h] ? 0.4 : 1}>
-            <rect x={x(h) - 4} y={v >= 0 ? y(v) : zero} width={8} height={Math.abs(y(v) - zero)} fill={v >= 0 ? "#4a748a" : "#a55f16"} />
-            {lo != null && hi != null ? <line x1={x(h)} x2={x(h)} y1={y(lo)} y2={y(hi)} stroke={INK} stroke-width={1} opacity={0.75} /> : null}
-          </g>
+          <rect key={h} x={x(h) - 4} y={v >= 0 ? y(v) : zero} width={8} height={Math.abs(y(v) - zero)} fill={v >= 0 ? "#4a748a" : "#a55f16"} opacity={lowConfidence[h] ? 0.4 : 1} />
         );
       })}
       {[0, 6, 12, 18, 23].map((h) => (

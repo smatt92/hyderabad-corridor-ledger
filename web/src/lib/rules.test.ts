@@ -64,7 +64,6 @@ describe("intervention audit", () => {
   // The audit publishes point estimates only: its bootstrap interval lost
   // coverage when corridors drifted, and nothing observable said when. The view
   // cannot be rendered in this node test environment, so its source is checked.
-  // Ledger, profile and pair-advantage intervals live elsewhere and are unaffected.
   const files = ["analyst/Audit.tsx", "lib/audit.ts", "charts/BlockChart.tsx", "charts/PlaceboRanks.tsx", "charts/SlopeChart.tsx"];
   const interval = /\b(ci_low|ci_high|equal_ci_low|equal_ci_high|resamples)\b|fmt\w*Interval\b|excludes zero|%\s*(bootstrap\s*)?interval/;
 
@@ -82,6 +81,21 @@ describe("intervention audit", () => {
   it("the view prints no placebo p without the chance expectation beside it", () => {
     expect(code(join(SRC, "analyst/Audit.tsx"))).not.toMatch(/placeboResolutionText\s*\(/);
   });
+});
+
+describe("pooled statistics", () => {
+  // Ledger, profile and route-comparison intervals resampled single calls as if
+  // calls from the same day and week were independent, and lost coverage in
+  // simulation. These views show point values with their pooled counts and mark
+  // no hour as a reliable lead.
+  const files = ["analyst/Ledger.tsx", "analyst/Compare.tsx", "encodings/AdvantageStrip.tsx", "lib/advantage.ts"];
+  const interval = /\bci_(low|high)\b|_ci_(low|high)\b|\bci(Low|High)\b|fmt\w*Interval\b|bootstrap_resamples|\[\$\{|\[\{\s*fmt/;
+
+  for (const name of files) {
+    it(`src/${name} reads no interval field and renders no interval bracket`, () => {
+      expect(code(join(SRC, name))).not.toMatch(interval);
+    });
+  }
 });
 
 describe("dependency boundaries", () => {

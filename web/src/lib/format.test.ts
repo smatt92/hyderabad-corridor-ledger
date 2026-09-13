@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  MINUS, addDays, daysBetween, fmtCount, fmtCoverage, fmtDay, fmtHour, fmtInterval, fmtIst, fmtMinutes,
-  fmtMinutesInterval, fmtNum, fmtPercent, fmtSigned, fmtSignedInterval, fmtWeekday, fmtWindow, insufficientText,
-  isStale, istDay, windowDays,
+  MINUS, addDays, daysBetween, fmtCount, fmtCoverage, fmtDay, fmtHour, fmtInt, fmtIst, fmtMinutes, fmtNum, fmtPercent,
+  fmtPooled, fmtSigned, fmtWeekday, fmtWindow, insufficientText, isStale, istDay, windowDays,
 } from "./format";
 import { EM_DASH } from "./route";
 
@@ -59,19 +58,12 @@ describe("staleness", () => {
 });
 
 describe("pooled statistics", () => {
-  it("formats a point value with its interval", () => {
-    expect(fmtInterval(0.42, 0.31, 0.58)).toBe("0.42 [0.31, 0.58]");
-    expect(fmtInterval(1.8412, 1.7, 2.019, 3)).toBe("1.841 [1.700, 2.019]");
-    expect(fmtSignedInterval(0.12, -0.03, 0.25)).toBe(`+0.12 [${MINUS}0.03, +0.25]`);
-    expect(fmtMinutesInterval(1872, 1788, 1980)).toBe("31.2 [29.8, 33.0]");
-  });
-
-  it("never prints a number for an unpublished estimate, and marks a missing bound", () => {
-    for (const fmt of [fmtInterval, fmtSignedInterval, fmtMinutesInterval]) {
-      expect(fmt(null, 0.3, 0.5)).toBe(EM_DASH);
-      expect(fmt(Number.NaN, 0.3, 0.5)).toBe(EM_DASH);
-    }
-    expect(fmtInterval(0.42, null, 0.58)).toBe(`0.42 [${EM_DASH}, 0.58]`);
+  it("formats a point value with the calls it pools, and no interval", () => {
+    expect(fmtPooled("0.42", 1530, "pooled peak-hour calls", 90)).toBe("0.42 · 1,530 pooled peak-hour calls, 90 days");
+    expect(fmtPooled("31.2 min", 412, "pooled calls")).toBe("31.2 min · 412 pooled calls");
+    expect(fmtPooled("0.42", null, "pooled calls", null)).toBe(`0.42 · ${EM_DASH} pooled calls`);
+    expect(fmtInt(1234567)).toBe("1,234,567");
+    expect(fmtInt(Number.NaN)).toBe(EM_DASH);
   });
 
   it("states the count against the floor", () => {

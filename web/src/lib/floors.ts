@@ -1,16 +1,23 @@
 import type { Floors, Profile, Window } from "../api/types";
 
 /**
- * The API is the authority on publication floors and bootstrap resamples, and
- * every response that publishes a pooled statistic carries them. This fallback
- * is used only when a response carries floors: null, and it is the one place
- * those numbers are written in the frontend.
+ * The API is the authority on publication floors, and every response that
+ * publishes a pooled statistic carries them. This fallback is used only when a
+ * response carries floors: null, and it is the one place those numbers are
+ * written in the frontend.
  */
 export const FALLBACK_FLOORS: Readonly<Floors> = {
   p95_min_samples: 200,
   central_min_samples: 30,
-  bootstrap_resamples: 2000,
 };
+
+/**
+ * Why a pooled statistic is shown with its count and no interval. Stated
+ * wherever an interval used to be explained: the ledger, its expanded row, the
+ * route comparison and the method note.
+ */
+export const NO_INTERVAL_REASON =
+  "No interval is published. An interval that resamples single calls treats calls from the same day and week as independent: in simulation the p95 travel time interval covered the true value in only 68–84% of cases under ordinary day-to-day and week-to-week variation, and in 41–58% when corridors drift more from week to week. Each value is shown with the number of calls it pools.";
 
 export function resolveFloors(floors: Floors | null | undefined): Floors {
   return floors ?? FALLBACK_FLOORS;
@@ -92,22 +99,14 @@ export function gateProfile(p: Profile, floors: Floors): Profile {
     tt_mean_s: gate(p.tt_mean_s, n, c),
     tt_p50_s: gate(p.tt_p50_s, n, c),
     tt_p95_s: gate(p.tt_p95_s, n, q),
-    tt_p95_ci_low: gate(p.tt_p95_ci_low, n, q),
-    tt_p95_ci_high: gate(p.tt_p95_ci_high, n, q),
     bti: gate(p.bti, n, q),
-    bti_ci_low: gate(p.bti_ci_low, n, q),
-    bti_ci_high: gate(p.bti_ci_high, n, q),
     tti_tomtom_p25: gate(p.tti_tomtom_p25, n, c),
     tti_tomtom_p50: gate(p.tti_tomtom_p50, n, c),
     tti_tomtom_p75: gate(p.tti_tomtom_p75, n, c),
     tti_tomtom_p95: gate(p.tti_tomtom_p95, n, q),
-    tti_tomtom_p95_ci_low: gate(p.tti_tomtom_p95_ci_low, n, q),
-    tti_tomtom_p95_ci_high: gate(p.tti_tomtom_p95_ci_high, n, q),
     tti_p5_p25: gate(p.tti_p5_p25, n5, c),
     tti_p5_p50: gate(p.tti_p5_p50, n5, c),
     tti_p5_p75: gate(p.tti_p5_p75, n5, c),
     tti_p5_p95: gate(p.tti_p5_p95, n5, q),
-    tti_p5_p95_ci_low: gate(p.tti_p5_p95_ci_low, n5, q),
-    tti_p5_p95_ci_high: gate(p.tti_p5_p95_ci_high, n5, q),
   };
 }

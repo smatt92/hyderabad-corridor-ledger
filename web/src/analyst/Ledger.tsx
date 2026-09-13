@@ -6,10 +6,10 @@ import { ProfileChart } from "../charts/ProfileChart";
 import { Sparkline } from "../charts/Sparkline";
 import { TrendChart } from "../charts/TrendChart";
 import { CARD, FAINT, GHOST, HATCH, INK, MID, MONO, RAMP_TTI_TEXT, RULE, RUST, SOFT, TEAL, TEXT, ramp } from "../lib/color";
-import { type Publication, floorSummary, gateProfile, publication, resolveFloors, sharedPooling } from "../lib/floors";
+import { NO_INTERVAL_REASON, type Publication, floorSummary, gateProfile, publication, resolveFloors, sharedPooling } from "../lib/floors";
 import {
-  addDays, fmtCount, fmtDay, fmtHour, fmtInterval, fmtMinutes, fmtMinutesInterval, fmtNum, fmtSigned, fmtWindow,
-  insufficientText, istDay, windowDays,
+  addDays, fmtCount, fmtDay, fmtHour, fmtMinutes, fmtNum, fmtPooled, fmtSigned, fmtWindow, insufficientText, istDay,
+  windowDays,
 } from "../lib/format";
 import { EM_DASH, formatLength } from "../lib/route";
 import { cache } from "./cache";
@@ -61,7 +61,7 @@ function isPooled(key: SortKey): key is PooledKey {
 
 function pooledOf(ledger: CorridorLedger | null | undefined, key: PooledKey, floor: number): Pooled {
   if (!ledger) return { value: null, state: "absent", n: null };
-  const value = ledger[key]?.value ?? null;
+  const value = ledger[key] ?? null;
   const state = publication(value, ledger.n, floor);
   return { value: state === "published" ? value : null, state, n: ledger.n };
 }
@@ -159,7 +159,7 @@ export function Ledger({ corridors, views, days, dayIndex, hour, narrow, interve
     <div>
       <SectionHead
         title="Corridor ledger"
-        sub={`${corridors.length} declared corridors, sorted worst-first on the shrunk index. TTI, Δ wk and samples are hourly cells at ${fmtHour(hour)} on ${fmtDay(day)}. ${pooledSentence} Click a row for intervals, the 24-hour profile and the 90-day trend.`}
+        sub={`${corridors.length} declared corridors, sorted worst-first on the shrunk index. TTI, Δ wk and samples are hourly cells at ${fmtHour(hour)} on ${fmtDay(day)}. ${pooledSentence} Click a row for pooled counts, the 24-hour profile and the 90-day trend.`}
         right={
           <div style={{ fontFamily: MONO, fontSize: "11px", color: MID, textAlign: "right", lineHeight: 1.5 }}>
             <div>TTI mean ÷ free-flow, TomTom and observed p5 · hourly at {fmtHour(hour)} · Δ vs same hour last week</div>
@@ -291,7 +291,7 @@ export function Ledger({ corridors, views, days, dayIndex, hour, narrow, interve
       )}
 
       <div style={{ marginTop: "18px", paddingTop: "12px", borderTop: `1px solid ${FAINT}`, fontSize: "11.5px", color: MID, maxWidth: "80ch", lineHeight: 1.5 }}>
-        Default sort is worst-first on the shrunk index: each corridor’s mean TTI (TomTom basis) over the window is pulled toward the city mean in proportion to how few hourly cells support it, so a thin-sample corridor cannot top the table on noise alone. Both free-flow references are shown in every row. Hourly cells with more than 15% missing samples are hatched and dimmed — degraded, never hidden, never interpolated. BTI and PTI rest on a 95th percentile, which the two to four calls in one hourly cell cannot estimate, so they are computed on all successful peak-hour calls pooled over {poolWindow ?? "each corridor’s trailing window"} and published only from {q} pooled calls. Below that floor the cell shows an em dash, “insufficient samples” and the count against the floor, never a number. The table shows point values; the expanded row gives each with its bootstrap interval ({f.bootstrap_resamples} resamples).
+        Default sort is worst-first on the shrunk index: each corridor’s mean TTI (TomTom basis) over the window is pulled toward the city mean in proportion to how few hourly cells support it, so a thin-sample corridor cannot top the table on noise alone. Both free-flow references are shown in every row. Hourly cells with more than 15% missing samples are hatched and dimmed — degraded, never hidden, never interpolated. BTI and PTI rest on a 95th percentile, which the two to four calls in one hourly cell cannot estimate, so they are computed on all successful peak-hour calls pooled over {poolWindow ?? "each corridor’s trailing window"} and published only from {q} pooled calls. Below that floor the cell shows an em dash, “insufficient samples” and the count against the floor, never a number. The table shows point values, and the expanded row gives each with the calls it pools. {NO_INTERVAL_REASON}
       </div>
     </div>
   );
@@ -357,22 +357,23 @@ function Expanded({ row, days, dayIndex, hour, interventions, floors, stacked = 
   const L = row.c.ledger ?? null;
   const lf = resolveFloors(floors);
   const ledgerDays = L ? windowDays(L.window) : null;
+  const withCalls = (value: string) => fmtPooled(value, L?.n, "pooled peak-hour calls", ledgerDays);
   const pooledBlock = (
     <div>
       <div style={{ ...kicker, marginBottom: "8px" }}>Peak-hour reliability · pooled, not hourly</div>
       {L ? (
         <>
           <div style={{ fontSize: "11.5px", color: TEXT, lineHeight: 1.45, marginBottom: "10px", maxWidth: "52ch" }}>
-            Pooled over {fmtWindow(L.window)}{ledgerDays ? ` (${ledgerDays} days)` : ""}: all {L.n} successful calls in {L.hours}. Each statistic is computed once on that pooled distribution and does not move with the scrubbers. Intervals are bootstrap, {lf.bootstrap_resamples} resamples.
+            Pooled over {fmtWindow(L.window)}{ledgerDays ? ` (${ledgerDays} days)` : ""}: all {L.n} successful calls in {L.hours}. Each statistic is computed once on that pooled distribution and does not move with the scrubbers. {NO_INTERVAL_REASON}
           </div>
           <StatList
             items={[
               ["pooled calls", `n = ${L.n} · floors ${lf.p95_min_samples} (p95) / ${lf.central_min_samples} (mean)`],
-              ["mean travel time", <PooledStat value={L.tt_mean_s} n={L.n} floor={lf.central_min_samples} text={`${fmtMinutes(L.tt_mean_s, 1)} min`} />],
-              ["p95 travel time", <PooledStat value={L.tt_p95_s?.value} n={L.n} floor={lf.p95_min_samples} text={`${fmtMinutesInterval(L.tt_p95_s?.value, L.tt_p95_s?.ci_low, L.tt_p95_s?.ci_high)} min`} />],
-              ["BTI", <PooledStat value={L.bti?.value} n={L.n} floor={lf.p95_min_samples} text={fmtInterval(L.bti?.value, L.bti?.ci_low, L.bti?.ci_high)} />],
-              ["PTI · TomTom", <PooledStat value={L.pti_tomtom?.value} n={L.n} floor={lf.p95_min_samples} text={fmtInterval(L.pti_tomtom?.value, L.pti_tomtom?.ci_low, L.pti_tomtom?.ci_high)} />],
-              ["PTI · obs p5", <PooledStat value={L.pti_p5?.value} n={L.n} floor={lf.p95_min_samples} unavailable="no observed-p5 reference" text={fmtInterval(L.pti_p5?.value, L.pti_p5?.ci_low, L.pti_p5?.ci_high)} />],
+              ["mean travel time", <PooledStat value={L.tt_mean_s} n={L.n} floor={lf.central_min_samples} text={withCalls(`${fmtMinutes(L.tt_mean_s, 1)} min`)} />],
+              ["p95 travel time", <PooledStat value={L.tt_p95_s} n={L.n} floor={lf.p95_min_samples} text={withCalls(`${fmtMinutes(L.tt_p95_s, 1)} min`)} />],
+              ["BTI", <PooledStat value={L.bti} n={L.n} floor={lf.p95_min_samples} text={withCalls(fmtNum(L.bti))} />],
+              ["PTI · TomTom", <PooledStat value={L.pti_tomtom} n={L.n} floor={lf.p95_min_samples} text={withCalls(fmtNum(L.pti_tomtom))} />],
+              ["PTI · obs p5", <PooledStat value={L.pti_p5} n={L.n} floor={lf.p95_min_samples} unavailable="no observed-p5 reference" text={withCalls(fmtNum(L.pti_p5))} />],
             ]}
           />
         </>
@@ -399,6 +400,7 @@ function Expanded({ row, days, dayIndex, hour, interventions, floors, stacked = 
     const unscheduled = i < 0 || !((p.n_expected[i] ?? 0) > 0);
     const summary = floorSummary(p.n_expected, p.n_ok, q);
     const drawn = p.tti_tomtom_p95.filter((v) => v != null).length;
+    const profileDays = windowDays(loaded.window);
     profileBody = (
       <>
         <ProfileChart profile={loaded.profile} floors={pf} hour={hour} />
@@ -418,10 +420,10 @@ function Expanded({ row, days, dayIndex, hour, interventions, floors, stacked = 
         <div style={{ marginTop: "8px" }}>
           <StatList
             items={[
-              [`p95 TTI TomTom · ${fmtHour(hour)}`, <PooledStat value={at(p.tti_tomtom_p95)} n={nHour} floor={q} unscheduled={unscheduled} text={fmtInterval(at(p.tti_tomtom_p95), at(p.tti_tomtom_p95_ci_low), at(p.tti_tomtom_p95_ci_high))} />],
-              [`p95 TTI obs p5 · ${fmtHour(hour)}`, <PooledStat value={at(p.tti_p5_p95)} n={n5Hour} floor={q} unscheduled={unscheduled} unavailable="no observed-p5 reference" text={fmtInterval(at(p.tti_p5_p95), at(p.tti_p5_p95_ci_low), at(p.tti_p5_p95_ci_high))} />],
-              [`p95 travel time · ${fmtHour(hour)}`, <PooledStat value={at(p.tt_p95_s)} n={nHour} floor={q} unscheduled={unscheduled} text={`${fmtMinutesInterval(at(p.tt_p95_s), at(p.tt_p95_ci_low), at(p.tt_p95_ci_high))} min`} />],
-              [`BTI · ${fmtHour(hour)}`, <PooledStat value={at(p.bti)} n={nHour} floor={q} unscheduled={unscheduled} text={fmtInterval(at(p.bti), at(p.bti_ci_low), at(p.bti_ci_high))} />],
+              [`p95 TTI TomTom · ${fmtHour(hour)}`, <PooledStat value={at(p.tti_tomtom_p95)} n={nHour} floor={q} unscheduled={unscheduled} text={fmtPooled(fmtNum(at(p.tti_tomtom_p95)), nHour, "pooled calls", profileDays)} />],
+              [`p95 TTI obs p5 · ${fmtHour(hour)}`, <PooledStat value={at(p.tti_p5_p95)} n={n5Hour} floor={q} unscheduled={unscheduled} unavailable="no observed-p5 reference" text={fmtPooled(fmtNum(at(p.tti_p5_p95)), n5Hour, "pooled calls", profileDays)} />],
+              [`p95 travel time · ${fmtHour(hour)}`, <PooledStat value={at(p.tt_p95_s)} n={nHour} floor={q} unscheduled={unscheduled} text={fmtPooled(`${fmtMinutes(at(p.tt_p95_s), 1)} min`, nHour, "pooled calls", profileDays)} />],
+              [`BTI · ${fmtHour(hour)}`, <PooledStat value={at(p.bti)} n={nHour} floor={q} unscheduled={unscheduled} text={fmtPooled(fmtNum(at(p.bti)), nHour, "pooled calls", profileDays)} />],
               [`pooled calls · ${fmtHour(hour)}`, unscheduled ? `${EM_DASH} no scheduled slots` : `${nHour ?? EM_DASH} TomTom · ${n5Hour ?? EM_DASH} obs p5`],
             ]}
           />

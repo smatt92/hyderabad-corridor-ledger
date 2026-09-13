@@ -19,19 +19,12 @@ export interface Window {
 /**
  * Publication floors, set by the API. A p95 or anything derived from one needs
  * p95_min_samples pooled calls; a mean, median or quartile needs
- * central_min_samples. Below a floor the API sends null.
+ * central_min_samples. Below a floor the API sends null. A pooled statistic is
+ * published as a point value with its count and no interval.
  */
 export interface Floors {
   p95_min_samples: number;
   central_min_samples: number;
-  bootstrap_resamples: number;
-}
-
-/** A pooled estimate with its bootstrap interval. value is null below the floor. */
-export interface Interval {
-  value: Maybe<number>;
-  ci_low: Maybe<number>;
-  ci_high: Maybe<number>;
 }
 
 export interface Place {
@@ -62,12 +55,13 @@ export interface CorridorLedger {
   n: number;
   /** Null below the central floor. */
   tt_mean_s: Maybe<number>;
-  tt_p95_s: Interval;
-  bti: Interval;
+  /** Point values pooled over n calls, with no interval. Null below the p95 floor. */
+  tt_p95_s: Maybe<number>;
+  bti: Maybe<number>;
   /** p95 / TomTom free flow. */
-  pti_tomtom: Interval;
-  /** p95 / observed p5 free flow; null when that reference is unknown. */
-  pti_p5: Interval;
+  pti_tomtom: Maybe<number>;
+  /** p95 / observed p5 free flow; also null when that reference is unknown. */
+  pti_p5: Maybe<number>;
 }
 
 export interface CorridorView {
@@ -156,23 +150,15 @@ export interface Profile {
   tt_mean_s: Col<number>;
   tt_p50_s: Col<number>;
   tt_p95_s: Col<number>;
-  tt_p95_ci_low: Col<number>;
-  tt_p95_ci_high: Col<number>;
   bti: Col<number>;
-  bti_ci_low: Col<number>;
-  bti_ci_high: Col<number>;
   tti_tomtom_p25: Col<number>;
   tti_tomtom_p50: Col<number>;
   tti_tomtom_p75: Col<number>;
   tti_tomtom_p95: Col<number>;
-  tti_tomtom_p95_ci_low: Col<number>;
-  tti_tomtom_p95_ci_high: Col<number>;
   tti_p5_p25: Col<number>;
   tti_p5_p50: Col<number>;
   tti_p5_p75: Col<number>;
   tti_p5_p95: Col<number>;
-  tti_p5_p95_ci_low: Col<number>;
-  tti_p5_p95_ci_high: Col<number>;
 }
 
 export interface ProfileResponse extends Envelope {
@@ -207,11 +193,7 @@ export interface CompareSide extends CorridorView {
     n_ok: number[];
     tt_p50_s: Col<number>;
     tt_p95_s: Col<number>;
-    tt_p95_ci_low: Col<number>;
-    tt_p95_ci_high: Col<number>;
     bti: Col<number>;
-    bti_ci_low: Col<number>;
-    bti_ci_high: Col<number>;
     missing_rate: Col<number>;
     low_confidence: boolean[];
   };
@@ -223,10 +205,11 @@ export interface CompareAdvantage {
   alternate_n: number[];
   primary_tt_p95_s: Col<number>;
   alternate_tt_p95_s: Col<number>;
-  /** Primary p95 minus alternate p95; positive favours the alternate. */
+  /**
+   * Primary p95 minus alternate p95, a point estimate: positive means the
+   * alternate's p95 is lower. Published only where both sides reach the p95 floor.
+   */
   advantage_p95_s: Col<number>;
-  advantage_ci_low: Col<number>;
-  advantage_ci_high: Col<number>;
   low_confidence: boolean[];
 }
 

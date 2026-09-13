@@ -1,12 +1,22 @@
 import { describe, expect, it } from "vitest";
 import type { Profile } from "../api/types";
-import { FALLBACK_FLOORS, floorSummary, gate, gateMatrix, gateOne, gateProfile, meetsFloor, publication, resolveFloors, sharedPooling } from "./floors";
+import {
+  FALLBACK_FLOORS, NO_INTERVAL_REASON, floorSummary, gate, gateMatrix, gateOne, gateProfile, meetsFloor, publication, resolveFloors,
+  sharedPooling,
+} from "./floors";
 
 describe("floors", () => {
   it("prefers the API's floors and falls back only on null", () => {
-    const api = { p95_min_samples: 250, central_min_samples: 40, bootstrap_resamples: 5000 };
+    const api = { p95_min_samples: 250, central_min_samples: 40 };
     expect(resolveFloors(api)).toBe(api);
     expect(resolveFloors(null)).toBe(FALLBACK_FLOORS);
+    expect(FALLBACK_FLOORS).not.toHaveProperty("bootstrap_resamples");
+  });
+
+  it("states plainly why a pooled statistic carries no interval", () => {
+    expect(NO_INTERVAL_REASON).toBe(
+      "No interval is published. An interval that resamples single calls treats calls from the same day and week as independent: in simulation the p95 travel time interval covered the true value in only 68–84% of cases under ordinary day-to-day and week-to-week variation, and in 41–58% when corridors drift more from week to week. Each value is shown with the number of calls it pools.",
+    );
   });
 
   it("a count meets the floor only when present and at least the floor", () => {
@@ -65,16 +75,15 @@ describe("gateProfile", () => {
       hour: [7, 8, 13], n_expected: [40, 40, 0], n_ok: [250, 60, 0], missing_rate: [0, 0, null], low_confidence: [false, false, true],
       n_tti_p5: [150, 20, 0],
       tt_mean_s: col(900, 800, 700), tt_p50_s: col(880, 790, 700), tt_p95_s: col(1300, 1100, 900),
-      tt_p95_ci_low: col(1200, 1000, 800), tt_p95_ci_high: col(1400, 1200, 1000),
-      bti: col(0.44, 0.38, 0.3), bti_ci_low: col(0.3, 0.2, 0.1), bti_ci_high: col(0.6, 0.5, 0.4),
+      bti: col(0.44, 0.38, 0.3),
       tti_tomtom_p25: col(1.2, 1.1, 1), tti_tomtom_p50: col(1.3, 1.2, 1), tti_tomtom_p75: col(1.5, 1.3, 1),
-      tti_tomtom_p95: col(1.9, 1.6, 1.1), tti_tomtom_p95_ci_low: col(1.8, 1.5, 1), tti_tomtom_p95_ci_high: col(2, 1.7, 1.2),
+      tti_tomtom_p95: col(1.9, 1.6, 1.1),
       tti_p5_p25: col(1.1, 1, 1), tti_p5_p50: col(1.2, 1.1, 1), tti_p5_p75: col(1.4, 1.2, 1),
-      tti_p5_p95: col(1.8, 1.5, 1), tti_p5_p95_ci_low: col(1.7, 1.4, 1), tti_p5_p95_ci_high: col(1.9, 1.6, 1),
+      tti_p5_p95: col(1.8, 1.5, 1),
     };
-    const g = gateProfile(p, { p95_min_samples: 200, central_min_samples: 30, bootstrap_resamples: 2000 });
+    const g = gateProfile(p, { p95_min_samples: 200, central_min_samples: 30 });
     expect(g.tti_tomtom_p95).toEqual([1.9, null, null]);
-    expect(g.bti_ci_high).toEqual([0.6, null, null]);
+    expect(g.bti).toEqual([0.44, null, null]);
     expect(g.tti_tomtom_p50).toEqual([1.3, 1.2, null]);
     expect(g.tti_p5_p50).toEqual([1.2, null, null]);
     expect(g.tti_p5_p95).toEqual([null, null, null]);
