@@ -57,6 +57,29 @@ logic cannot be attributed, the dataset it produced cannot be trusted either.
 - GitHub: `smatt92/hyderabad-corridor-ledger`, public, with secret scanning
   and push protection on.
 
+## TomTom's terms and allowance: unresolved
+
+Read on 2026-09-14 from TomTom's public pricing page, FAQ, QPS limits page and
+Terms and Conditions. This is a reading of public pages, not legal advice,
+and not necessarily the terms of Sahil's account.
+
+- Pricing lists the Routing API at 20,000 free calls a month, and raster map
+  tiles and traffic raster tiles at 200,000 each. The FAQ says calls return
+  429 once limits are exceeded. The default QPS limit is 5 for Routing and 10
+  for map display.
+- Terms 11.4 prohibit "the caching or storing of any Results", except caching
+  in clients within the response's cache headers. Routing responses are sent
+  `no-cache`.
+- Terms 11.6.1 bar using the products to create "any secondary or derived
+  database". The licence (2.1) is non-transferable and non-sublicensable, and
+  no clause found permits publishing results as an open dataset.
+
+The project chose TomTom believing its terms permitted keeping the data. The
+sample log, the Parquet archive and the exports all store Results. Until
+Sahil settles this with TomTom, say so wherever retention or publication is
+described, and never describe the data as licensed for reuse. No licence has
+been chosen.
+
 ## Secrets
 
 | Secret | GitHub Actions | Vercel | Any file |
