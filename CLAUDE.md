@@ -213,12 +213,16 @@ optional `origin_junction` and `destination_junction`.
   different junctions). A corridor that names `origin_junction` or
   `destination_junction` must sit exactly on it, and cannot be verified while
   that junction is not. Khajaguda and NFCL Junction are not established and are
-  not seeded. "Kukatpally" is ambiguous (KPHB Circle, the Y-Junction or the
-  metro station), and Sahil chooses.
+  not seeded. For "Kukatpally" Sahil chose KPHB Circle, the commuter reference
+  on the road toward Hitec City, not the metro station; it is still unverified.
 - `treatment_status` is untreated, will_be_treated, under_construction or
   treated. Anything but untreated cites a `treatment_work` in
-  `config/interventions.yaml` with the same status and at least one source with
-  a URL and a date; a work with no source cannot be cited. A donor is always
+  `config/interventions.yaml` with the same status and a source with a URL, an
+  access date and a reported stage that supports that status (proposed, planned,
+  tendered or awarded for will_be_treated; under construction; completed for
+  treated). A link that names a work only at an earlier stage keeps it
+  uncitable, and a work with no URL keeps `sources: []`: never borrow an
+  unrelated link. A donor is always
   untreated. The intervention audit excludes every corridor under construction
   (`under_works`) or treated from every donor pool. `collector/registry.py`
   validates both registers.

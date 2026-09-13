@@ -196,8 +196,9 @@ def check_references(panel: Panel, junctions, register) -> None:
                 raise ValueError(f"{c.id}: treatment_status {c.treatment_status}, but "
                                  f"{work.id} is {work.treatment_status}")
             if not work.sourced:
-                raise ValueError(f"{c.id}: {work.id} has no source with a URL and a date, so "
-                                 "no corridor may cite it yet")
+                raise ValueError(f"{c.id}: {work.id} has no source with a URL and a date that "
+                                 f"reports it as {work.treatment_status}, so no corridor may "
+                                 "cite it yet")
         for end, junction_id, lat, lon in (
                 ("origin", c.origin_junction, c.origin_lat, c.origin_lon),
                 ("destination", c.destination_junction, c.dest_lat, c.dest_lon)):

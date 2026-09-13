@@ -3,16 +3,19 @@
 #
 # treatment_status: untreated | will_be_treated | under_construction | treated.
 # A corridor in config/corridors.yaml that is not untreated cites one work here
-# (treatment_work), with the same status, and that work must carry at least one
-# source with a URL and a date. A donor corridor is always untreated: a road
-# that is or will be rebuilt is never a control.
+# (treatment_work), with the same status. The work must have a source with a
+# URL, an access date and a reported stage that supports that status: proposed,
+# planned, tendered or awarded for will_be_treated; under_construction; completed
+# for treated. A donor corridor is always untreated: a road that is or will be
+# rebuilt is never a control.
 #
-# events record each date with who gave it. Where official dates conflict, every
-# one is recorded; none is chosen.
+# events record each date with who gave it. Where dates conflict, every one is
+# recorded and none is chosen.
 #
-# Sources: the research of 14 Sep 2026 gave dates, costs and agencies but no
-# URLs. Every work below therefore has sources: [] and cannot be cited by any
-# corridor until a URL and a date are added. Nothing here was invented.
+# Sources were accessed on 13 Sep 2026 from Sahil's research report. A work with
+# no URL keeps sources: [] and cannot be cited: an unrelated link is never
+# borrowed. A source that names a work only at an earlier stage is recorded, and
+# still leaves the work uncitable.
 #
 # RECHECK, every 92 days (collector/registry.py overdue, run weekly by
 # .github/workflows/recheck.yml):
@@ -24,6 +27,52 @@
 # Validated by collector/registry.py.
 
 version: 1
+
+# Sources cited by more than one work.
+x-sources:
+  hciti-newsmeter: &hciti_newsmeter
+    url: https://newsmeter.in/hyderabad/telangana-govt-plans-29-elevated-corridors-flyovers-underpasses-across-hyderabad-aims-for-2028-completion-765058
+    published_on: 2026-03-23
+    accessed_on: 2026-09-13
+    stage: planned
+    claim: >-
+      H-CITI programme of 29 elevated corridors, flyovers and underpasses, target
+      March 2028. Lists as planned: Jubilee Hills Check Post, Film Nagar, Road No.
+      45, NFCL Junction, Khajaguda, IIIT, Wipro Junction, Rethibowli, Nanal Nagar,
+      the Miyapur six-lane flyover and the RK Puram rail under bridge.
+  hciti-council: &hciti_council
+    url: https://www.telanganatribune.com/government-plans-29-elevated-corridors-flyovers-and-underpasses-across-hyderabad-by-2028/
+    published_on: 2026-03-23
+    accessed_on: 2026-09-13
+    stage: planned
+    claim: >-
+      Government reply to the Legislative Council: 29 works under H-CITI, target
+      March 2028. Lists as planned: Miyapur to Alwyn Cross Road flyover, Jubilee
+      Hills Check Post, Film Nagar, IIIT, Khajaguda, Wipro Junction, Rethibowli,
+      Nanal Nagar and the RK Puram rail under bridge.
+  package-award: &package_award
+    url: https://www.constructionworld.in/transport-infrastructure/highways-and-roads-infrastructure/telangana-approves-major-flyover-and-underpass-project/89171
+    published_on: 2026-04-01
+    accessed_on: 2026-09-13
+    stage: awarded
+    claim: >-
+      Miyapur X Road to Allwyn X Road six-lane flyover, Hafeezpet to Miyapur and
+      Bachupally to Allwyn X Roads three-lane underpasses awarded to Shivasatya
+      Engineering Services, Rs 384.45 crore; administrative approval Rs 530 crore.
+  package-scope: &package_scope
+    url: https://hyderabadmail.com/ghmc-six-lane-flyover-miyapur-allwyn-underpasses-hyderabad/
+    published_on: 2025-11-03
+    accessed_on: 2026-09-13
+    stage: tendered
+    claim: >-
+      GHMC tender for the Miyapur-Allwyn flyover (25 m wide) and the two
+      underpasses: EPC, two-year defect liability, completion two years from
+      award, Rs 530 crore; price bids due 24 Nov 2025.
+  lb-nagar: &lb_nagar
+    url: https://telanganatoday.com/six-lane-bi-directional-elevated-corridor-at-lb-nagar-to-ease-traffic-in-southern-hyderabad
+    published_on: 2026-06-04
+    accessed_on: 2026-09-13
+
 works:
   # --- TREATED or UNDER CONSTRUCTION: unusable as controls ---
   - id: bachupally-flyover
@@ -31,22 +80,39 @@ works:
     treatment_status: treated
     junctions: [miyapur-x-road, bachupally]
     events:
-      - {event: opened, date: "2026-06-08", according_to: HMDA}
+      - {event: opened, date: "2026-06-08", according_to: HMDA, note: per the research report}
     cost: Rs 65.53 crore, per HMDA
     notes: >-
       Opened on 8 Jun 2026, before collection began, so this stretch has no
-      usable baseline. This corrects the earlier plan.
+      usable baseline. No URL yet for the opening or the cost.
     sources: []
     last_checked: 2026-09-14
 
   - id: film-nagar-kbr-park-cluster
-    name: Film Nagar, Jubilee Hills Check Post, LV Prasad and KBR Park junctions
+    name: Jubilee Hills Check Post, KBR Park, Film Nagar and LV Prasad junctions
     treatment_status: under_construction
     junctions: [film-nagar, jubilee-hills-check-post]
     events:
-      - {event: excavation_reported, date: "2026-09", note: excavation underway}
-      - {event: target_completion, date: "2028-12"}
-    sources: []
+      - {event: diversion_advisory, date: "2026-06-08", according_to: Hyderabad traffic police,
+         note: "works at Jubilee Hills Check Post, KBR Park entrance and Mugdha Junction"}
+      - {event: excavation_reported, date: "2026-09", according_to: research report,
+         note: excavation underway}
+      - {event: target_completion, date: "2028-03", according_to: Telangana government (H-CITI)}
+      - {event: target_completion, date: "2028-12", according_to: research report}
+    notes: >-
+      The two completion targets differ and both are kept. Mugdha Junction also
+      has works and has no junction candidate.
+    sources:
+      - url: https://telanganatoday.com/traffic-curbs-in-jubilee-hills-as-flyover-underpass-works-continue
+        published_on: 2026-06-08
+        accessed_on: 2026-09-13
+        stage: under_construction
+        claim: >-
+          Traffic curbs as steel flyover and underpass works continue at Jubilee
+          Hills Check Post, KBR Park entrance and Mugdha Junction; commuters told to
+          avoid 8:30-11:00 and 17:00-21:00.
+      - *hciti_newsmeter
+      - *hciti_council
     last_checked: 2026-09-14
 
   - id: iiit-khajaguda-wipro-cluster
@@ -54,24 +120,33 @@ works:
     treatment_status: under_construction
     junctions: [wipro-junction]
     events:
-      - {event: excavation_began, date: "2026-02"}
+      - {event: excavation_began, date: "2026-02", according_to: research report}
       - {event: target_completion, date: "2027-04", according_to: CMC Commissioner}
       - {event: target_completion, date: "2028-05", according_to: GHMC}
+      - {event: target_completion, date: "2028-03", according_to: Telangana government (H-CITI)}
     notes: >-
-      More than 30% of civil works reported done. The two official completion
-      dates conflict and both are kept. Khajaguda has no established junction
+      More than 30% of civil works reported done (research report). The
+      completion dates conflict and all are kept. The only linked sources, of 23
+      Mar 2026, list IIIT, Khajaguda and Wipro Junction as planned multi-level
+      flyovers; none yet reports construction, so no corridor may cite this work as
+      under_construction until one does. Khajaguda has no established junction
       centre, so only Wipro Junction is linked.
-    sources: []
+    sources:
+      - *hciti_newsmeter
+      - *hciti_council
     last_checked: 2026-09-14
 
   - id: lb-nagar-works
-    name: LB Nagar junction works
+    name: LB Nagar SRDP flyovers and underpasses
     treatment_status: treated
     junctions: [lb-nagar]
     notes: >-
-      Classified as already treated. Whether works are complete or still under
-      way, and their dates, are not yet recorded.
-    sources: []
+      Three flyovers and three underpasses completed earlier under SRDP. Their
+      completion dates are not recorded.
+    sources:
+      - <<: *lb_nagar
+        stage: completed
+        claim: Three flyovers and three underpasses at LB Nagar were completed earlier under SRDP.
     last_checked: 2026-09-14
 
   - id: uppal-works
@@ -80,36 +155,55 @@ works:
     junctions: [uppal]
     notes: >-
       Classified as already treated. Whether works are complete or still under
-      way, and their dates, are not yet recorded.
+      way, and their dates, are not yet recorded. No URL yet.
     sources: []
     last_checked: 2026-09-14
 
   - id: kompally-suchitra-medchal-works
-    name: Kompally, Suchitra and Medchal corridor works
+    name: Kompally, Suchitra and Medchal corridor works (NHAI)
     treatment_status: treated
     notes: >-
       Classified as already treated. Whether works are complete or still under
-      way, and their dates, are not yet recorded. No junction candidate seeded.
+      way, and their dates, are not yet recorded. No junction candidate seeded. No
+      URL yet.
     sources: []
     last_checked: 2026-09-14
 
   - id: mehdipatnam-rethibowli-works
-    name: Mehdipatnam, Tolichowki, Attapur, Rethibowli and Nanal Nagar works
+    name: Mehdipatnam, Tolichowki, Attapur, Rethibowli and Nanal Nagar flyovers
     treatment_status: treated
     junctions: [rethibowli, nanal-nagar]
     notes: >-
-      Classified as already treated. Whether works are complete or still under
-      way, and their dates, are not yet recorded.
-    sources: []
+      CONFLICT. Classified as already treated in the research report, but both
+      linked sources describe these flyovers as not yet built: GHMC proposed the
+      Mehdipatnam-Tolichowki, Langar Houz-Mehdipatnam (across Nanal Nagar) and
+      Attapur-Mehdipatnam (via Rethibowli) flyovers in Sep 2025 at Rs 398 crore,
+      and the H-CITI list of 23 Mar 2026 still has Rethibowli and Nanal Nagar as
+      planned. Recheck whether works have begun. Until then it stays out of every
+      donor pool and cannot be cited.
+    sources:
+      - url: https://newsmeter.in/hyderabad/signal-free-soon-ghmc-to-build-two-flyovers-on-mehdipatnamit-corridor-754458
+        published_on: 2025-09-03
+        accessed_on: 2026-09-13
+        stage: proposed
+        claim: >-
+          GHMC to build Mehdipatnam-Tolichowki, Langar Houz-Mehdipatnam (across Nanal
+          Nagar) and Attapur-Mehdipatnam (via Rethibowli) flyovers, Rs 398 crore,
+          two years from launch.
+      - *hciti_newsmeter
+      - *hciti_council
     last_checked: 2026-09-14
 
   - id: rk-puram-works
-    name: RK Puram works
+    name: RK Puram rail under bridge
     treatment_status: treated
     notes: >-
-      Classified as already treated. Whether works are complete or still under
-      way, and their dates, are not yet recorded. No junction candidate seeded.
-    sources: []
+      CONFLICT. Classified as already treated in the research report, but the
+      H-CITI list of 23 Mar 2026 has the RK Puram rail under bridge as planned.
+      Recheck its status. No junction candidate seeded.
+    sources:
+      - *hciti_newsmeter
+      - *hciti_council
     last_checked: 2026-09-14
 
   # --- WILL BE TREATED: the only stretches where a pre-period is still
@@ -118,38 +212,82 @@ works:
     name: Miyapur X Road to Allwyn X Road six-lane flyover
     treatment_status: will_be_treated
     junctions: [miyapur-x-road, allwyn-x-road]
-    events: &package_events
-      - {event: price_bids_opened, date: "2026-02-10"}
-      - {event: target_completion, date: "2028", according_to: realistic estimate in the research}
+    events:
+      - {event: price_bids_opened, date: "2025-11-24", according_to: Hyderabad Mail, note: scheduled}
+      - {event: price_bids_opened, date: "2026-02-10", according_to: research report}
+      - {event: awarded, date: "2026-04-01", according_to: Construction World,
+         note: reported as awarded in an article of this date}
+      - {event: target_completion, date: "2028-03", according_to: Telangana government (H-CITI)}
+      - {event: target_completion, date: "2028", according_to: realistic estimate in the research report}
+    cost: Rs 384.45 crore contract for the package; Rs 530 crore administrative approval
     contract: &package >-
       One package with the two underpasses below: awarded to Shivasatya
-      Engineering at Rs 384.45 crore, EPC with a 2-year defect liability period.
-    notes: No excavation reported as of 14 Sep 2026. Priority baseline target.
-    sources: []
+      Engineering Services at Rs 384.45 crore, EPC, with a two-year defect
+      liability period and completion due two years from award.
+    notes: >-
+      Six-lane bi-directional, 25 m wide. No excavation reported as of 14 Sep 2026.
+      Priority baseline target.
+    sources:
+      - *package_award
+      - *package_scope
+      - *hciti_newsmeter
+      - *hciti_council
     last_checked: 2026-09-14
 
   - id: hafeezpet-miyapur-underpass
     name: Hafeezpet to Miyapur underpass
     treatment_status: will_be_treated
     junctions: [hafeezpet, miyapur-x-road]
-    events: *package_events
+    events: &underpass_events
+      - {event: price_bids_opened, date: "2025-11-24", according_to: Hyderabad Mail, note: scheduled}
+      - {event: price_bids_opened, date: "2026-02-10", according_to: research report}
+      - {event: awarded, date: "2026-04-01", according_to: Construction World,
+         note: reported as awarded in an article of this date}
+      - {event: target_completion, date: "2028", according_to: realistic estimate in the research report}
     contract: *package
-    notes: No excavation reported as of 14 Sep 2026. Priority baseline target.
-    sources: []
+    notes: >-
+      Three-lane uni-directional, 13.9 m wide. No excavation reported as of 14 Sep
+      2026. Priority baseline target.
+    sources:
+      - *package_award
+      - *package_scope
     last_checked: 2026-09-14
 
   - id: bachupally-allwyn-underpass
-    name: Bachupally to Allwyn underpass
+    name: Bachupally to Allwyn X Roads underpass
     treatment_status: will_be_treated
     junctions: [bachupally, allwyn-x-road]
-    events: *package_events
+    events: *underpass_events
     contract: *package
     notes: >-
-      No excavation reported as of 14 Sep 2026. Priority baseline target. The
-      Miyapur X Roads to Gandimaisamma stretch through Bachupally is already
-      treated (bachupally-flyover), so a corridor here must avoid it or its
-      baseline is contaminated.
-    sources: []
+      Three-lane uni-directional. No excavation reported as of 14 Sep 2026.
+      Priority baseline target. The Miyapur X Roads to Gandimaisamma stretch
+      through Bachupally is already treated (bachupally-flyover), so a corridor
+      here must avoid it or its baseline is contaminated.
+    sources:
+      - *package_award
+      - *package_scope
+    last_checked: 2026-09-14
+
+  - id: lb-nagar-santosh-nagar-elevated-corridor
+    name: LB Nagar to Santosh Nagar six-lane elevated corridor
+    treatment_status: will_be_treated
+    junctions: [lb-nagar]
+    events:
+      - {event: administrative_sanction, date: "2026-06-04", according_to: Telangana Today,
+         note: reported as sanctioned in an article of this date}
+    cost: Rs 416 crore
+    contract: Malkajgiri Municipal Corporation, under H-CITI; no tender reported.
+    notes: >-
+      Crosses TKR College, Gayathri Nagar and Manda Mallamma junctions toward
+      Santosh Nagar. LB Nagar itself is already treated (lb-nagar-works), so this
+      is not a bankable baseline at the LB Nagar end.
+    sources:
+      - <<: *lb_nagar
+        stage: proposed
+        claim: >-
+          A six-lane bi-directional elevated corridor from LB Nagar Junction to
+          Santosh Nagar, Rs 416 crore, has administrative sanction under H-CITI.
     last_checked: 2026-09-14
 
 # --- CONTROL CANDIDATES: eastern and south-eastern areas with no announced

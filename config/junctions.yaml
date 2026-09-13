@@ -17,9 +17,10 @@
 # NOT ESTABLISHED, deliberately not seeded: Khajaguda, NFCL Junction. Add them
 # only with a sourced junction centre.
 #
-# AMBIGUOUS: "Kukatpally" may mean KPHB Circle (about 17.4938, 78.4018),
-# Kukatpally Y-Junction, or Kukatpally metro station. Only the metro station is
-# seeded, and it is not a decision: Sahil chooses which one a corridor means.
+# KUKATPALLY: "Kukatpally" could mean KPHB Circle, Kukatpally Y-Junction or
+# Kukatpally metro station. Sahil chose KPHB Circle (kphb-circle): it is the
+# conventional commuter reference and sits on the road toward Hitec City, unlike
+# the metro node. The metro station stays as a separate candidate.
 #
 # Validated by collector/registry.py.
 
@@ -94,9 +95,8 @@ junctions:
     confidence: medium
     verified: false
     note: >-
-      A metro station, not necessarily the junction a corridor means: "Kukatpally"
-      may instead be KPHB Circle (about 17.4938, 78.4018) or Kukatpally Y-Junction.
-      Sahil chooses.
+      A metro station, and not what "Kukatpally" means for a corridor: Sahil chose
+      KPHB Circle (kphb-circle), the commuter reference on the road toward Hitec City.
 
   # --- LOW confidence: likely wrong ---
   - id: miyapur-x-road
@@ -138,6 +138,17 @@ junctions:
     confidence: low
     verified: false
     note: LIKELY WRONG. An estimated position, not a sourced one.
+
+  - id: kphb-circle
+    name: KPHB Circle (Kukatpally)
+    lat: 17.4938
+    lon: 78.4018
+    confidence: low
+    verified: false
+    note: >-
+      Sahil's choice for "Kukatpally": the conventional commuter reference, on the
+      road toward Hitec City, unlike the metro node. Coordinates approximate, to 4
+      decimal places. Unverified until checked on satellite imagery.
 
   - id: film-nagar
     name: Film Nagar

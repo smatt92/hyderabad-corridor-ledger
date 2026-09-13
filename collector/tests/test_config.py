@@ -107,7 +107,8 @@ def register(sources):
          "sources": sources, "last_checked": "2026-09-14"}]})
 
 
-SOURCED = [{"url": "https://example.org/award", "date": "2026-02-10"}]
+SOURCED = [{"url": "https://example.org/award", "accessed_on": "2026-09-13", "stage": "awarded",
+            "claim": "A flyover awarded"}]
 
 
 def placeholder(**changes):

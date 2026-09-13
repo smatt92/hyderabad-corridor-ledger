@@ -21,8 +21,16 @@ def test_the_committed_registers_validate_and_no_candidate_is_verified_by_defaul
     assert all(j.note for j in junctions.junctions if j.confidence == "low")
     assert {"khajaguda", "nfcl-junction"}.isdisjoint(by_id)  # not established, not seeded
     iiit = register.work("iiit-khajaguda-wipro-cluster")
-    assert {e.according_to for e in iiit.events if e.event == "target_completion"} == {
-        "CMC Commissioner", "GHMC"}  # conflicting official dates are both kept
+    assert {"CMC Commissioner", "GHMC"} <= {
+        e.according_to for e in iiit.events if e.event == "target_completion"}  # all kept
+    assert by_id["kphb-circle"].verified is False  # Sahil's choice for "Kukatpally", unchecked
+    # citable only where a source reports the work at its recorded status
+    assert register.work("miyapur-allwyn-flyover").sourced
+    assert register.work("film-nagar-kbr-park-cluster").sourced
+    assert register.work("lb-nagar-works").sourced
+    assert not iiit.sourced  # its only sources call it planned
+    assert not register.work("mehdipatnam-rethibowli-works").sourced
+    assert not register.work("bachupally-flyover").sources  # no URL yet: left empty
 
 
 @pytest.mark.parametrize("junctions, message", [
@@ -54,8 +62,12 @@ def work(**changes):
 
 @pytest.mark.parametrize("document, message", [
     ({"works": [work(treatment_status="untreated")]}, "treatment_status"),
-    ({"works": [work(sources=[{"url": "example.org/x", "date": "2026-09-01"}])]}, "url"),
-    ({"works": [work(sources=[{"url": "https://example.org/x"}])]}, "date"),
+    ({"works": [work(sources=[{"url": "example.org/x", "accessed_on": "2026-09-13",
+                               "stage": "planned", "claim": "c"}])]}, "url"),
+    ({"works": [work(sources=[{"url": "https://example.org/x", "stage": "planned",
+                               "claim": "c"}])]}, "accessed_on"),
+    ({"works": [work(sources=[{"url": "https://example.org/x", "accessed_on": "2026-09-13",
+                               "stage": "rumoured", "claim": "c"}])]}, "stage"),
     ({"works": [work(events=[{"event": "opened", "date": "Jun 2026"}])]}, "date"),
     ({"works": [work()], "controls": [{"id": "a-work", "name": "Same id",
                                         "screening": "unscreened"}]}, "duplicate"),
@@ -67,11 +79,24 @@ def test_invalid_register_entries_are_rejected(document, message):
         Register.model_validate({"version": 1} | document)
 
 
-def test_a_work_is_citable_only_once_it_has_a_source_with_url_and_date():
-    unsourced = Register.model_validate({"version": 1, "works": [work()]})
-    sourced = Register.model_validate({"version": 1, "works": [work(sources=[
-        {"url": "https://example.org/x", "date": "2026-09-01", "claim": "excavation began"}])]})
-    assert not unsourced.work("a-work").sourced and sourced.work("a-work").sourced
+def source(stage):
+    return {"url": "https://example.org/x", "accessed_on": "2026-09-13", "stage": stage,
+            "claim": "what the article says"}
+
+
+def test_a_work_is_citable_only_when_a_source_reports_its_status():
+    def citable(status, stages):
+        register = Register.model_validate({"version": 1, "works": [work(
+            treatment_status=status, sources=[source(s) for s in stages])]})
+        return register.work("a-work").sourced
+
+    assert not citable("under_construction", [])
+    # a link naming the work as planned does not show it is being built
+    assert not citable("under_construction", ["planned", "awarded"])
+    assert citable("under_construction", ["planned", "under_construction"])
+    assert citable("will_be_treated", ["tendered"])
+    assert not citable("treated", ["under_construction"])
+    assert citable("treated", ["completed"])
 
 
 def test_a_recheck_is_overdue_after_92_days_except_for_finished_works():

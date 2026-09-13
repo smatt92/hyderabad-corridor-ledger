@@ -13,8 +13,12 @@ are never conflated.
 
 Works (config/interventions.yaml). Every road work that treats, is treating or
 will treat a corridor: its events, each with who gave the date (conflicting
-official dates are all kept), and its sources. A corridor may cite a work only
-once the work has at least one source with a URL and a date.
+official dates are all kept), and its sources. Each source records the URL, the
+date it was accessed and the stage it reports. A corridor may cite a work only
+once a source reports a stage that supports the work's status: proposed,
+planned, tendered or awarded for will_be_treated; under construction for
+under_construction; completed for treated. A link that names the work at an
+earlier stage keeps it uncitable.
 
 Controls. Candidate control areas with no announced works; none is usable until
 screened against Hyderabad Metro Phase-2 alignments and traffic advisories.
@@ -45,6 +49,12 @@ RECHECK_DAYS = 92
 NEAR_DEGREES = 0.003
 PARTIAL_DATE = r"^\d{4}(-(0[1-9]|1[0-2])(-(0[1-9]|[12]\d|3[01]))?)?$"
 Treatment = Literal["will_be_treated", "under_construction", "treated"]
+Stage = Literal["proposed", "planned", "tendered", "awarded", "under_construction", "completed"]
+SUPPORTS: dict[str, frozenset[str]] = {
+    "will_be_treated": frozenset({"proposed", "planned", "tendered", "awarded"}),
+    "under_construction": frozenset({"under_construction"}),
+    "treated": frozenset({"completed"}),
+}
 
 
 def _unique(label: str, ids: list[str]) -> None:
@@ -110,8 +120,9 @@ class Junctions(BaseModel):
 class Event(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    event: Literal["opened", "excavation_began", "excavation_reported", "target_completion",
-                   "price_bids_opened", "awarded"]
+    event: Literal["opened", "excavation_began", "excavation_reported", "diversion_advisory",
+                   "target_completion", "administrative_sanction", "price_bids_opened",
+                   "awarded"]
     date: str = Field(pattern=PARTIAL_DATE)
     according_to: str | None = None
     note: str | None = None
@@ -121,8 +132,10 @@ class Source(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     url: str = Field(pattern=r"^https?://\S+$")
-    date: dt.date
-    claim: str | None = None
+    accessed_on: dt.date
+    published_on: dt.date | None = None
+    stage: Stage  # what the source reports for this work, at its publication
+    claim: str = Field(min_length=1, max_length=500)
 
 
 class Work(BaseModel):
@@ -141,8 +154,9 @@ class Work(BaseModel):
 
     @property
     def sourced(self) -> bool:
-        """At least one source with a URL and a date: citable by a corridor."""
-        return bool(self.sources)
+        """A source with a URL and a date that reports a stage supporting treatment_status:
+        only then may a corridor cite the work."""
+        return any(s.stage in SUPPORTS[self.treatment_status] for s in self.sources)
 
 
 class Control(BaseModel):
@@ -163,9 +177,11 @@ class Control(BaseModel):
 
 
 class Register(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
 
     version: Literal[1]
+    # YAML anchors for sources shared by several works; not validated on their own
+    x_sources: dict[str, dict] = Field(default_factory=dict, alias="x-sources")
     works: tuple[Work, ...]
     controls: tuple[Control, ...] = ()
 
