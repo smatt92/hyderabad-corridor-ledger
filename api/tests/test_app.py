@@ -256,7 +256,9 @@ def test_profile_states_its_own_pooling_window(client):
 def test_audit_publishes_donors_placebos_blocks_and_the_cross_check(client):
     body = client.get("/api/interventions/signal-retiming/audit").json()
     audit = body["audit"]
-    assert (audit["effect"], audit["ci_low"], audit["ci_high"]) == (-0.04, -0.09, 0.01)
+    assert audit["effect"] == -0.04
+    # stored interval columns from before 0008 are never served
+    assert not {"ci_low", "ci_high", "equal_ci_low", "equal_ci_high", "resamples"} & set(audit)
     assert (audit["equal_effect"], audit["estimators_disagree"]) == (-0.02, False)
     assert audit["placebo_verdict"].startswith("Not extreme")
     assert (audit["settle_start"], audit["settle_end"]) == ("2026-08-01", "2026-08-09")

@@ -28,6 +28,12 @@
 -- (docs/audit_power.md). Its columns are dropped rather than left for a reader
 -- to quote. The audit reports once, after the post period closes.
 --
+-- No interval. The call-level bootstrap interval from 0007 failed when corridors
+-- drift more from week to week (20% of no-effect intervals excluded zero), and no
+-- observable diagnostic separated that case, so the synthetic-control and
+-- equal-weight intervals and their resample count are dropped. The inference is
+-- the placebo rank and its floor.
+--
 -- 0007 is applied and is not edited. The audit tables are derived and are
 -- replaced wholesale on every backfill.
 
@@ -46,13 +52,18 @@ alter table public.intervention_audit
   add column excluded_pre_bti           double precision,
   add column sensitivity_min_effect     double precision,
   add column sensitivity_max_effect     double precision,
-  add column sensitivity_material       boolean;           -- a variant outside the interval or of opposite sign
+  add column sensitivity_material       boolean;           -- a variant of opposite sign or placebo verdict
 
 alter table public.intervention_audit
   drop column cs_blocks,
   drop column cs_mean,
   drop column cs_low,
-  drop column cs_high;
+  drop column cs_high,
+  drop column ci_low,
+  drop column ci_high,
+  drop column equal_ci_low,
+  drop column equal_ci_high,
+  drop column resamples;
 
 alter table public.audit_blocks
   drop column running_mean,
@@ -79,8 +90,6 @@ create table public.audit_sensitivity (
   n_donors          integer not null,
   n_fit_blocks      smallint not null,
   effect            double precision,
-  ci_low            double precision,
-  ci_high           double precision,
   equal_effect      double precision,
   placebo_rank      integer,
   n_placebos        integer,

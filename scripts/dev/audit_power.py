@@ -57,6 +57,7 @@ from metrics.audit import (  # noqa: E402
     Calls,
     intervention_audits,
     periods,
+    pooled_bti,
     rmspe,
     rmspe_ratio,
 )
@@ -169,29 +170,45 @@ def rank_p(treated: float, placebos) -> float:
     return (1 + np.sum(values >= treated)) / (1 + len(values))
 
 
+def draws(a: Audit, corridor_id: str, period: str, params: Params, shared: dict):
+    """(pooled BTI, bootstrap draws) resampling calls, as metrics.audit did before its
+    interval was removed; same keys, so the same draws. Donors are cached in shared."""
+    key = (corridor_id, period)
+    if key in shared:
+        return shared[key]
+    values = a.calls.between(corridor_id, a.span[f"{period}_start"], a.span[f"{period}_end"])
+    (sample,) = pooled.draws(values, [pooled.bti_rows], params,
+                             ("audit", a.intervention_id, corridor_id, period))
+    out = (pooled_bti(values, params), sample)
+    if corridor_id != TREATED:
+        shared[key] = out
+    return out
+
+
 def treated_estimate(peak: pd.DataFrame, cells: pd.DataFrame, params: Params,
                      candidates: list[str], shared: dict) -> dict:
-    """The treated corridor's estimate against fixed donors, with the bootstrap standard
-    errors of both estimators. shared carries the donors' pooled BTIs and draws between
-    deltas; the injection does not touch them."""
+    """The treated corridor's estimate against fixed donors and, when resamples are set,
+    the call-level bootstrap intervals and standard errors the calibration tests."""
     last_day = cells.loc[cells["n_ok"] > 0, "day"].max()
     a = Audit(Calls(peak), {}, "works", TREATED, EFFECTIVE, last_day, params)
-    a._pooled.update(shared)  # dev-only reuse of the audit's cache
     model, residuals, _, _, gaps = a.fit_pool(candidates, list(range(params.audit_pre_blocks)))
     head = a.headline(candidates, model.weights)
-    se = equal_se = np.nan
+    out = {"effect": head["effect"], "equal_effect": head["equal_effect"],
+           "post_rmspe": rmspe(gaps)}
+    out |= dict.fromkeys(("ci_low", "ci_high", "equal_ci_low", "equal_ci_high", "se",
+                          "equal_se"), np.nan)
     if params.bootstrap_resamples:
-        tp, tq = a.pooled(TREATED, "pre")[1], a.pooled(TREATED, "post")[1]
-        dp = np.array([a.pooled(c, "pre")[1] for c in candidates])
-        dq = np.array([a.pooled(c, "post")[1] for c in candidates])
+        tp, tq = draws(a, TREATED, "pre", params, shared)[1], draws(a, TREATED, "post", params,
+                                                                   shared)[1]
+        dp = np.array([draws(a, c, "pre", params, shared)[1] for c in candidates])
+        dq = np.array([draws(a, c, "post", params, shared)[1] for c in candidates])
         synthetic = (tq - model.weights @ dq) - (tp - model.weights @ dp)
         equal = (tq - tp) - (dq.mean(axis=0) - dp.mean(axis=0))
-        se, equal_se = float(np.nanstd(synthetic, ddof=1)), float(np.nanstd(equal, ddof=1))
-    shared.update({k: v for k, v in a._pooled.items() if k[0] != TREATED})
-    return {k: head[k] for k in ("effect", "ci_low", "ci_high", "equal_effect", "equal_ci_low",
-                                 "equal_ci_high")} | {
-        "se": se, "equal_se": equal_se, "post_rmspe": rmspe(gaps),
-    }
+        out["ci_low"], out["ci_high"] = pooled.interval(synthetic, params)
+        out["equal_ci_low"], out["equal_ci_high"] = pooled.interval(equal, params)
+        out["se"], out["equal_se"] = float(np.nanstd(synthetic, ddof=1)), float(
+            np.nanstd(equal, ddof=1))
+    return out
 
 
 def run_audits(task: tuple) -> list[dict]:

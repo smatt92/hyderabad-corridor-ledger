@@ -22,7 +22,8 @@ disproportionately the congested ones and the donor pool leans toward
 well-behaved roads. Each audit therefore publishes the excluded corridors'
 missing rate and BTI beside the donors', and reruns the estimate under stricter
 and looser completeness thresholds (VARIANTS). sensitivity_material says
-whether the effect moves outside its interval as the threshold moves.
+whether the effect flips sign or its placebo verdict changes as the threshold
+moves.
 
 Synthetic control, the headline. Weights are non-negative, sum to one, and
 minimise the squared error between the treated corridor's demeaned pre-block
@@ -33,11 +34,15 @@ matching in level; the level difference is absorbed as a fixed shift. Then
     effect = (treated_post - synthetic_post) - (treated_pre - synthetic_pre)
 
 with every BTI pooled once over its whole period and synthetic = sum of
-weight x donor BTI. The interval is a percentile bootstrap that resamples calls
-within each corridor and period, with the weights held fixed. In simulation
-(docs/audit_power.md) it held size and coverage across Tiers A and B, 6-18 pre
-blocks, 20-40 donors and 28-56 post days. Resampling whole weeks or 14-day
-blocks did not: a post period holds too few of them to estimate a spread.
+weight x donor BTI.
+
+No interval. A call-level bootstrap interval held size and coverage when
+corridors drifted little from week to week, and failed when they drifted more:
+with weekly drift 2.5 times larger, 20% of no-effect intervals excluded zero and
+coverage fell to 80-86% (docs/audit_power.md). Resampling whole weeks or blocks
+failed everywhere. Week-to-week drift cannot be measured before real data
+exists, and no observable diagnostic told the two regimes apart, so no interval
+is published. The inference is the placebo rank and its floor.
 
 Overfitting. With few pre blocks and many donors the weights can reproduce the
 treated pre series exactly, and an exact fit predicts nothing. Each audit
@@ -58,8 +63,8 @@ The rank, the placebo count and that floor are published with every p, and the
 verdict says plainly when the effect is not extreme.
 
 Cross-check. The equal-weight mean of the same donors' pooled BTIs, over the
-same periods, with the same bootstrap. Both estimates are published, with the
-gap between them and whether they disagree.
+same periods. Both estimates are published, with the gap between them and
+whether they point in opposite directions.
 
 No sequential test. The audit reports once, after the post period closes. Each
 completed post block's gap between the treated and synthetic block BTIs is
@@ -99,15 +104,15 @@ AUDIT_COLUMNS = [
     "intervention_id", "corridor_id", "status", "effective_day", "settle_days", "pre_start",
     "pre_end", "settle_start", "settle_end", "post_start", "post_end", "block_days", "pre_blocks",
     "post_blocks", "post_blocks_complete", "n_pre", "n_post", "n_donors", "treated_pre",
-    "treated_post", "synthetic_pre", "synthetic_post", "effect", "ci_low", "ci_high", "pre_rmspe",
+    "treated_post", "synthetic_pre", "synthetic_post", "effect", "pre_rmspe",
     "post_rmspe", "rmspe_ratio", "cv_pre_rmspe", "overfit_ratio", "pre_fit_overfit",
     "n_active_donors", "std_effect", "n_placebos", "placebo_rank", "placebo_p_value",
     "placebo_p_floor", "placebo_extreme", "placebo_verdict", "equal_control_pre",
-    "equal_control_post", "equal_effect", "equal_ci_low", "equal_ci_high", "estimator_gap",
+    "equal_control_post", "equal_effect", "estimator_gap",
     "estimators_disagree",
     "n_excluded_incomplete_pre", "included_pre_missing_rate", "excluded_pre_missing_rate",
     "included_pre_bti", "excluded_pre_bti", "sensitivity_min_effect", "sensitivity_max_effect",
-    "sensitivity_material", "alpha", "resamples", "missing_rate", "low_confidence",
+    "sensitivity_material", "alpha", "missing_rate", "low_confidence",
 ]
 DONOR_COLUMNS = [
     "intervention_id", "corridor_id", "included", "weight", "exclusion", "n_pre", "n_post",
@@ -123,16 +128,15 @@ BLOCK_COLUMNS = [
 ]
 SENSITIVITY_COLUMNS = [
     "intervention_id", "variant", "block_floor", "max_short_blocks", "status", "n_donors",
-    "n_fit_blocks", "effect", "ci_low", "ci_high", "equal_effect", "placebo_rank", "n_placebos",
+    "n_fit_blocks", "effect", "equal_effect", "placebo_rank", "n_placebos",
     "placebo_p_value", "placebo_p_floor",
 ]
 TABLES = {"intervention_audit": AUDIT_COLUMNS, "audit_donors": DONOR_COLUMNS,
           "audit_placebos": PLACEBO_COLUMNS, "audit_blocks": BLOCK_COLUMNS,
           "audit_sensitivity": SENSITIVITY_COLUMNS}
 HEADLINE = (
-    "treated_pre", "treated_post", "synthetic_pre", "synthetic_post", "effect", "ci_low",
-    "ci_high", "equal_control_pre", "equal_control_post", "equal_effect", "equal_ci_low",
-    "equal_ci_high",
+    "treated_pre", "treated_post", "synthetic_pre", "synthetic_post", "effect", "equal_control_pre",
+    "equal_control_post", "equal_effect",
 )
 PLACEBO_SUMMARY = (
     "pre_rmspe", "post_rmspe", "rmspe_ratio", "std_effect", "n_placebos", "placebo_rank",
@@ -295,25 +299,23 @@ def placebo_summary(treated_ratio: float, placebo_ratios,
     return rank, p, floor, False, verdict
 
 
-def estimators_disagree(effect: float, low: float, high: float,
-                        equal: float, equal_low: float, equal_high: float) -> bool:
-    """Opposite signs, or either estimate outside the other's interval."""
-    if np.isnan([effect, low, high, equal, equal_low, equal_high]).any():
+def estimators_disagree(effect: float, equal: float) -> bool:
+    """The synthetic-control and equal-weight estimates point in opposite directions."""
+    if np.isnan(effect) or np.isnan(equal):
         return False
-    opposite = effect * equal < 0
-    outside = not (equal_low <= effect <= equal_high) or not (low <= equal <= high)
-    return bool(opposite or outside)
+    return bool(effect * equal < 0)
 
 
-def sensitivity_summary(effect: float, low: float, high: float,
-                        variant_effects) -> tuple[float, float, bool | None]:
+def sensitivity_summary(effect: float, extreme: bool,
+                        variants: list[tuple[float, bool]]) -> tuple[float, float, bool | None]:
     """(smallest, largest effect across threshold variants, material). Material means a
-    variant's effect has the opposite sign or falls outside the headline interval."""
-    values = [e for e in variant_effects if not np.isnan(e)]
-    if not values or np.isnan([effect, low, high]).any():
+    variant's effect has the opposite sign or its placebo verdict differs from the
+    headline's."""
+    values = [(e, x) for e, x in variants if not np.isnan(e)]
+    if not values or np.isnan(effect):
         return NAN, NAN, None
-    material = any(e * effect < 0 or not (low <= e <= high) for e in values)
-    return min(values), max(values), bool(material)
+    material = any(e * effect < 0 or x != extreme for e, x in values)
+    return min(e for e, _ in values), max(e for e, _ in values), bool(material)
 
 
 class Calls:
@@ -366,18 +368,13 @@ class Audit:
         values = self.calls.between(corridor_id, start, end)
         return len(values), pooled_bti(values, self.params)
 
-    def pooled(self, corridor_id: str, period: str) -> tuple[float, np.ndarray]:
-        """A corridor's BTI pooled over a whole period, and its bootstrap draws."""
+    def pooled(self, corridor_id: str, period: str) -> float:
+        """A corridor's BTI pooled over a whole period."""
         key = (corridor_id, period)
         if key not in self._pooled:
             values = self.calls.between(corridor_id, self.span[f"{period}_start"],
                                         self.span[f"{period}_end"])
-            if self.params.bootstrap_resamples == 0:
-                sample = np.empty(0)
-            else:
-                (sample,) = pooled.draws(values, [pooled.bti_rows], self.params,
-                                         ("audit", self.intervention_id, corridor_id, period))
-            self._pooled[key] = (pooled_bti(values, self.params), sample)
+            self._pooled[key] = pooled_bti(values, self.params)
         return self._pooled[key]
 
     def fitter(self, y: np.ndarray, x: np.ndarray) -> Fit:
@@ -411,32 +408,24 @@ class Audit:
         return model, y - pre_synthetic, pre_synthetic, post_synthetic, gaps
 
     def headline(self, donors: list[str], weights: np.ndarray) -> dict:
-        tp, tp_draws = self.pooled(self.treated, "pre")
-        tq, tq_draws = self.pooled(self.treated, "post")
-        dp = np.array([self.pooled(c, "pre")[0] for c in donors])
-        dq = np.array([self.pooled(c, "post")[0] for c in donors])
-        dp_draws = np.array([self.pooled(c, "pre")[1] for c in donors])
-        dq_draws = np.array([self.pooled(c, "post")[1] for c in donors])
+        tp, tq = self.pooled(self.treated, "pre"), self.pooled(self.treated, "post")
+        dp = np.array([self.pooled(c, "pre") for c in donors])
+        dq = np.array([self.pooled(c, "post") for c in donors])
         synthetic_pre, synthetic_post = float(weights @ dp), float(weights @ dq)
-        low, high = pooled.interval((tq_draws - weights @ dq_draws)
-                                    - (tp_draws - weights @ dp_draws), self.params)
         equal_pre, equal_post = float(dp.mean()), float(dq.mean())
-        equal_low, equal_high = pooled.interval(
-            (tq_draws - tp_draws) - (dq_draws.mean(axis=0) - dp_draws.mean(axis=0)), self.params)
         return {
             "treated_pre": tp, "treated_post": tq, "synthetic_pre": synthetic_pre,
             "synthetic_post": synthetic_post,
-            "effect": (tq - synthetic_post) - (tp - synthetic_pre), "ci_low": low, "ci_high": high,
+            "effect": (tq - synthetic_post) - (tp - synthetic_pre),
             "equal_control_pre": equal_pre, "equal_control_post": equal_post,
-            "equal_effect": (tq - tp) - (equal_post - equal_pre), "equal_ci_low": equal_low,
-            "equal_ci_high": equal_high,
+            "equal_effect": (tq - tp) - (equal_post - equal_pre),
         }
 
     def placebo_runs(self, donors: list[str], fit_blocks: list[int],
                      treated_pre_rmspe: float) -> tuple[list[dict], list[float]]:
         x = np.array([[self.block(c, "pre", k)[1] for c in donors] for k in fit_blocks])
-        dp = np.array([self.pooled(c, "pre")[0] for c in donors])
-        dq = np.array([self.pooled(c, "post")[0] for c in donors])
+        dp = np.array([self.pooled(c, "pre") for c in donors])
+        dq = np.array([self.pooled(c, "post") for c in donors])
         rows, ratios = [], []
         for i, placebo_id in enumerate(donors):
             pool = [j for j, c in enumerate(donors) if j != i and not self.same_pair(placebo_id, c)]
@@ -515,7 +504,7 @@ def audit_one(calls: Calls, cells: pd.DataFrame, pairs: dict, intervention_id: s
         "post_blocks_complete": int(sum(a.complete)), "n_pre": len(t_pre), "n_post": len(t_post),
         "n_donors": 0, "n_placebos": 0, "placebo_extreme": False,
         "treated_pre": pooled_bti(t_pre, params), "alpha": params.bootstrap_alpha,
-        "resamples": params.bootstrap_resamples, "missing_rate": rate,
+        "missing_rate": rate,
         "low_confidence": bool(np.isnan(rate) or rate > params.low_confidence_missing_rate),
     }
 
@@ -618,9 +607,7 @@ def audit_one(calls: Calls, cells: pd.DataFrame, pairs: dict, intervention_id: s
     audit |= {k: base[k] for k in HEADLINE + PLACEBO_SUMMARY}
     audit |= {
         "estimator_gap": base["effect"] - base["equal_effect"],
-        "estimators_disagree": estimators_disagree(base["effect"], base["ci_low"], base["ci_high"],
-                                                   base["equal_effect"], base["equal_ci_low"],
-                                                   base["equal_ci_high"]),
+        "estimators_disagree": estimators_disagree(base["effect"], base["equal_effect"]),
     }
     out["audit_placebos"] = base["placebos"]
 
@@ -643,12 +630,13 @@ def audit_one(calls: Calls, cells: pd.DataFrame, pairs: dict, intervention_id: s
                 same = pool == candidates and fit_blocks == all_blocks
                 result = base if same else a.estimate(pool, fit_blocks)
                 row |= {"status": "ok"} | {k: result[k] for k in (
-                    "effect", "ci_low", "ci_high", "equal_effect", "placebo_rank", "n_placebos",
+                    "effect", "equal_effect", "placebo_rank", "n_placebos",
                     "placebo_p_value", "placebo_p_floor")}
             out["audit_sensitivity"].append(row)
         low_effect, high_effect, material = sensitivity_summary(
-            base["effect"], base["ci_low"], base["ci_high"],
-            [r["effect"] for r in out["audit_sensitivity"] if r["status"] == "ok"])
+            base["effect"], base["placebo_extreme"],
+            [(r["effect"], bool(r["placebo_p_value"] <= params.bootstrap_alpha))
+             for r in out["audit_sensitivity"] if r["status"] == "ok"])
         audit |= {"sensitivity_min_effect": low_effect, "sensitivity_max_effect": high_effect,
                   "sensitivity_material": material}
     return finish("ok")

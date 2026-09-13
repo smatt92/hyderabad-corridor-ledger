@@ -153,19 +153,6 @@ def test_held_out_rmspe_by_hand():
     assert np.isnan(held_out_rmspe(y[:2], x[:2]))
 
 
-def test_the_interval_resamples_calls_and_needs_resamples():
-    """Calls are resampled independently for each corridor and period. t and d carry
-    identical calls, so the effect is exactly zero, but their draws differ and the
-    interval has width. With no resamples there is no interval, not a zero-width one."""
-    frames = [*series("t", D1_PRE, D1_POST), *series("d", D1_PRE, D1_POST)]
-    (row,) = audit(frames)["intervention_audit"].to_dict("records")
-    assert row["effect"] == pytest.approx(0.0, abs=1e-12)
-    assert row["ci_low"] < 0 < row["ci_high"]
-    params = Params(audit_pre_blocks=6, bootstrap_resamples=0)
-    (row,) = audit(frames, params=params)["intervention_audit"].to_dict("records")
-    assert row["status"] == "ok" and np.isnan(row["ci_low"]) and np.isnan(row["ci_high"])
-
-
 def test_periods_are_whole_blocks_and_every_boundary_is_recorded():
     assert SPAN == {
         "pre_start": pd.Timestamp("2026-06-06"), "pre_end": pd.Timestamp("2026-08-28"),
@@ -211,7 +198,8 @@ def test_synthetic_control_by_hand():
     expected = (period_bti("t", "post") - synthetic["post"]) - (period_bti("t", "pre")
                                                                 - synthetic["pre"])
     assert row["effect"] == pytest.approx(expected, abs=1e-3)
-    assert row["ci_low"] < row["effect"] < row["ci_high"]
+    # no interval is published: the placebo rank is the inference
+    assert not {"ci_low", "ci_high", "equal_ci_low", "equal_ci_high", "resamples"} & set(row)
     equal = {p: np.mean([period_bti(c, p) for c in ("d1", "d2", "d4")]) for p in ("pre", "post")}
     expected_equal = (period_bti("t", "post") - period_bti("t", "pre")) - (equal["post"]
                                                                             - equal["pre"])
@@ -250,11 +238,12 @@ def test_sensitivity_to_the_completeness_threshold():
     assert row["sensitivity_min_effect"] <= row["effect"] <= row["sensitivity_max_effect"]
 
 
-def test_sensitivity_is_material_when_a_variant_leaves_the_interval_or_flips_sign():
-    assert sensitivity_summary(0.20, 0.10, 0.30, [0.20, 0.25, 0.12]) == (0.12, 0.25, False)
-    assert sensitivity_summary(0.20, 0.10, 0.30, [0.20, 0.35])[2] is True
-    assert sensitivity_summary(0.05, -0.10, 0.20, [0.05, -0.02])[2] is True  # sign flips
-    assert sensitivity_summary(0.20, 0.10, 0.30, [NAN])[2] is None
+def test_sensitivity_is_material_when_a_variant_flips_sign_or_verdict():
+    assert sensitivity_summary(0.10, False, [(0.08, False), (0.12, False)]) == (0.08, 0.12, False)
+    assert sensitivity_summary(0.10, False, [(0.08, False), (-0.01, False)])[2] is True
+    assert sensitivity_summary(0.10, True, [(0.09, False)])[2] is True
+    low, high, material = sensitivity_summary(0.10, False, [(NAN, False)])
+    assert np.isnan(low) and np.isnan(high) and material is None
 
 
 def test_placebos_exclude_their_own_pair_and_report_their_resolution():
@@ -319,10 +308,10 @@ def test_the_placebo_rank_holds_its_size_by_construction():
                 assert rejected == pytest.approx(exact, abs=0.012), (n, name)
 
 
-def test_estimators_disagree_on_sign_or_interval():
-    assert not estimators_disagree(0.20, 0.10, 0.30, 0.18, 0.05, 0.30)
-    assert estimators_disagree(0.20, 0.10, 0.30, -0.10, -0.20, 0.00)   # opposite signs
-    assert estimators_disagree(0.20, 0.15, 0.25, 0.05, 0.00, 0.10)     # outside each other
+def test_estimators_disagree_only_when_they_point_in_opposite_directions():
+    assert estimators_disagree(0.10, -0.02)
+    assert not estimators_disagree(0.10, 0.30)
+    assert not estimators_disagree(NAN, 0.10)
 
 
 def test_statuses():
