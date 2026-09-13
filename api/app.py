@@ -143,8 +143,18 @@ def floors(ds: Row | None) -> dict | None:
     return ds and {k: ds.get(k) for k in FLOOR_FIELDS}
 
 
+# What the API reads from corridors. Never route_polyline, the full stored road: only its
+# simplified copy is served, and the full one would ride along with every request.
+CORRIDOR_COLUMNS = (
+    "id", "code", "name", "pair_id", "class", "origin_name", "destination_name",
+    "origin_lat", "origin_lon", "dest_lat", "dest_lon",
+    "route_polyline_simplified", "route_polyline_fetched_at",
+)
+
+
 def corridor_or_404(store: Store, corridor_id: str) -> Row:
-    row = one(store.select("corridors", [("id", "eq", corridor_id)], limit=1))
+    row = one(store.select("corridors", [("id", "eq", corridor_id)], limit=1,
+                           columns=CORRIDOR_COLUMNS))
     if row is None:
         raise HTTPException(404, f"no corridor {corridor_id}")
     return row
@@ -177,6 +187,14 @@ def corridor_view(row: Row, stats: Row | None) -> dict:
         "missingness_rate": stats.get("missing_rate"),
         "low_confidence": stats.get("low_confidence"),
         "ledger": ledger or None,
+        # The road TomTom routes through the corridor's declared points, fetched once when
+        # the corridor was verified. Null until then, and the map draws a straight
+        # connector and says so.
+        "path": row.get("route_polyline_simplified") and {
+            "points": row["route_polyline_simplified"],
+            "fetched_at": row.get("route_polyline_fetched_at"),
+            "source": "TomTom calculateRoute, fetched once at verification, simplified to 5 m",
+        },
     }
 
 
@@ -189,7 +207,8 @@ def corridors(store: StoreDep):
         rankings.setdefault(r["corridor_id"], {})[r["index_name"]] = {
             k: r.get(k) for k in ("n", "raw", "shrunk", "city_mean", "rank")
         }
-    rows = store.select("corridors", [("active", "eq", True)], [("code", "asc"), ("id", "asc")])
+    rows = store.select("corridors", [("active", "eq", True)], [("code", "asc"), ("id", "asc")],
+                        columns=CORRIDOR_COLUMNS)
     body = {
         "window": ds and {"start": ds["window_start"], "end": ds["window_end"]},
         "low_confidence": ds and ds["low_confidence"],
@@ -296,7 +315,8 @@ def compare(
 ):
     """The pair's declared corridors only. One corridor is a valid answer:
     alternate is null and nothing is derived to stand in for it."""
-    members = {pair_role(r): r for r in store.select("corridors", [("pair_id", "eq", pair_id)])}
+    members = {pair_role(r): r for r in store.select("corridors", [("pair_id", "eq", pair_id)],
+                                                     columns=CORRIDOR_COLUMNS)}
     if "primary" not in members:
         raise HTTPException(404, f"no pair {pair_id}")
 
@@ -373,7 +393,7 @@ def audit(store: StoreDep, intervention_id: Annotated[str, Path(pattern=INTERVEN
                            limit=1))
     corridor = corridor_or_404(store, iv["corridor_id"])
     by_intervention = [("intervention_id", "eq", intervention_id)]
-    codes = {c["id"]: c.get("code") for c in store.select("corridors")}
+    codes = {c["id"]: c.get("code") for c in store.select("corridors", columns=("id", "code"))}
     donors = store.select("audit_donors", by_intervention, [("corridor_id", "asc")])
     placebos = store.select("audit_placebos", by_intervention, [("corridor_id", "asc")])
     blocks = store.select("audit_blocks", by_intervention, [("block", "asc")])

@@ -16,6 +16,13 @@ Every header TomTom sends on the run's first response, and on every 403 and
 429, goes to tomtom_responses. The bucket counts our calls; those headers are
 the only place TomTom's own count could show up.
 
+After the due slots, a run checks the road of verified corridors (polyline.py),
+at most ROUTE_CHECKS_PER_RUN a run, one attempt each, spent from the same budget:
+  - no stored road: one polyline call, stored permanently on the corridor row;
+  - a stored road not checked for REFETCH_EVERY: refetch and compare. A refetch
+    that differs is never written over the stored road. It fails the run, and
+    the daily alarm fails until the corridor is retired.
+
 A response carrying route geometry is recorded as a failure and then fails
 the run loudly. So does refusing to start on tables that already hold rows
 before any collector run exists: the chain must begin at the genuine first row.
@@ -46,9 +53,20 @@ from backoff import (
 )
 from budget import CAPACITY_PER_DAY, allowance, check_fits, day_plan
 from config import Corridor, Panel, load_panel
+from polyline import (
+    REFETCH_EVERY,
+    ROUTE_CHECKS_PER_RUN,
+    Comparison,
+    Point,
+    PolylineError,
+    compare,
+    parse_polyline,
+    route_checks_due,
+    simplify,
+)
 from schedule import IST, due_slot
 from store import Database, Ledger, iso
-from tomtom import GeometryLeak, compress, parse_summary, redact, route_url
+from tomtom import GeometryLeak, compress, parse_summary, polyline_url, redact, route_url
 
 MAX_BODY_BYTES = 1_000_000
 DETAIL_BYTES = 2000
@@ -200,6 +218,71 @@ def response_row(response: Response, corridor_id: str, run_id: str) -> dict:
     }
 
 
+@dataclass
+class RouteCheck:
+    """One polyline call for a corridor's road, and what it found."""
+
+    kind: str  # initial | refetch
+    checked_at: datetime
+    status: int | None = None
+    error_class: str | None = None
+    detail: str | None = None
+    points: list[Point] | None = None
+    simplified: list[Point] | None = None
+    length_m: int | None = None
+    comparison: Comparison | None = None
+    quota_refused: bool = False
+    responses: list[Response] = field(default_factory=list)
+
+    def row(self, corridor_id: str, run_id: str) -> dict:
+        c = self.comparison
+        return {
+            "corridor_id": corridor_id, "collector_run": run_id,
+            "checked_at": iso(self.checked_at), "kind": self.kind, "attempts": 1,
+            "http_status": self.status, "error_class": self.error_class, "detail": self.detail,
+            "length_m": self.length_m,
+            "points": None if self.points is None else len(self.points),
+            "max_deviation_m": None if c is None else round(c.max_deviation_m, 1),
+            "length_change": None if c is None else round(c.length_change, 5),
+            "matched": None if c is None else c.matched,
+        }
+
+
+def check_route(corridor: Corridor, kind: str, stored: dict | None, key: str,
+                transport: Transport, clock: Clock, pace: Callable[[], None]) -> RouteCheck:
+    """One attempt, never retried within the run: a failed call is tried again an hour
+    later (polyline.RETRY_AFTER). stored holds the simplified stored road for a refetch."""
+    pace()
+    check = RouteCheck(kind, clock())
+    body, error = b"", None
+    try:
+        check.status, headers, body = transport(polyline_url(corridor, key))
+    except Exception as exc:  # noqa: BLE001 - every failure is classified and recorded
+        error = exc
+    else:
+        limit = limit_kind(check.status, headers, clock())
+        check.responses.append(Response(1, check.checked_at, check.status, headers, limit))
+        check.quota_refused = limit == "quota"
+    if check.status == 200:
+        try:
+            check.points, check.length_m = parse_polyline(body)
+        except PolylineError as exc:
+            check.error_class, check.detail = "parse_error", str(exc)[:500]
+            return check
+        check.simplified = simplify(check.points)
+        if kind == "refetch" and stored is not None:
+            check.comparison = compare(stored["route_polyline_simplified"],
+                                       stored["route_polyline_length_m"],
+                                       check.simplified, check.length_m)
+        return check
+    check.error_class = ("quota_exhausted" if check.quota_refused
+                         else error_class(check.status, error))
+    text = (body[:500].decode(errors="replace") if body
+            else f"{type(error).__name__}: {error}" if error else "")
+    check.detail = redact(text)[:500] or None
+    return check
+
+
 def _bytea(value: bytes | None) -> str | None:
     return None if value is None else "\\x" + value.hex()
 
@@ -217,6 +300,7 @@ class Report:
     skipped_budget: int = 0
     skipped_quota: int = 0
     attempts: int = 0
+    route_checks: int = 0
     quota_refused: bool = False
     problems: list[str] = field(default_factory=list)
 
@@ -246,7 +330,11 @@ def run(panel: Panel, ledger, transport: Transport, key: str, clock: Clock,
     due = sorted(((c, slot) for c in active if (slot := due_slot(c.tier, now)) is not None),
                  key=lambda item: (item[1], item[0].id))
     report.slots_due = len(due)
-    if not due:
+    by_id = {c.id: c for c in panel.corridors}
+    verified = [c.id for c in panel.corridors if c.verified and c.status != "retired"]
+    route_due = (route_checks_due(verified, *ledger.route_state(verified, now - REFETCH_EVERY),
+                                  now) if verified else [])
+    if not due and not route_due:
         return report
 
     if ledger.count("collector_runs") == 0 and (
@@ -265,7 +353,7 @@ def run(panel: Panel, ledger, transport: Transport, key: str, clock: Clock,
             report.skipped_existing += 1
         else:
             pending.append((corridor, slot))
-    if not pending:
+    if not pending and not route_due:
         return report
 
     day = now.astimezone(IST).date()
@@ -319,6 +407,38 @@ def run(panel: Panel, ledger, transport: Transport, key: str, clock: Clock,
             first_kept = first_kept or bool(outcome.responses)
             if outcome.quota_refused:
                 refused = report.quota_refused = True
+        # Roads after slots, so a road call never takes a slot's token.
+        for corridor_id, kind in route_due[:ROUTE_CHECKS_PER_RUN]:
+            if refused or used >= capacity:
+                break
+            stored = ledger.stored_route(corridor_id) if kind == "refetch" else None
+            check = check_route(by_id[corridor_id], kind, stored, key, transport, clock, pace)
+            used += 1
+            report.attempts += 1
+            report.route_checks += 1
+            ledger.insert_route_check(check.row(corridor_id, run_id))
+            if kind == "initial" and check.points is not None and not ledger.store_route_polyline(
+                    corridor_id, {"route_polyline": check.points,
+                                  "route_polyline_simplified": check.simplified,
+                                  "route_polyline_length_m": check.length_m,
+                                  "route_polyline_fetched_at": iso(check.checked_at)}):
+                report.problems.append(f"{corridor_id}: road fetched but not stored: the row "
+                                       "already holds a road, or is gone")
+            ledger.insert_responses([
+                response_row(r, corridor_id, run_id)
+                for i, r in enumerate(check.responses)
+                if r.status in KEEP_HEADERS_FOR or (i == 0 and not first_kept)
+            ])
+            first_kept = first_kept or bool(check.responses)
+            if check.quota_refused:
+                refused = report.quota_refused = True
+            if check.comparison is not None and not check.comparison.matched:
+                c = check.comparison
+                report.problems.append(
+                    f"{corridor_id}: TomTom now routes this corridor down a different road "
+                    f"(max deviation {c.max_deviation_m:.0f} m, length {c.length_change:+.1%}). "
+                    "It no longer measures the road it was verified on: retire it and declare "
+                    "a new one")
     except BaseException as exc:
         report.problems.append(f"run aborted: {type(exc).__name__}: {redact(str(exc))[:300]}")
         with contextlib.suppress(Exception):
@@ -330,8 +450,9 @@ def run(panel: Panel, ledger, transport: Transport, key: str, clock: Clock,
 
 def main() -> int:
     panel = load_panel()
-    if not panel.active():
-        print("no active corridors: nothing to measure")
+    if not panel.active() and not any(c.verified and c.status != "retired"
+                                       for c in panel.corridors):
+        print("no active or verified corridors: nothing to measure")
         return 0
     key = os.environ.get("TOMTOM_API_KEY")
     if not key:
@@ -345,7 +466,7 @@ def main() -> int:
     print(f"run {run_id}: due {report.slots_due}, recorded {report.recorded}, "
           f"failed {report.failed}, skipped {report.skipped_existing} existing / "
           f"{report.skipped_budget} budget / {report.skipped_quota} quota, "
-          f"attempts {report.attempts}")
+          f"road checks {report.route_checks}, attempts {report.attempts}")
     if report.quota_refused:
         print("::error::TomTom refused a call for quota (429 without a short Retry-After). "
               "No further calls until 00:00 UTC; its headers are in tomtom_responses",

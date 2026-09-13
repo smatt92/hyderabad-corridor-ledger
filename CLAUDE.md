@@ -73,6 +73,8 @@ and not necessarily the terms of Sahil's account.
 - Terms 11.6.1 bar using the products to create "any secondary or derived
   database". The licence (2.1) is non-transferable and non-sublicensable, and
   no clause found permits publishing results as an open dataset.
+- A stored corridor road (0012) is a stored Result too. `corridors` is
+  publicly readable, so a stored road is also published.
 
 The project chose TomTom believing its terms permitted keeping the data. The
 sample log, the Parquet archive and the exports all store Results. Until
@@ -167,10 +169,11 @@ chain.
 The daily budget is 2,400 TomTom calls. At that ceiling the ledger gains about
 876k rows a year, and the 90-day hot window holds at most about 216k.
 
-- Always request `routeRepresentation=summaryOnly`; corridor paths come from
-  OSM. The collector refuses a response over 4 KB gzipped and
-  `samples.raw_gz` has a 4 KB check constraint, so a response carrying
-  geometry fails loudly instead of eating the quota.
+- Every sample requests `routeRepresentation=summaryOnly`. The collector
+  refuses a sample response over 4 KB gzipped and `samples.raw_gz` has a 4 KB
+  check constraint, so a sample carrying geometry fails loudly instead of
+  eating the quota. The one geometry the project stores is each corridor's
+  road, fetched once at verification (see Corridor declarations).
 - Store raw responses gzipped in `bytea`, never `jsonb`, and read them through
   `metrics.raw.decompress_raw`.
 - Monthly archive (`collector/archive.py`, `.github/workflows/archive.yml`):
@@ -217,10 +220,37 @@ optional `origin_junction` and `destination_junction`.
   and in the `corridors_check_pair` trigger (0006). `via_points` never reach
   a user.
 - Geometry (endpoints, `via_points`, direction) freezes the first time a corridor is
-  anything but a draft. To change a measured road, retire the corridor and
+  verified or anything but a draft. To change a road, retire the corridor and
   declare a new id that `supersedes` it. `collector/immutability.py` compares
   every committed version in CI, and the `corridors_guard` trigger refuses the
   change again in the database.
+- Road geometry is fetched once, at verification, and is immutable thereafter.
+  When the database holds a corridor as verified, the next collector run makes
+  one calculateRoute call through its declared points with
+  `routeRepresentation=polyline` and `traffic=false`. It stores the polyline on
+  the corridor row: `route_polyline`, plus `route_polyline_simplified` (5 m
+  Douglas-Peucker) for drawing, with its length and fetch time (0012). The road
+  freezes with the coordinates and via_points: `corridors_guard` refuses any
+  change to it or to the points it was routed through, and refuses deleting the
+  corridor.
+- A changed refetch is a rerouting alarm, never an update. Each stored road is
+  refetched weekly and compared (`corridor_route_checks`). A refetch more than
+  30 m from the stored road anywhere, or more than 2% longer or shorter, means
+  TomTom now routes the corridor down a different road, so the corridor no
+  longer measures the road it was verified on. The collector run fails, the
+  daily alarm fails until the corridor is retired, and a new id must supersede
+  it. Nothing overwrites the stored road. The thresholds are not calibrated.
+  A flyover and the road beneath it are metres apart in plan, so only the
+  length can tell them apart.
+- `via_points` fix the points a route passes, not the road between them.
+  TomTom documents `traffic=true` as using live traffic during routing, so a
+  sample can take a different road between two points on a congested call. The
+  stored road is fetched with `traffic=false` so that refetches are comparable.
+  The daily alarm warns when yesterday's samples measured a length more than 2%
+  from the stored road's. Place via_points densely enough that no other road
+  fits between them.
+- Road calls come after the due slots in a run, at most two a run, one attempt
+  each, retried hourly on failure, and they spend the same daily budget.
 - `verified` (default false) means a person has confirmed every coordinate on
   satellite imagery. An unverified corridor may exist only as a draft:
   `collector/config.py` refuses any other status in CI, and the
@@ -352,6 +382,7 @@ unauditable, however good the estimator. This decides seeding order.
 |---|---|
 | Slots missing from yesterday (IST) | `collector/gaps.py` in `daily.yml`; writes `gap_reports` |
 | Routing calls at 80% of TomTom's published monthly allowance, any quota refusal, an IST day over `CAPACITY_PER_DAY` | `collector/gaps.py` in `daily.yml` |
+| A stored corridor road that TomTom now routes differently | `collector/fetch.py` fails the run; `collector/gaps.py` in `daily.yml` fails until the corridor is retired |
 | Head hash and first break of both chains | `collector/chain.py` in `daily.yml` |
 | Every anchored head still in an independent walk of the chains | `collector/anchor.py check` in `daily.yml` |
 | Junction candidates and the treatment register valid; no recheck over 92 days | `collector/registry.py` in `tests.yml` and `recheck.yml` |
@@ -575,6 +606,9 @@ Pairs sharing endpoints is enforced by `collector/config.py` and the
 
 ### Read API (`api/`)
 
+- It reads `corridors` through an explicit column list (`CORRIDOR_COLUMNS`):
+  never the full `route_polyline`, which is large. Only
+  `route_polyline_simplified` is served, as `path`.
 - It selects precomputed rows and shapes JSON. It never computes a metric and
   never reads `samples`. `api/store.py` allowlists the readable tables, and a
   test asserts `samples` is never queried.

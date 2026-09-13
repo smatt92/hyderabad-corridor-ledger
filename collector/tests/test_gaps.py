@@ -3,8 +3,10 @@ from datetime import UTC, date, datetime, time, timedelta
 from gaps import (
     expected_slots,
     gap_rows,
+    length_drift,
     month_bounds,
     quota_headers,
+    reroute_errors,
     unbroken_days,
     usage_report,
 )
@@ -98,3 +100,28 @@ def test_months_are_utc_calendar_months():
         datetime(2026, 12, 1, tzinfo=UTC), datetime(2027, 1, 1, tzinfo=UTC))
     early_october_ist = datetime(2026, 10, 1, 3, 0, tzinfo=IST)     # still September in UTC
     assert month_bounds(early_october_ist)[0] == datetime(2026, 9, 1, tzinfo=UTC)
+
+
+def test_the_latest_compared_refetch_decides_and_retired_corridors_are_left_alone():
+    def refetch(cid, at, matched, deviation=4.0, change=0.0):
+        return {"corridor_id": cid, "checked_at": at, "matched": matched,
+                "max_deviation_m": deviation, "length_change": change}
+
+    checks = [refetch("a", "2026-09-14T01:00:00+00:00", False, 212.0, 0.034),
+              refetch("a", "2026-09-07T01:00:00+00:00", True),
+              refetch("b", "2026-09-13T01:00:00+00:00", True),
+              refetch("b", "2026-09-06T01:00:00+00:00", False),     # older than b's latest
+              refetch("c", "2026-09-12T01:00:00+00:00", False)]
+    corridors = [{"id": "a", "status": "active"}, {"id": "b", "status": "active"},
+                 {"id": "c", "status": "retired"}]
+    (error,) = reroute_errors(checks, corridors)
+    assert error.startswith("a: TomTom's road for this corridor changed at 2026-09-14T01:00:00")
+    assert "max deviation 212 m, length +3.4%" in error
+
+
+def test_samples_whose_length_strays_from_the_stored_road_are_warned_about():
+    samples = [{"corridor_id": "a", "length_m": n} for n in (6100, 6120, 6400, 6100)]
+    samples += [{"corridor_id": "b", "length_m": 5000}, {"corridor_id": "z", "length_m": 1}]
+    (warning,) = length_drift(samples, {"a": 6100, "b": 5000}, DAY)
+    assert warning.startswith(
+        "a: 1 of 4 samples on 2026-09-14 (IST) measured a length more than 2%")

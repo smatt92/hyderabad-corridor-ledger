@@ -15,7 +15,8 @@ def test_active_geometry_is_frozen():
     history = [[corridor("a")]]
     assert violations(history, [corridor("a")]) == []
     assert violations(history, [corridor("a", lat=17.5)]) == [
-        "a was active and its geometry has changed; declare a new corridor that supersedes it"]
+        "a was verified or active and its geometry has changed; declare a new corridor "
+        "that supersedes it"]
     assert violations(history, [corridor("a", via=[(17.46, 78.357)])])  # via_points count too
 
 
@@ -29,7 +30,8 @@ def test_versions_committed_before_the_rename_still_freeze_via_points():
 def test_status_changes_are_allowed_but_removal_is_not():
     history = [[corridor("a")]]
     assert violations(history, [corridor("a", status="retired")]) == []
-    assert violations(history, []) == ["a was active and has been removed; retire it instead"]
+    assert violations(history, []) == [
+        "a was verified or active and has been removed; retire it instead"]
 
 
 def test_drafts_are_editable_until_first_activated():
@@ -59,3 +61,16 @@ def test_reads_every_committed_version(tmp_path):
     versions = committed_versions(repo=tmp_path)
     assert [v[0]["status"] for v in versions] == ["draft", "active", "paused"]
     assert violations(versions, [corridor("a", lat=17.3)])
+
+
+def test_a_verified_draft_is_frozen_because_its_road_is_fetched_at_verification():
+    draft = corridor("a", status="draft")
+    verified = {**draft, "verified": True}
+    assert violations([[draft]], [corridor("a", status="draft", lat=17.49)]) == []
+    assert violations([[verified]], [{**verified, "origin_lat": 17.49}]) == [
+        "a was verified or active and its geometry has changed; declare a new corridor "
+        "that supersedes it"]
+    # un-verifying it afterwards unfreezes nothing
+    assert violations([[verified]], [{**draft, "origin_lat": 17.49}])
+    assert violations([[verified]], []) == [
+        "a was verified or active and has been removed; retire it instead"]

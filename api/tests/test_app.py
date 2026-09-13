@@ -405,3 +405,30 @@ def test_runtime_dependencies_exclude_numpy_and_pandas():
     project = tomllib.loads((Path(__file__).parent.parent / "pyproject.toml").read_text())
     deps = " ".join(project["project"]["dependencies"]).lower()
     assert "numpy" not in deps and "pandas" not in deps
+
+
+def test_a_stored_road_is_served_simplified_and_the_full_polyline_is_never_read():
+    t = tables()
+    full = [[17.497, 78.36], [17.48, 78.358], [17.464, 78.357], [17.447, 78.377]]
+    simple = [full[0], full[2], full[3]]
+    t["corridors"][0] |= {"route_polyline": full, "route_polyline_simplified": simple,
+                          "route_polyline_fetched_at": "2026-09-14T02:00:00+00:00"}
+    api.app.dependency_overrides[api.get_store] = lambda: MemoryStore(t)
+    try:
+        client = TestClient(api.app)
+        corridors = client.get("/api/corridors").json()["corridors"]
+        pair = client.get("/api/pairs/PR-01/compare").json()
+    finally:
+        api.app.dependency_overrides.clear()
+    by_id = {c["id"]: c for c in corridors}
+    assert by_id["miyapur-hitec"]["path"] == {
+        "points": simple, "fetched_at": "2026-09-14T02:00:00+00:00",
+        "source": "TomTom calculateRoute, fetched once at verification, simplified to 5 m"}
+    assert by_id["kukatpally-madhapur"]["path"] is None       # no stored road: nothing drawn as one
+    assert pair["primary"]["path"]["points"] == simple and pair["alternate"]["path"] is None
+    assert full[1] not in by_id["miyapur-hitec"]["path"]["points"]
+
+
+def test_postgrest_selects_only_the_columns_asked_for():
+    assert postgrest_params([], [], 1, columns=("id", "code"))[0] == ("select", "id,code")
+    assert postgrest_params([], [], 1)[0] == ("select", "*")

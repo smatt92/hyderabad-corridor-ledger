@@ -7,8 +7,9 @@ GitHub Actions' delayed and dropped schedules show up. Writes gap_reports and
 exits non-zero when anything is missing.
 
 It also counts routing calls against TomTom's published monthly allowance, so
-the allowance running out is seen days before it shows up as gaps: see
-usage_report.
+the allowance running out is seen days before it shows up as gaps (see
+usage_report), and fails for as long as any corridor's latest road refetch found
+a different road (see reroute_errors).
 
 Nothing is ever backfilled. A missing slot stays missing and renders as a gap.
 """
@@ -21,6 +22,7 @@ from collections import defaultdict
 from datetime import UTC, date, datetime, time, timedelta
 
 from budget import CAPACITY_PER_DAY, TOMTOM_FREE_MONTHLY, USAGE_ALARM_SHARE
+from polyline import REROUTE_LENGTH_SHARE
 from schedule import IST, slots_for_day
 from store import Database, Ledger, iso
 
@@ -139,6 +141,42 @@ def usage_report(now: datetime, month_attempts: int, day: date, day_attempts: in
     return lines, warnings, errors
 
 
+def reroute_errors(checks: list[dict], corridors: list[dict]) -> list[str]:
+    """One error per corridor, not retired, whose latest compared refetch found TomTom
+    routing it down a different road. checks: compared refetches, newest first."""
+    live = {c["id"] for c in corridors if c.get("status") != "retired"}
+    latest: dict[str, dict] = {}
+    for row in checks:
+        latest.setdefault(row["corridor_id"], row)
+    return [
+        f"{cid}: TomTom's road for this corridor changed at {row['checked_at']} (max deviation "
+        f"{row['max_deviation_m']:.0f} m, length {row['length_change']:+.1%}). It no longer "
+        "measures the road it was verified on: retire it and declare a new one"
+        for cid, row in sorted(latest.items()) if cid in live and row["matched"] is False
+    ]
+
+
+def length_drift(samples: list[dict], stored_lengths: dict[str, int], day: date) -> list[str]:
+    """Warnings, not failures, for corridors whose samples measured a length far from the
+    stored road. A sample is routed with live traffic, which TomTom applies to the choice
+    of road between the declared points; the stored road was fetched without it
+    (tomtom.polyline_url). A sample of a different length took a different road."""
+    counts: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    for row in samples:
+        stored = stored_lengths.get(row["corridor_id"])
+        if not stored or row.get("length_m") is None:
+            continue
+        tally = counts[row["corridor_id"]]
+        tally[1] += 1
+        tally[0] += abs(row["length_m"] - stored) / stored > REROUTE_LENGTH_SHARE
+    return [
+        f"{cid}: {off} of {n} samples on {day} (IST) measured a length more than "
+        f"{REROUTE_LENGTH_SHARE:.0%} from its stored road: on those calls live-traffic routing "
+        "took another road between its declared points"
+        for cid, (off, n) in sorted(counts.items()) if off
+    ]
+
+
 def check_usage(db: Database, day: date, now: datetime) -> tuple[list[str], list[str], list[str]]:
     ledger = Ledger(db)
     month_start, _ = month_bounds(now)
@@ -175,19 +213,37 @@ def main(argv: list[str]) -> int:
     for error in usage_errors:
         print(f"::error::{error}")
 
-    _, corridors = db.request("GET", "corridors", [("select", "id,tier,status,activated_at")])
+    _, corridors = db.request("GET", "corridors", [
+        ("select", "id,tier,status,activated_at,route_polyline_length_m"),
+    ])
+    _, checks = db.request("GET", "corridor_route_checks", [
+        ("select", "corridor_id,checked_at,max_deviation_m,length_change,matched"),
+        ("kind", "eq.refetch"), ("matched", "not.is.null"), ("order", "checked_at.desc"),
+    ])
+    reroutes = reroute_errors(checks or [], corridors or [])
+    for error in reroutes:
+        print(f"::error::{error}")
+    alarms = usage_errors + reroutes
+
     owed = [c["id"] for c in corridors or [] if expected_slots(c, day)]
     if not owed:
         print(f"{day}: no active corridor owed a slot")
-        return 1 if usage_errors else 0
+        return 1 if alarms else 0
     start = datetime.combine(day, time.min, IST)
     window = [("corridor_id", f"in.({','.join(owed)})"),
               ("scheduled_slot", f"gte.{iso(start)}"),
               ("scheduled_slot", f"lt.{iso(start + timedelta(days=1))}")]
-    outcomes = {}
-    for table, kind in (("samples", "sample"), ("failed_samples", "failed")):
-        for row in db.select_all(table, [("select", "corridor_id,scheduled_slot"), *window]):
+    outcomes, measured = {}, []
+    for table, kind, columns in (("samples", "sample", "corridor_id,scheduled_slot,length_m"),
+                                 ("failed_samples", "failed", "corridor_id,scheduled_slot")):
+        for row in db.select_all(table, [("select", columns), *window]):
             outcomes[(row["corridor_id"], datetime.fromisoformat(row["scheduled_slot"]))] = kind
+            if kind == "sample":
+                measured.append(row)
+    stored_lengths = {c["id"]: c["route_polyline_length_m"] for c in corridors or []
+                      if c.get("route_polyline_length_m")}
+    for warning in length_drift(measured, stored_lengths, day):
+        print(f"::warning::{warning}")
 
     rows = gap_rows(corridors or [], outcomes, day)
     checked_at = iso(now)
@@ -221,7 +277,7 @@ def main(argv: list[str]) -> int:
     for r in rows:
         if r["failed"]:
             print(f"::warning::{r['corridor_id']}: {r['failed']} slots failed on {day}")
-    return 1 if gaps or usage_errors else 0
+    return 1 if gaps or alarms else 0
 
 
 if __name__ == "__main__":

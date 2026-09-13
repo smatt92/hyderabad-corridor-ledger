@@ -28,22 +28,28 @@ def ist(h, m, s=0):
 MORNING = ist(8, 0, 30)
 
 
-def panel(active_ids=("placeholder-01",)):
+def panel(active_ids=("placeholder-01",), verified_ids=()):
     doc = yaml.safe_load(FIXTURE.read_text())
     for c in doc["corridors"]:
         if c["id"] in active_ids or active_ids == "all":
             c["status"] = "active"
             c["verified"] = True  # only a verified corridor may leave draft
+        if c["id"] in verified_ids:
+            c["verified"] = True
     return Panel.model_validate(doc)
 
 
 class FakeLedger:
-    def __init__(self, samples=0, failures=0, runs=0, used=0, recorded=(), refused=False):
+    def __init__(self, samples=0, failures=0, runs=0, used=0, recorded=(), refused=False,
+                 roads=None, stored=None):
         self.counts = {"samples": samples, "failed_samples": failures, "collector_runs": runs}
         self.used = used
         self.refused = refused
         self.recorded = set(recorded)
         self.samples, self.failures, self.runs, self.responses = [], [], {}, []
+        self.roads = roads or {}      # corridor id -> stored road length, None while unstored
+        self.stored = stored or {}    # corridor id -> the simplified stored road
+        self.route_checks, self.polylines = [], {}
 
     def count(self, table):
         return self.counts[table]
@@ -59,6 +65,19 @@ class FakeLedger:
 
     def insert_responses(self, rows):
         self.responses.extend(rows)
+
+    def route_state(self, corridor_ids, since):
+        return {c: n for c, n in self.roads.items() if c in corridor_ids}, []
+
+    def stored_route(self, corridor_id):
+        return self.stored[corridor_id]
+
+    def insert_route_check(self, row):
+        self.route_checks.append(row)
+
+    def store_route_polyline(self, corridor_id, values):
+        self.polylines[corridor_id] = values
+        return True
 
     def start_run(self, run_id, sha):
         self.runs[run_id] = {"sha": sha}
@@ -303,3 +322,81 @@ def test_whole_seeded_panel_fits_the_budget_when_active():
     tiers = [c.tier for c in panel("all").active()]
     assert len(tiers) == 10
     assert check_fits(day_plan(tiers, DAY)) <= 2040
+
+
+ROAD = [(17.497, 78.36), (17.48, 78.358), (17.464, 78.357), (17.455, 78.367), (17.447, 78.377)]
+
+
+def road_body(points=ROAD, length=6100):
+    return json.dumps({"routes": [{"summary": {"lengthInMeters": length}, "legs": [
+        {"points": [{"latitude": a, "longitude": b} for a, b in points]}]}]}).encode()
+
+
+NOON = ist(12, 0)  # outside every collection window
+
+
+def go_roads(ledger, responses, ids=("placeholder-02",), active=(), at=NOON):
+    clock = Clock(at)
+    transport = transport_from(responses)
+    report = run(panel(active, verified_ids=ids), ledger, transport, "k", clock, random.Random(1),
+                 clock.sleep, "123.1", "a" * 40)
+    return report, transport
+
+
+def test_a_verified_corridor_without_a_road_gets_one_polyline_call_stored_for_good():
+    ledger = FakeLedger(roads={"placeholder-02": None})
+    report, transport = go_roads(ledger, [(200, {"tracking-id": "t"}, road_body())])
+    (url,) = transport.calls
+    assert "routeRepresentation=polyline" in url and "traffic=false" in url
+    stored = ledger.polylines["placeholder-02"]
+    assert stored["route_polyline"] == ROAD and stored["route_polyline_length_m"] == 6100
+    assert 2 <= len(stored["route_polyline_simplified"]) <= len(ROAD)
+    (row,) = ledger.route_checks
+    assert (row["kind"], row["points"], row["error_class"], row["matched"]) == (
+        "initial", 5, None, None)
+    assert report.attempts == 1 and report.outcome == "ok"
+    assert ledger.runs["123.1"]["attempts"] == 1
+    assert ledger.responses[0]["reason"] == "first_response"
+
+
+def test_no_call_for_a_corridor_the_database_does_not_hold_as_verified():
+    report, transport = go_roads(FakeLedger(roads={}), [])
+    assert transport.calls == [] and report.route_checks == 0
+
+
+def test_a_refetch_that_finds_another_road_fails_the_run_and_overwrites_nothing():
+    stored = {"placeholder-02": {"route_polyline_simplified": [list(p) for p in ROAD],
+                                 "route_polyline_length_m": 6100}}
+    same = FakeLedger(roads={"placeholder-02": 6100}, stored=stored)
+    report, _ = go_roads(same, [(200, road_body())])
+    assert report.outcome == "ok" and same.polylines == {}
+    assert (same.route_checks[0]["kind"], same.route_checks[0]["matched"]) == ("refetch", True)
+
+    parallel = [(lat, round(lon + 0.001, 6)) for lat, lon in ROAD]   # a road about 100 m east
+    moved = FakeLedger(roads={"placeholder-02": 6100}, stored=stored)
+    report, _ = go_roads(moved, [(200, road_body(parallel))])
+    (row,) = moved.route_checks
+    assert (row["matched"], row["length_change"]) == (False, 0.0) and row["max_deviation_m"] > 60
+    assert moved.polylines == {}
+    assert report.outcome == "failed" and "different road" in report.problems[0]
+
+
+def test_a_failed_road_call_is_recorded_and_a_quota_refusal_stops_further_calls():
+    ledger = FakeLedger(roads={"placeholder-02": None, "placeholder-04": None})
+    report, transport = go_roads(ledger, [(429, b"")], ids=("placeholder-02", "placeholder-04"))
+    assert len(transport.calls) == 1
+    (row,) = ledger.route_checks
+    assert (row["error_class"], row["http_status"], row["points"], row["length_m"]) == (
+        "quota_exhausted", 429, None, None)
+    assert report.quota_refused and ledger.polylines == {}
+
+
+def test_road_calls_come_after_the_due_slots_and_stop_at_the_per_run_cap():
+    ids = ("placeholder-01", "placeholder-02", "placeholder-03", "placeholder-04")
+    ledger = FakeLedger(roads={c: None for c in ids[1:]})
+    report, transport = go_roads(ledger, [(200, OK_BODY), (200, road_body()), (200, road_body())],
+                                 ids=ids, active=("placeholder-01",), at=MORNING)
+    assert len(transport.calls) == 3 and "summaryOnly" in transport.calls[0]
+    assert all("routeRepresentation=polyline" in u for u in transport.calls[1:])
+    assert sorted(ledger.polylines) == ["placeholder-02", "placeholder-03"]
+    assert report.recorded == 1 and report.route_checks == 2 and report.attempts == 3

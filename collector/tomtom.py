@@ -3,7 +3,9 @@
 The request carries a corridor's declared origin, via points and destination,
 with live traffic, every travel-time variant, and the summaryOnly
 representation. It never asks for alternatives: alternates are declared
-corridors, measured in their own right. The API key travels in the query
+corridors, measured in their own right. The only request that asks for geometry
+is polyline_url, made once per corridor at verification and weekly after that
+to check the road. The API key travels in the query
 string, so URLs are redacted before they reach a log or an error.
 
 The full response is stored gzipped. A response containing `points`, or
@@ -35,12 +37,32 @@ class GeometryLeak(RuntimeError):
     """The response carries route geometry, or is too large to be a summary."""
 
 
-def route_url(corridor: Corridor, key: str) -> str:
+# The one call per corridor that asks for geometry (fetch.check_route), at verification
+# and on each weekly refetch. Never used for a sample: parse_summary refuses points.
+POLYLINE_QUERY = {
+    "traffic": "false",
+    "routeRepresentation": "polyline",
+    "travelMode": "car",
+    "maxAlternatives": "0",
+}
+
+
+def _locations(corridor: Corridor) -> str:
     stops = [(corridor.origin_lat, corridor.origin_lon),
              *((p.lat, p.lon) for p in corridor.via_points),
              (corridor.dest_lat, corridor.dest_lon)]
-    locations = ":".join(f"{lat},{lon}" for lat, lon in stops)
-    return f"{BASE_URL}/{locations}/json?{urlencode({**QUERY, 'key': key})}"
+    return ":".join(f"{lat},{lon}" for lat, lon in stops)
+
+
+def route_url(corridor: Corridor, key: str) -> str:
+    """A sample: the summary only, with live traffic."""
+    return f"{BASE_URL}/{_locations(corridor)}/json?{urlencode({**QUERY, 'key': key})}"
+
+
+def polyline_url(corridor: Corridor, key: str) -> str:
+    """The corridor's road: the same points, the polyline, and no live traffic, so that
+    two fetches differ only when TomTom's routing of the road itself has changed."""
+    return f"{BASE_URL}/{_locations(corridor)}/json?{urlencode({**POLYLINE_QUERY, 'key': key})}"
 
 
 def redact(text: str) -> str:

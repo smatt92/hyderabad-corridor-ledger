@@ -23,8 +23,10 @@ def test_attempts_count_each_run_by_the_larger_of_its_two_records():
                            {"collector_run": None, "attempts": 1}],
         "collector_runs": [{"id": "r1", "attempts": 5}, {"id": "r2", "attempts": 0},
                            {"id": "r4", "attempts": 2}],
+        "corridor_route_checks": [{"collector_run": "r5", "attempts": 1}],
     })
     # r1: its run row counts 5, its outcome rows 3 (an outcome was never inserted)
     # r2: killed before finishing, so only its outcome rows count
     # r3: started before the window; r4: made calls but kept no outcome
-    assert Ledger(db).attempts_between(START, END) == 5 + 1 + 3 + 1 + 2
+    # r5: a road call, counted like any other attempt
+    assert Ledger(db).attempts_between(START, END) == 5 + 1 + 3 + 1 + 2 + 1

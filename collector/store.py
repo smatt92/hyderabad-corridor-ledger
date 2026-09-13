@@ -115,6 +115,11 @@ class Ledger:
                 ("requested_at", f"lt.{iso(end)}"),
             ]):
                 by_run[row["collector_run"]] += row["attempts"]
+        for row in self.db.select_all("corridor_route_checks", [
+            ("select", "collector_run,attempts"), ("checked_at", f"gte.{iso(start)}"),
+            ("checked_at", f"lt.{iso(end)}"),
+        ], order="id.asc"):
+            by_run[row["collector_run"]] += row["attempts"]
         for run in self.db.select_all("collector_runs", [
             ("select", "id,attempts"), ("started_at", f"gte.{iso(start)}"),
             ("started_at", f"lt.{iso(end)}"),
@@ -123,17 +128,54 @@ class Ledger:
         return sum(by_run.values())
 
     def quota_refused_since(self, start: datetime) -> bool:
-        """Whether TomTom refused a call for quota at or after `start`."""
-        _, rows = self.db.request("GET", "failed_samples", [
-            ("select", "seq"), ("error_class", "eq.quota_exhausted"),
-            ("requested_at", f"gte.{iso(start)}"), ("limit", "1"),
-        ])
-        return bool(rows)
+        """Whether TomTom refused a call for quota at or after `start`, sample or road."""
+        for table, key, moment in (("failed_samples", "seq", "requested_at"),
+                                   ("corridor_route_checks", "id", "checked_at")):
+            _, rows = self.db.request("GET", table, [
+                ("select", key), ("error_class", "eq.quota_exhausted"),
+                (moment, f"gte.{iso(start)}"), ("limit", "1"),
+            ])
+            if rows:
+                return True
+        return False
 
     def insert_responses(self, rows: list[dict]) -> None:
         """TomTom response headers worth keeping: see migration 0011."""
         if rows:
             self.db.request("POST", "tomtom_responses", body=rows, prefer="return=minimal")
+
+    def route_state(self, corridor_ids: list[str],
+                    since: datetime) -> tuple[dict[str, int | None], list[dict]]:
+        """({id: route_polyline_length_m} for these corridors where the database holds them
+        as verified, route checks since `since`). The polylines themselves are not read."""
+        ids = f"in.({','.join(corridor_ids)})"
+        _, rows = self.db.request("GET", "corridors", [
+            ("select", "id,route_polyline_length_m"), ("id", ids), ("verified", "eq.true"),
+        ])
+        checks = self.db.select_all("corridor_route_checks", [
+            ("select", "corridor_id,checked_at,error_class"), ("corridor_id", ids),
+            ("checked_at", f"gte.{iso(since)}"),
+        ], order="id.asc")
+        return {r["id"]: r["route_polyline_length_m"] for r in rows or []}, checks
+
+    def stored_route(self, corridor_id: str) -> dict:
+        """The simplified stored road and its length, for comparing a refetch."""
+        _, rows = self.db.request("GET", "corridors", [
+            ("select", "route_polyline_simplified,route_polyline_length_m"),
+            ("id", f"eq.{corridor_id}"),
+        ])
+        return rows[0]
+
+    def insert_route_check(self, row: dict) -> None:
+        self.db.request("POST", "corridor_route_checks", body=row, prefer="return=minimal")
+
+    def store_route_polyline(self, corridor_id: str, values: dict) -> bool:
+        """False when the row already holds a road or is gone. A stored road is never
+        written over; 0012's corridors_guard refuses it as well."""
+        _, rows = self.db.request("PATCH", "corridors", [
+            ("id", f"eq.{corridor_id}"), ("route_polyline", "is.null"), ("select", "id"),
+        ], body=values, prefer="return=representation")
+        return bool(rows)
 
     def start_run(self, run_id: str, sha: str | None) -> None:
         self.db.request("POST", "collector_runs", body={"id": run_id, "collector_sha": sha},

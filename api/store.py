@@ -35,7 +35,7 @@ class Store(Protocol):
 
     def select(
         self, table: str, filters: Sequence[Filter] = (), order: Sequence[Order] = (),
-        limit: int | None = None,
+        limit: int | None = None, columns: Sequence[str] | None = None,
     ) -> list[Row]: ...
 
 
@@ -45,9 +45,10 @@ def check_readable(table: str) -> None:
 
 
 def postgrest_params(
-    filters: Sequence[Filter], order: Sequence[Order], limit: int | None, offset: int = 0
+    filters: Sequence[Filter], order: Sequence[Order], limit: int | None, offset: int = 0,
+    columns: Sequence[str] | None = None,
 ) -> list[tuple[str, str]]:
-    params = [("select", "*")]
+    params = [("select", ",".join(columns) if columns else "*")]
     for column, op, value in filters:
         if op == "notnull":
             params.append((column, "not.is.null"))
@@ -83,13 +84,14 @@ class PostgrestStore:
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
             raise StoreError(f"could not read {table}") from exc
 
-    def select(self, table, filters=(), order=(), limit=None):
+    def select(self, table, filters=(), order=(), limit=None, columns=None):
         check_readable(table)
         if limit is not None:
-            return self._get(table, postgrest_params(filters, order, limit))
+            return self._get(table, postgrest_params(filters, order, limit, columns=columns))
         rows: list[Row] = []
         while True:
-            page = self._get(table, postgrest_params(filters, order, PAGE_SIZE, len(rows)))
+            page = self._get(table, postgrest_params(filters, order, PAGE_SIZE, len(rows),
+                                                     columns))
             rows.extend(page)
             if len(page) < PAGE_SIZE:
                 return rows
@@ -117,7 +119,7 @@ class MemoryStore:
         tables = {p.stem: json.loads(p.read_text()) for p in sorted(directory.glob("*.json"))}
         return cls(tables, sample=sample)
 
-    def select(self, table, filters=(), order=(), limit=None):
+    def select(self, table, filters=(), order=(), limit=None, columns=None):
         check_readable(table)
         self.queried.append(table)
         rows = [r for r in self.tables.get(table, [])
@@ -127,7 +129,8 @@ class MemoryStore:
                              key=lambda r: r[column], reverse=direction == "desc")
             absent = [r for r in rows if r.get(column) is None]
             rows = present + absent
-        return rows[:limit] if limit is not None else rows
+        rows = rows[:limit] if limit is not None else rows
+        return [{c: r.get(c) for c in columns} for r in rows] if columns else rows
 
 
 def store_from_env() -> Store:

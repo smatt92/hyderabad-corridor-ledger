@@ -7,7 +7,15 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 
 from config import load_panel
-from tomtom import RAW_GZ_CAP, GeometryLeak, compress, parse_summary, redact, route_url
+from tomtom import (
+    RAW_GZ_CAP,
+    GeometryLeak,
+    compress,
+    parse_summary,
+    polyline_url,
+    redact,
+    route_url,
+)
 
 FIXTURE = Path(__file__).parent / "fixtures" / "corridors.yaml"
 
@@ -90,3 +98,11 @@ def test_oversize_response_fails_loudly():
 def test_malformed_summaries_are_errors_not_samples(body, message):
     with pytest.raises(ValueError, match=message):
         parse_summary(body)
+
+
+def test_the_road_call_asks_for_the_polyline_without_live_traffic_through_the_same_points():
+    url = urlparse(polyline_url(PANEL["placeholder-02"], "secret-key"))
+    assert parse_qs(url.query) == {
+        "traffic": ["false"], "routeRepresentation": ["polyline"], "travelMode": ["car"],
+        "maxAlternatives": ["0"], "key": ["secret-key"]}
+    assert url.path == urlparse(route_url(PANEL["placeholder-02"], "k")).path

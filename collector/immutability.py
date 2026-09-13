@@ -1,10 +1,12 @@
-"""A corridor's geometry is permanent once it has been anything but a draft.
+"""A corridor's geometry is permanent once it has been verified or anything but a draft.
 
 Compares config/corridors.yaml with every committed version of it. Fails when
-an id that was ever non-draft now has a different origin, destination,
-via_points or direction, or has vanished from the file. To change a measured
-road, retire the corridor and declare a new id that supersedes it. Drafts can
-be edited freely until they are first activated.
+an id that was ever verified or non-draft now has a different origin,
+destination, via_points or direction, or has vanished from the file. To change
+the road, retire the corridor and declare a new id that supersedes it. Drafts
+can be edited freely until they are first verified or activated. Verification
+freezes them because the collector then fetches the corridor's road polyline,
+which is permanent together with the points it was routed through (0012).
 
 Enforced in CI, and again in the database by the corridors_guard trigger.
 
@@ -35,21 +37,22 @@ def corridors_of(document) -> list[dict]:
 
 def violations(history: list[list[dict]], current: list[dict]) -> list[str]:
     """history: committed versions, oldest first. Each id's geometry freezes at
-    the first version in which it is not a draft."""
+    the first version in which it is verified or not a draft."""
     frozen: dict[str, tuple] = {}
     for version in history:
         for raw in version:
             cid = raw.get("id")
-            if cid and raw.get("status") != "draft" and cid not in frozen:
+            if cid and (raw.get("status") != "draft" or raw.get("verified")) and cid not in frozen:
                 frozen[cid] = geometry(raw)
     now = {raw["id"]: raw for raw in current if raw.get("id")}
     problems = []
     for cid, frozen_geometry in sorted(frozen.items()):
         if cid not in now:
-            problems.append(f"{cid} was active and has been removed; retire it instead")
+            problems.append(f"{cid} was verified or active and has been removed; retire it "
+                            "instead")
         elif geometry(now[cid]) != frozen_geometry:
-            problems.append(f"{cid} was active and its geometry has changed; declare a new "
-                            "corridor that supersedes it")
+            problems.append(f"{cid} was verified or active and its geometry has changed; "
+                            "declare a new corridor that supersedes it")
     return problems
 
 
