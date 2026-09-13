@@ -7,6 +7,11 @@
 -- 1 / (n + 1), so a p-value is published with the treated corridor's rank and
 -- that floor, never bare.
 --
+-- Standardised effect. Placebos rank |effect| over each corridor's own
+-- leave-one-block-out pre RMSPE (std_effect): raw |effect| ranks volatile
+-- corridors as extreme when nothing happened, and the in-sample RMSPE ratio
+-- breaks when a pre fit is exact.
+--
 -- Overfitting. With few pre blocks and many donors the weights can reproduce the
 -- treated pre series exactly. The in-sample pre RMSPE is published beside a
 -- leave-one-block-out RMSPE and the number of active donors.
@@ -31,7 +36,8 @@ alter table public.intervention_audit
   add column overfit_ratio              double precision,  -- pre_rmspe / cv_pre_rmspe
   add column pre_fit_overfit            boolean,           -- overfit_ratio below audit_overfit_ratio
   add column n_active_donors            integer,           -- nonzero weights
-  add column placebo_rank               integer,           -- 1 = largest post/pre RMSPE ratio
+  add column std_effect                 double precision,  -- |effect| / cv_pre_rmspe, ranked
+  add column placebo_rank               integer,           -- 1 = largest std_effect
   add column placebo_p_floor            double precision,  -- 1 / (n_placebos + 1)
   add column n_excluded_incomplete_pre  integer not null default 0,
   add column included_pre_missing_rate  double precision,  -- mean over donors, peak hours
@@ -54,7 +60,8 @@ alter table public.audit_blocks
   drop column cs_high;
 
 alter table public.audit_placebos
-  add column cv_pre_rmspe  double precision;
+  add column cv_pre_rmspe  double precision,
+  add column std_effect    double precision;
 
 alter table public.audit_donors
   add column pre_missing_rate  double precision,          -- peak hours of the pre period

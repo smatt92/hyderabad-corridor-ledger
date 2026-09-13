@@ -93,7 +93,7 @@ def tables():
             "equal_ci_high": 0.03, "estimator_gap": -0.02, "estimators_disagree": False,
             "n_placebos": 1, "placebo_rank": 2, "placebo_p_value": 1.0, "pre_rmspe": 0.02,
             "cv_pre_rmspe": 0.05, "overfit_ratio": 0.4, "pre_fit_overfit": True,
-            "n_active_donors": 1,
+            "n_active_donors": 1, "std_effect": 2.5,
             "placebo_p_floor": 0.5, "placebo_extreme": False, "n_excluded_incomplete_pre": 1,
             "included_pre_missing_rate": 0.05, "excluded_pre_missing_rate": 0.22,
             "sensitivity_min_effect": -0.05, "sensitivity_max_effect": -0.03,
@@ -111,7 +111,8 @@ def tables():
         ],
         "audit_placebos": [{"intervention_id": "signal-retiming",
                             "corridor_id": "kukatpally-madhapur", "effect": 0.01,
-                            "pre_rmspe": 0.02, "cv_pre_rmspe": 0.04, "post_rmspe": 0.03,
+                            "pre_rmspe": 0.02, "cv_pre_rmspe": 0.04, "std_effect": 0.25,
+                            "post_rmspe": 0.03,
                             "rmspe_ratio": 1.5,
                             "poor_pre_fit": False, "weights": {}}],
         "audit_sensitivity": [
@@ -267,6 +268,7 @@ def test_audit_publishes_donors_placebos_blocks_and_the_cross_check(client):
     assert donors["miyapur-hitec-alt"]["weight"] is None
     assert body["placebos"][0]["rmspe_ratio"] == 1.5
     assert body["placebos"][0]["cv_pre_rmspe"] == 0.04
+    assert (audit["std_effect"], body["placebos"][0]["std_effect"]) == (2.5, 0.25)
     assert (audit["cv_pre_rmspe"], audit["overfit_ratio"], audit["pre_fit_overfit"],
             audit["n_active_donors"]) == (0.05, 0.4, True, 1)
     assert body["blocks"]["pre"]["block"] == [0, 1]

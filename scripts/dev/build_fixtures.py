@@ -36,7 +36,7 @@ from scripts.dev.panel_model import DOW_FACTOR, hour_factor, inject_bti_effect  
 
 OUT = ROOT / ".fixtures" / "tables"
 LAST_DAY = pd.Timestamp("2026-09-12")
-DAYS = 180  # long enough for an audit's six 14-day pre blocks
+DAYS = 240  # long enough for twelve 14-day pre blocks before the earliest intervention
 CADENCE_S = 1800
 RNG = np.random.default_rng(20260913)
 

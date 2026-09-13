@@ -3,6 +3,7 @@ import pandas as pd
 import pytest
 
 from metrics.audit import (
+    UNRANKED,
     estimators_disagree,
     fit,
     held_out_rmspe,
@@ -18,7 +19,8 @@ from metrics.params import Params
 
 EFFECTIVE = "2026-08-29T00:30:00+05:30"    # local day 2026-08-29
 DAY = pd.Timestamp("2026-08-29")
-PARAMS = Params(bootstrap_resamples=200)   # production floors, fewer resamples
+# production floors, fewer resamples; six pre blocks keep the hand-built panels small
+PARAMS = Params(audit_pre_blocks=6, bootstrap_resamples=200)
 SPAN = periods(DAY, PARAMS)
 PRE_BLOCKS = [SPAN["pre_start"] + pd.Timedelta(days=14 * k) for k in range(6)]
 POST_BLOCKS = [SPAN["post_start"] + pd.Timedelta(days=14 * k) for k in range(2)]
@@ -78,6 +80,7 @@ D1_PRE, D1_POST = [0.30, 0.50, 0.40, 0.60, 0.35, 0.55], [0.45, 0.50]
 D2_PRE, D2_POST = [0.50, 0.45, 0.60, 0.40, 0.55, 0.50], [0.50, 0.55]
 D4_PRE, D4_POST = [0.42, 0.40, 0.47, 0.41, 0.52, 0.44], [0.46, 0.43]
 EFFECT = 0.2
+PRE_NOISE = [0.02, -0.015, 0.01, -0.02, 0.015, -0.01]
 
 
 def mixture(pre_or_post, shift):
@@ -158,8 +161,8 @@ def test_the_interval_resamples_calls_and_needs_resamples():
     (row,) = audit(frames)["intervention_audit"].to_dict("records")
     assert row["effect"] == pytest.approx(0.0, abs=1e-12)
     assert row["ci_low"] < 0 < row["ci_high"]
-    (row,) = audit(frames, params=Params(bootstrap_resamples=0))["intervention_audit"].to_dict(
-        "records")
+    params = Params(audit_pre_blocks=6, bootstrap_resamples=0)
+    (row,) = audit(frames, params=params)["intervention_audit"].to_dict("records")
     assert row["status"] == "ok" and np.isnan(row["ci_low"]) and np.isnan(row["ci_high"])
 
 
@@ -260,8 +263,21 @@ def test_placebos_exclude_their_own_pair_and_report_their_resolution():
     placebos = tables["audit_placebos"].set_index("corridor_id")
     assert set(placebos.index) == {"d1", "d2", "d4"}
     assert "d4" not in placebos.loc["d1", "weights"] and "d1" not in placebos.loc["d4", "weights"]
-    # the treated fit is exact before the change, so its ratio outranks every placebo,
-    # yet with three placebos no p-value can reach 0.05
+    # each placebo's statistic is its |effect| in units of its own held-out pre error
+    assert np.allclose(placebos["std_effect"],
+                       placebos["effect"].abs() / placebos["cv_pre_rmspe"])
+    # the treated corridor is an exact mixture even with a pre block held out, so its
+    # effect has no error to be measured against, and it is not ranked
+    assert np.isnan(row["std_effect"]) and row["placebo_rank"] is None
+    assert row["placebo_verdict"] == UNRANKED and not row["placebo_extreme"]
+
+    # with some pre-period noise its effect has a scale and outranks every placebo, yet
+    # with three placebos no p-value can reach 0.05
+    noisy_pre = [b + e for b, e in zip(mixture("pre", 0.1), PRE_NOISE, strict=True)]
+    panel = [*series("t", noisy_pre, mixture("post", 0.1 + EFFECT)),
+             *[f for f in by_hand_panel() if f["corridor_id"].iloc[0] != "t"]]
+    (row,) = audit(panel, PAIRS)["intervention_audit"].to_dict("records")
+    assert row["std_effect"] > 0
     assert (row["n_placebos"], row["placebo_rank"]) == (3, 1)
     assert (row["placebo_p_value"], row["placebo_p_floor"]) == (pytest.approx(0.25),
                                                                 pytest.approx(0.25))
@@ -344,7 +360,7 @@ def test_same_distribution_with_different_sample_counts_is_no_effect():
     64 calls a day before the change to 16 after. Neither estimator may turn that
     into an effect. Checked over 25 replicate panels, since one panel is noisy."""
     rng = np.random.default_rng(20260913)
-    params = Params(bootstrap_resamples=100)
+    params = Params(audit_pre_blocks=6, bootstrap_resamples=100)
     pre_days = pd.date_range(SPAN["pre_start"], SPAN["pre_end"])
     post_days = pd.date_range(SPAN["post_start"], SPAN["post_end"])
 

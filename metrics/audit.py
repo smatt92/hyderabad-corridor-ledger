@@ -47,9 +47,13 @@ and pre_fit_overfit when the in-sample fit is tighter than audit_overfit_ratio
 of the held-out one. audit_max_donors caps the active donors.
 
 Placebos. The same procedure runs with each donor in turn as the treated
-corridor, its own pair excluded from its pool. The treated corridor's post/pre
-RMSPE ratio is ranked among the placebos'. With n placebos, rank r of n + 1
-gives permutation p = r / (n + 1), and no p can be smaller than 1 / (n + 1).
+corridor, its own pair excluded from its pool. The statistic ranked is the
+standardised effect: |effect| over the corridor's own leave-one-block-out pre
+RMSPE. Raw |effect| ranks volatile corridors as extreme when nothing happened
+(11-12% false positives at 40 donors in simulation when the treated corridor was
+the noisiest), and the in-sample RMSPE ratio breaks when a pre fit is exact.
+With n placebos, rank r of n + 1 gives permutation p = r / (n + 1), and no p can
+be smaller than 1 / (n + 1).
 The rank, the placebo count and that floor are published with every p, and the
 verdict says plainly when the effect is not extreme.
 
@@ -77,6 +81,9 @@ from metrics.params import Params
 
 NAN = float("nan")
 ACTIVE_WEIGHT = 1e-9
+MIN_HELD_OUT = 1e-9  # a held-out pre RMSPE at or below this cannot scale an effect
+UNRANKED = ("The treated corridor's standardised effect could not be computed (its held-out "
+            "pre-period error is zero or missing), so it is not ranked against placebos.")
 MIN_FIT_BLOCKS = 3
 # (name, multiple of the p95 floor every donor pre block must reach, short blocks allowed).
 # A short block has no BTI, so a donor admitted with one is fitted only on the blocks
@@ -94,7 +101,7 @@ AUDIT_COLUMNS = [
     "post_blocks", "post_blocks_complete", "n_pre", "n_post", "n_donors", "treated_pre",
     "treated_post", "synthetic_pre", "synthetic_post", "effect", "ci_low", "ci_high", "pre_rmspe",
     "post_rmspe", "rmspe_ratio", "cv_pre_rmspe", "overfit_ratio", "pre_fit_overfit",
-    "n_active_donors", "n_placebos", "placebo_rank", "placebo_p_value",
+    "n_active_donors", "std_effect", "n_placebos", "placebo_rank", "placebo_p_value",
     "placebo_p_floor", "placebo_extreme", "placebo_verdict", "equal_control_pre",
     "equal_control_post", "equal_effect", "equal_ci_low", "equal_ci_high", "estimator_gap",
     "estimators_disagree",
@@ -107,8 +114,8 @@ DONOR_COLUMNS = [
     "pre_bti", "post_bti", "pre_missing_rate", "short_pre_blocks", "min_pre_block_n",
 ]
 PLACEBO_COLUMNS = [
-    "intervention_id", "corridor_id", "effect", "pre_rmspe", "cv_pre_rmspe", "post_rmspe",
-    "rmspe_ratio", "poor_pre_fit", "weights",
+    "intervention_id", "corridor_id", "effect", "pre_rmspe", "cv_pre_rmspe", "std_effect",
+    "post_rmspe", "rmspe_ratio", "poor_pre_fit", "weights",
 ]
 BLOCK_COLUMNS = [
     "intervention_id", "period", "block", "block_start", "block_end", "complete", "n_treated",
@@ -128,8 +135,8 @@ HEADLINE = (
     "equal_ci_high",
 )
 PLACEBO_SUMMARY = (
-    "pre_rmspe", "post_rmspe", "rmspe_ratio", "n_placebos", "placebo_rank", "placebo_p_value",
-    "placebo_p_floor", "placebo_extreme", "placebo_verdict",
+    "pre_rmspe", "post_rmspe", "rmspe_ratio", "std_effect", "n_placebos", "placebo_rank",
+    "placebo_p_value", "placebo_p_floor", "placebo_extreme", "placebo_verdict",
 )
 
 
@@ -250,16 +257,23 @@ def rmspe_ratio(post: float, pre: float) -> float:
     return post / pre if pre > 0 and not np.isnan(post) else NAN
 
 
+def standardised_effect(effect: float, held_out: float) -> float:
+    """|effect| in units of the corridor's own held-out pre-period error, so a corridor
+    that is noisy anyway needs a larger effect to rank as extreme."""
+    if np.isnan(effect) or np.isnan(held_out) or held_out <= MIN_HELD_OUT:
+        return NAN
+    return abs(effect) / held_out
+
+
 def placebo_summary(treated_ratio: float, placebo_ratios,
                     alpha: float) -> tuple[int | None, float, float, bool, str]:
     """(rank, permutation p, smallest attainable p, extreme, plain verdict) for the
-    treated post/pre RMSPE ratio among the placebo ratios. Rank 1 is the largest;
-    ties count against the treated corridor."""
+    treated standardised effect among the placebos'. Rank 1 is the largest; ties count
+    against the treated corridor."""
     ratios = [r for r in placebo_ratios if not np.isnan(r)]
     n = len(ratios)
     if np.isnan(treated_ratio):
-        return None, NAN, NAN, False, ("The treated corridor's post/pre fit ratio could not be "
-                                       "computed, so it is not ranked against placebos.")
+        return None, NAN, NAN, False, UNRANKED
     if n == 0:
         return None, NAN, NAN, False, (
             "No placebo could be run: no donor had another donor to be matched against, so the "
@@ -272,9 +286,10 @@ def placebo_summary(treated_ratio: float, placebo_ratios,
                   f"{p:.3f}")
     if p <= alpha:
         return rank, p, floor, True, f"Extreme among placebos: {resolution}."
-    verdict = (f"Not extreme: {resolution}. {at_least} of {n} placebo runs show a post/pre fit "
-               "ratio at least as large as the treated corridor's, so this audit cannot "
-               "distinguish the change from ordinary variation among these corridors.")
+    verdict = (f"Not extreme: {resolution}. {at_least} of {n} placebo runs show a "
+               "standardised effect at least as large as the treated corridor's, so this "
+               "audit cannot distinguish the change from ordinary variation among these "
+               "corridors.")
     if floor > alpha:
         verdict += f" With {n} placebos no effect could reach p = {alpha:g}."
     return rank, p, floor, False, verdict
@@ -435,11 +450,13 @@ class Audit:
                           for k in range(len(self.post_blocks))])
             ratio = rmspe_ratio(post, pre)
             ratios.append(ratio)
+            effect = float((dq[i] - model.weights @ dq[pool])
+                           - (dp[i] - model.weights @ dp[pool]))
+            held_out = self.held_out(x[:, i], x[:, pool])
             rows.append({
                 "intervention_id": self.intervention_id, "corridor_id": placebo_id,
-                "effect": float((dq[i] - model.weights @ dq[pool])
-                                - (dp[i] - model.weights @ dp[pool])),
-                "pre_rmspe": pre, "cv_pre_rmspe": self.held_out(x[:, i], x[:, pool]),
+                "effect": effect, "pre_rmspe": pre, "cv_pre_rmspe": held_out,
+                "std_effect": standardised_effect(effect, held_out),
                 "post_rmspe": post, "rmspe_ratio": ratio,
                 "poor_pre_fit": bool(pre > self.params.audit_poor_fit_ratio * treated_pre_rmspe),
                 "weights": {c: round(float(v), 6) for c, v in zip(others, model.weights,
@@ -449,17 +466,21 @@ class Audit:
         return rows, ratios
 
     def estimate(self, donors: list[str], fit_blocks: list[int]) -> dict:
-        """The full estimate for one donor pool: headline, cross-check and placebos."""
+        """The full estimate for one donor pool: headline, cross-check and placebos,
+        ranked on the standardised effect."""
         model, residuals, _, _, gaps = self.fit_pool(donors, fit_blocks)
         pre, post = rmspe(residuals), rmspe(gaps)
-        ratio = rmspe_ratio(post, pre)
-        placebo_rows, ratios = self.placebo_runs(donors, fit_blocks, pre)
-        rank, p, floor, extreme, verdict = placebo_summary(ratio, ratios,
+        head = self.headline(donors, model.weights)
+        std = standardised_effect(head["effect"],
+                                  self.held_out(*self.pre_series(donors, fit_blocks)))
+        placebo_rows, _ = self.placebo_runs(donors, fit_blocks, pre)
+        stds = [r["std_effect"] for r in placebo_rows]
+        rank, p, floor, extreme, verdict = placebo_summary(std, stds,
                                                            self.params.bootstrap_alpha)
-        return self.headline(donors, model.weights) | {
+        return head | {
             "weights": model.weights, "placebos": placebo_rows, "pre_rmspe": pre,
-            "post_rmspe": post, "rmspe_ratio": ratio,
-            "n_placebos": sum(not np.isnan(r) for r in ratios), "placebo_rank": rank,
+            "post_rmspe": post, "rmspe_ratio": rmspe_ratio(post, pre), "std_effect": std,
+            "n_placebos": sum(not np.isnan(s) for s in stds), "placebo_rank": rank,
             "placebo_p_value": p, "placebo_p_floor": floor, "placebo_extreme": extreme,
             "placebo_verdict": verdict,
         }

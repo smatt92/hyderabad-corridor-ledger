@@ -7,7 +7,7 @@ recomputes them from raw under the new version.
 
 from dataclasses import dataclass
 
-METHOD_VERSION = "p02.6"
+METHOD_VERSION = "p02.7"
 LOCAL_TZ = "Asia/Kolkata"
 BASES = ("tomtom", "p5")
 
@@ -74,8 +74,11 @@ class Params:
     # p95 floor, which Tier B/C reach in 14 days (about 238 calls). Synthetic
     # control weights are fitted on the pre blocks. A placebo whose pre-period
     # RMSPE exceeds audit_poor_fit_ratio times the treated one is flagged.
+    # Twelve pre blocks (168 days) is the fewest at which no simulated synthetic control
+    # reproduced its pre series exactly and the standardised placebo rank detected a
+    # 0.20 BTI effect in 80% of 20-donor Tier A panels (docs/audit_power.md).
     audit_block_days: int = 14
-    audit_pre_blocks: int = 6
+    audit_pre_blocks: int = 12
     audit_settle_days: int = 9
     audit_post_blocks: int = 2
     audit_poor_fit_ratio: float = 5.0
