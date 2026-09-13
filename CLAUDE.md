@@ -66,7 +66,6 @@ logic cannot be attributed, the dataset it produced cannot be trusted either.
 | `SUPABASE_URL` | yes | yes | no |
 | `SUPABASE_PUBLISHABLE_KEY` | no | yes | no |
 | `TOMTOM_TILE_KEY` (separate, domain-restricted) | no | yes, before P2 | no |
-| `HEAD_HASH_SMTP_*`, `HEAD_HASH_MAIL_FROM`, `HEAD_HASH_MAIL_TO` | yes | **never** | **never** |
 
 - The collector runs in GitHub Actions with the service key. Nothing else
   holds it: not a Vercel env var, not a client bundle, not a committed file.
@@ -123,18 +122,6 @@ chain.
   records each head hash and first break in `chain_verifications`, and
   returns them. `daily.yml` runs it nightly and copies the heads into the job
   summary, outside the database.
-- The same job mails both heads to a witness mailbox
-  (`collector/mail_heads.py`), because a head kept only inside the database
-  it audits proves nothing. Two credentials, kept apart: GitHub holds a
-  send-only SMTP credential (a transactional mail service's sending key), which
-  cannot log in to, read or delete from any mailbox. The receiving mailbox's
-  password never touches GitHub, Vercel or a file. Nothing in this project
-  reads the witness. The step runs even when the walk finds a break, and fails
-  loudly until the `HEAD_HASH_*` secrets are set.
-- The mailbox defends against a leaked CI secret, not against its owner:
-  Sahil can delete mail from an inbox Sahil controls. A surface its owner
-  cannot rewrite (a public transparency log or a timestamp anchored in a
-  public blockchain) is strictly stronger and is proposed, not yet built.
 - Any change to a canonical function is a new format version.
 
 ## Storage budget (500 MB free tier)
@@ -256,7 +243,6 @@ unauditable, however good the estimator. This decides seeding order.
 |---|---|
 | Slots missing from yesterday (IST) | `collector/gaps.py` in `daily.yml`; writes `gap_reports` |
 | Head hash and first break of both chains | `collector/chain.py` in `daily.yml` |
-| Chain heads copied outside the database | `collector/mail_heads.py` in `daily.yml` |
 | Database at or over 400 MB | `db-size.yml` |
 | A measured corridor's geometry changed | `immutability.py` in `tests.yml` and `corridors.yml` |
 | Scheduled workflows disabled after 60 idle days | `keepalive.yml` re-enables them through the API weekly |

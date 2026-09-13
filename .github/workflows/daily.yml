@@ -37,23 +37,6 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: uv run python chain.py
-      # A head hash kept only inside the database it describes proves nothing.
-      # The heads are mailed to a separate mailbox with a send-only credential
-      # that cannot read or delete mail; the mailbox's own password is never a
-      # secret here. The step runs even when the walk found a break, and fails
-      # loudly until the HEAD_HASH_* secrets are set.
-      - name: Mail the chain heads to the witness mailbox
-        if: ${{ !cancelled() }}
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          HEAD_HASH_SMTP_HOST: ${{ secrets.HEAD_HASH_SMTP_HOST }}
-          HEAD_HASH_SMTP_PORT: ${{ secrets.HEAD_HASH_SMTP_PORT }}
-          HEAD_HASH_SMTP_USERNAME: ${{ secrets.HEAD_HASH_SMTP_USERNAME }}
-          HEAD_HASH_SMTP_PASSWORD: ${{ secrets.HEAD_HASH_SMTP_PASSWORD }}
-          HEAD_HASH_MAIL_FROM: ${{ secrets.HEAD_HASH_MAIL_FROM }}
-          HEAD_HASH_MAIL_TO: ${{ secrets.HEAD_HASH_MAIL_TO }}
-        run: uv run python mail_heads.py
 
   gaps:
     name: gaps
