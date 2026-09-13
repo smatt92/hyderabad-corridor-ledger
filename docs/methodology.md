@@ -207,3 +207,15 @@ intervention can cut travel times without moving BTI at all.
   longer than 9 days to settle.
 - Exchangeability is assumed, not tested: the stress panel makes the treated
   corridor noisier than its donors, not trending differently.
+
+## The record behind every number
+
+Every audit is computed from the hash-chained sample log. Each night CI signs
+both chains' head hashes and enters the signature in Sigstore's Rekor, a
+public append-only log, and a checker re-walks both chains from their first
+row to confirm every anchored head is still there (`collector/anchor.py`). This
+proves what the collection pipeline published and when. It does not prove the
+measurements were right when they were taken, and a rewrite of rows before the
+first anchored head would not be detected. Deleting anchor files from storage
+hides those anchors from the checker, though their entries remain in the public
+log.

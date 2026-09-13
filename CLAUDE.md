@@ -122,6 +122,21 @@ chain.
   records each head hash and first break in `chain_verifications`, and
   returns them. `daily.yml` runs it nightly and copies the heads into the job
   summary, outside the database.
+- The same job anchors both heads outside anything this project controls
+  (`collector/anchor.py`). `cosign sign-blob` signs tonight's heads keylessly:
+  GitHub's OIDC token names `daily.yml` on `main`, and the signature is entered
+  in Sigstore's Rekor, a public append-only log no one can edit or backdate. The
+  heads file and its bundle go under `heads/` in the public `archive` bucket,
+  listed in `heads/index.json`. The job needs `id-token: write` and no secret;
+  cosign-installer and cosign are pinned.
+- `python collector/anchor.py check` then verifies every anchor: the bundle's
+  signer is `daily.yml` on `main`, and an independent walk of each chain from seq
+  1 (archive files, then the hot table, every row_hash recomputed) still holds
+  the anchored row_hash at each anchored seq. Anyone can run it with the
+  publishable key (`SUPABASE_KEY`) and cosign. It proves only what CI published
+  and when: rows rewritten before the first anchor are invisible to it, and
+  deleting anchor files from the bucket hides those anchors from the check,
+  although their Rekor entries remain.
 - Any change to a canonical function is a new format version.
 
 ## Storage budget (500 MB free tier)
@@ -243,6 +258,7 @@ unauditable, however good the estimator. This decides seeding order.
 |---|---|
 | Slots missing from yesterday (IST) | `collector/gaps.py` in `daily.yml`; writes `gap_reports` |
 | Head hash and first break of both chains | `collector/chain.py` in `daily.yml` |
+| Every anchored head still in an independent walk of the chains | `collector/anchor.py check` in `daily.yml` |
 | Database at or over 400 MB | `db-size.yml` |
 | A measured corridor's geometry changed | `immutability.py` in `tests.yml` and `corridors.yml` |
 | Scheduled workflows disabled after 60 idle days | `keepalive.yml` re-enables them through the API weekly |

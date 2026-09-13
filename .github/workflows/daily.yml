@@ -20,6 +20,11 @@ jobs:
   chain:
     name: chain
     runs-on: ubuntu-latest
+    # id-token: keyless signing. GitHub's OIDC token names this workflow to Sigstore;
+    # no signing key or secret exists anywhere.
+    permissions:
+      contents: read
+      id-token: write
     defaults:
       run:
         working-directory: collector
@@ -28,7 +33,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
-      - run: uv sync --locked
+      - run: uv sync --locked --group archive
       # Records both chains' head row_hash in chain_verifications and fails on
       # the first break. The job summary keeps a copy of each head outside the
       # database.
@@ -37,6 +42,32 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: uv run python chain.py
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+        with:
+          cosign-release: v3.0.6
+      # A head kept only inside the database it describes proves nothing. Tonight's
+      # heads are signed keylessly and entered in Rekor, Sigstore's public
+      # append-only log, which no one can edit or backdate; the file and its bundle
+      # are stored under heads/ in the public archive bucket. Runs even when the walk
+      # found a break, so a break is anchored too.
+      - name: Anchor the chain heads in Sigstore's public log
+        if: ${{ !cancelled() }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          uv run python anchor.py write "$RUNNER_TEMP/heads.json"
+          cosign sign-blob --yes --bundle "$RUNNER_TEMP/heads.sigstore.json" "$RUNNER_TEMP/heads.json"
+          uv run python anchor.py publish "$RUNNER_TEMP/heads.json" "$RUNNER_TEMP/heads.sigstore.json"
+      # An anchor nobody checks is decoration. Verifies every stored bundle's signer
+      # and walks both chains independently, archive files then the hot table, to
+      # confirm each anchored row_hash is still at its anchored seq.
+      - name: Check every anchored head against an independent walk of the chains
+        if: ${{ !cancelled() }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: uv run python anchor.py check
 
   gaps:
     name: gaps

@@ -70,9 +70,12 @@ def row_hash(table: str, row: dict) -> bytes:
     return hashlib.sha256(as_bytes(row["prev_hash"]) + canonical(table, row).encode()).digest()
 
 
-def breaks(table: str, rows, before: bytes | None = None) -> list[tuple[int, str]]:
+def breaks(table: str, rows, before: bytes | None = None,
+           payloads: bool = True) -> list[tuple[int, str]]:
     """Every problem in rows given in seq order, as the SQL walk reports them.
-    `before` is the row_hash preceding the first row, when it is known."""
+    `before` is the row_hash preceding the first row, when it is known. With
+    payloads=False the stored response digests are not recomputed, so rows need not
+    carry the responses themselves; every row_hash still covers its digest."""
     _, payload, _ = FORMATS[table]
     problems = []
     last_seq, last_hash = None, before
@@ -80,8 +83,9 @@ def breaks(table: str, rows, before: bytes | None = None) -> list[tuple[int, str
         seq, stored, prev = row["seq"], as_bytes(row["row_hash"]), as_bytes(row["prev_hash"])
         if stored != row_hash(table, row):
             problems.append((seq, "row_hash does not match row contents"))
-        body = as_bytes(row[payload])
-        if as_bytes(row[f"{payload}_sha256"]) != (body and hashlib.sha256(body).digest()):
+        body = as_bytes(row[payload]) if payloads else None
+        digest = as_bytes(row[f"{payload}_sha256"])
+        if payloads and digest != (body and hashlib.sha256(body).digest()):
             problems.append((seq, f"{payload}_sha256 does not match {payload}"))
         if last_seq is not None and seq != last_seq + 1:
             problems.append((seq, "seq gap before this row"))
