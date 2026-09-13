@@ -47,6 +47,31 @@ describe("route construction", () => {
   });
 });
 
+describe("map tiles", () => {
+  // Tiles are pulled by browsers straight from TomTom against a monthly allowance that
+  // nothing here meters, so every tile request has to be accounted for in source.
+  it("only lib/tiles.ts builds a TomTom tile URL", () => {
+    const builders = sourceFiles(SRC).filter((f) => /api\.tomtom\.com/.test(code(f)));
+    expect(builders.map((f) => relative(SRC, f))).toEqual(["lib/tiles.ts"]);
+  });
+
+  it("wall mode requests no map tiles, on any rotation", () => {
+    for (const file of sourceFiles(join(SRC, "wall"))) {
+      expect(code(file), relative(ROOT, file)).not.toMatch(/lib\/tiles|MapView|TileUrl/);
+    }
+  });
+
+  it("every map tile hides its whole layer when it fails to load", () => {
+    const imgs = [...code(join(SRC, "analyst/MapView.tsx")).matchAll(/<img\b[^>]*>/g)].map((m) => m[0]);
+    expect(imgs).toHaveLength(2);
+    for (const img of imgs) expect(img).toMatch(/onError=\{fail\("(basemap|traffic)"\)\}/);
+  });
+
+  it("traffic tiles refresh only while the tab is visible", () => {
+    expect(code(join(SRC, "analyst/MapView.tsx"))).toMatch(/every\(TRAFFIC_REFRESH_MS,[\s\S]{0,80}visibilityState === "visible"/);
+  });
+});
+
 describe("SVG attributes", () => {
   // Preact, unlike React, passes attribute names through unchanged. A camelCase
   // SVG presentation attribute is silently dropped by the browser: labels fall

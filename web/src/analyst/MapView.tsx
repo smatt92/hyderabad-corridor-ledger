@@ -11,6 +11,8 @@ import type { SeriesView } from "./series";
 const TILE_KEY = __TOMTOM_TILE_KEY__;
 const TRAFFIC_REFRESH_MS = 120_000;
 
+type Layer = "basemap" | "traffic";
+
 interface Props {
   corridors: Corridor[];
   views: Map<string, SeriesView>;
@@ -28,9 +30,18 @@ interface Props {
 export function MapView({ corridors, views, day, hour, asOf }: Props) {
   const [basis, setBasis] = useState<Basis>("tomtom");
   const [trafficEpoch, setTrafficEpoch] = useState(0);
+  // A layer with any failed tile is hidden whole, so a refused tile (429 when the
+  // tile allowance runs out) leaves connectors over a plain ground, not a broken grid.
+  // A failed layer is not requested again until the page reloads.
+  const [failed, setFailed] = useState<Record<Layer, boolean>>({ basemap: false, traffic: false });
+  const fail = (layer: Layer) => () => setFailed((f) => (f[layer] ? f : { ...f, [layer]: true }));
   useEffect(() => {
     const scheduler = new Scheduler();
-    scheduler.every(TRAFFIC_REFRESH_MS, () => setTrafficEpoch((n) => n + 1));
+    // Every refresh requests the whole traffic layer again, and traffic tiles may not be
+    // cached. A tab nobody is looking at requests none.
+    scheduler.every(TRAFFIC_REFRESH_MS, () => {
+      if (document.visibilityState === "visible") setTrafficEpoch((n) => n + 1);
+    });
     return () => scheduler.stop();
   }, []);
 
@@ -85,26 +96,35 @@ export function MapView({ corridors, views, day, hour, asOf }: Props) {
         <div style={{ display: "flex", gap: "14px", alignItems: "center", flexWrap: "wrap" }}>
           <Select label="Free-flow" value={basis} options={[{ value: "tomtom", label: "TomTom" }, { value: "p5", label: "Observed p5" }]} onChange={(v) => setBasis(v as Basis)} />
           <div style={{ fontFamily: MONO, fontSize: "11.5px", color: TEXT, border: `1px solid ${INK}`, padding: "7px 10px", fontVariantNumeric: "tabular-nums" }}>
-            indices {fmtIst(asOf)} · {fmtHour(hour)} · traffic tiles refresh every 2 min
+            indices {fmtIst(asOf)} · {fmtHour(hour)} · traffic tiles refresh every 2 min while this tab is visible
           </div>
         </div>
       </div>
 
       <div style={{ position: "relative", width: "100%", maxWidth: "1000px", aspectRatio: `${frame.width} / ${frame.height}`, border: `1px solid ${INK}`, overflow: "hidden", background: "#eceae4" }}>
-        {TILE_KEY
+        {TILE_KEY && !failed.basemap
           ? tiles.map((t) => (
-              <img key={`b${t.x}_${t.y}`} src={basemapTileUrl(t, TILE_KEY)} alt="" loading="lazy" decoding="async" style={{ ...tileStyle(t.left, t.top), filter: "grayscale(1) contrast(.8) brightness(1.1)" }} />
+              <img key={`b${t.x}_${t.y}`} src={basemapTileUrl(t, TILE_KEY)} alt="" loading="lazy" decoding="async" onError={fail("basemap")} style={{ ...tileStyle(t.left, t.top), filter: "grayscale(1) contrast(.8) brightness(1.1)" }} />
             ))
           : null}
-        {TILE_KEY
+        {TILE_KEY && !failed.traffic
           ? tiles.map((t) => (
-              <img key={`t${t.x}_${t.y}_${trafficEpoch}`} src={trafficTileUrl(t, TILE_KEY)} alt="" decoding="async" style={{ ...tileStyle(t.left, t.top), opacity: 0.85 }} />
+              <img key={`t${t.x}_${t.y}_${trafficEpoch}`} src={trafficTileUrl(t, TILE_KEY)} alt="" decoding="async" onError={fail("traffic")} style={{ ...tileStyle(t.left, t.top), opacity: 0.85 }} />
             ))
           : null}
         <svg viewBox={`0 0 ${frame.width} ${frame.height}`} style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} role="img" aria-label="Straight connectors between measured corridor endpoints">
           {!TILE_KEY ? (
             <text x={frame.width / 2} y={frame.height - 24} font-size={15} font-family={MONO} fill="#a8a59d" text-anchor="middle">
               no browser tile key in this build · basemap and traffic tiles not loaded
+            </text>
+          ) : null}
+          {TILE_KEY && (failed.basemap || failed.traffic) ? (
+            <text x={frame.width / 2} y={frame.height - 24} font-size={15} font-family={MONO} fill="#8b8880" text-anchor="middle">
+              {failed.basemap && failed.traffic
+                ? "basemap and traffic tiles failed to load · connectors only"
+                : failed.basemap
+                  ? "basemap tiles failed to load · drawn without a basemap"
+                  : "traffic tiles failed to load · traffic layer hidden"}
             </text>
           ) : null}
           {shown.map((c, i) => {
@@ -145,7 +165,8 @@ export function MapView({ corridors, views, day, hour, asOf }: Props) {
         </div>
         <div style={{ fontFamily: MONO, fontSize: "10.5px", color: SOFT, lineHeight: 1.6, maxWidth: "58ch" }}>
           <div>layer 1 · desaturated raster basemap, TomTom</div>
-          <div>layer 2 · traffic-flow tiles, TomTom relative0 raster, 2-min refresh</div>
+          <div>layer 2 · traffic-flow tiles, TomTom relative0 raster, 2-min refresh while visible</div>
+          <div>a layer whose tiles fail to load is hidden whole, never shown as a broken grid</div>
           <div>layer 3 · origin–destination connectors, one per pair, coloured by TTI — not road geometry</div>
         </div>
       </div>

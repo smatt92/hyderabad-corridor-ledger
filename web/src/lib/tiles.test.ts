@@ -33,6 +33,10 @@ describe("Hyderabad frame", () => {
     expect(right).toBeLessThan(frame.width + 512);
   });
 
+  it("needs 12 tiles per layer, the figure the tile budget is worked from", () => {
+    expect(tilesFor(frame)).toHaveLength(12);
+  });
+
   it("places extent corners at the frame corners", () => {
     const nw = toFrame(frame, HYDERABAD.north, HYDERABAD.west);
     const se = toFrame(frame, HYDERABAD.south, HYDERABAD.east);

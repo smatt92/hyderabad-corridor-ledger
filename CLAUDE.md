@@ -596,6 +596,23 @@ Pairs sharing endpoints is enforced by `collector/config.py` and the
   Greater Hyderabad (`lib/tiles.ts`): no pan, no zoom, no map library.
 - The browser uses `TOMTOM_TILE_KEY`, a separate key restricted to the
   deployed origin. The build fails if `TOMTOM_API_KEY` is in its environment.
+  TomTom documents its key whitelist as relying on CORS, and a plain `<img>`
+  request is not a CORS request, so whether the restriction holds for tiles is
+  unverified: once the key exists, request a tile from an origin not on the
+  list.
+- Tile budget. Browsers pull tiles straight from TomTom and nothing here
+  meters them. TomTom publishes 200,000 free raster map tiles and 200,000
+  traffic raster tiles a month. The grid is 12 tiles per layer. Traffic tiles
+  refresh every 2 minutes only while the tab is visible, which is still 8,640
+  tiles a day for one map left open on a screen. A layer with any failed tile
+  is hidden whole, so a refused tile leaves connectors over a plain ground,
+  never a broken grid. Wall mode loads no tiles. `lib/tiles.test.ts` and
+  `lib/rules.test.ts` check all four.
+- TomTom's Terms (11.4) allow caching results, tiles included, only in
+  clients and within their cache headers, and never "for the purpose of
+  scaling results to serve multiple clients or users". A caching tile proxy
+  and pre-fetched tiles served from our own storage are both outside that.
+  Traffic tiles are documented as no-store.
 - Both free-flow bases appear in every table and ranking. A chart that can show
   one basis at a time (rhythm matrix, map) has a basis selector and labels the
   basis it shows. Network pulse and the wall's network state use travel time
