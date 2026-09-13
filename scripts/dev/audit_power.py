@@ -87,7 +87,13 @@ BOOTSTRAPS = {
     "blocks7-levels": {"audit_weights": "levels", "audit_bootstrap": "blocks",
                        "audit_bootstrap_days": 7},
 }
-RULES = {"ratio": "ratio", "cv_ratio": "cv ratio", "abs_effect": "|effect|", "cs": "cs"}
+RULES = {"ratio": "ratio", "cv_ratio": "cv ratio", "abs_effect": "|effect|",
+         "std_effect": "std |effect|", "cs": "cs"}
+RANKS = ("ratio", "cv_ratio", "abs_effect", "std_effect")
+# the most congested, most volatile corridor panel_model can draw
+STRESS = {"base": 2.37, "volatility": 0.21, "spread": 1.84}
+DRIFT_WEEK_SD = 0.20  # 2.5 times panel_model's default corridor weekly drift
+STRESS_VARIANTS = {"demeaned": {"audit_weights": "demeaned", "audit_bootstrap": "calls"}}
 SCENARIO = ["tier", "block_days", "pre_blocks", "donors", "post_blocks"]
 INTERVENTIONS = pd.DataFrame({
     "id": ["works"], "corridor_id": [TREATED],
@@ -95,7 +101,7 @@ INTERVENTIONS = pd.DataFrame({
 })
 OUT = ROOT / "docs" / "audit_power.md"
 RECORDS = {part: ROOT / ".fixtures" / f"audit_power_{part}.csv"
-           for part in ("design", "bootstrap", "preblocks")}
+           for part in ("design", "bootstrap", "preblocks", "stress", "drift")}
 
 
 def design_grid(quick: bool) -> list[tuple]:
@@ -125,10 +131,19 @@ def preblock_grid(quick: bool) -> list[tuple]:
             for pre in PREBLOCKS]
 
 
-PARTS = {  # grid, variants, deltas, bootstrap resamples
-    "design": (design_grid, CONFIGS, DESIGN_DELTAS, 0),
-    "bootstrap": (bootstrap_grid, BOOTSTRAPS, BOOTSTRAP_DELTAS, RESAMPLES),
-    "preblocks": (preblock_grid, PREBLOCK_CONFIGS, PREBLOCK_DELTAS, 0),
+def stress_grid(quick: bool) -> list[tuple]:
+    if quick:
+        return [("A", 14, 12, 20, 2)]
+    return [("A", 14, 6, 40, 2), ("A", 14, 12, 20, 2), ("A", 14, 12, 40, 2), ("A", 14, 18, 40, 2)]
+
+
+PARTS = {  # grid, variants, deltas, bootstrap resamples, scheduled_panel arguments
+    "design": (design_grid, CONFIGS, DESIGN_DELTAS, 0, {}),
+    "bootstrap": (bootstrap_grid, BOOTSTRAPS, BOOTSTRAP_DELTAS, RESAMPLES, {}),
+    "preblocks": (preblock_grid, PREBLOCK_CONFIGS, PREBLOCK_DELTAS, 0, {}),
+    "stress": (stress_grid, STRESS_VARIANTS, (0.0, 0.10, 0.20), RESAMPLES, {"first": STRESS}),
+    "drift": (stress_grid, STRESS_VARIANTS, (0.0, 0.10, 0.20), RESAMPLES,
+              {"corridor_week_sd": DRIFT_WEEK_SD}),
 }
 
 
@@ -138,13 +153,13 @@ def scenario_params(scenario: tuple, **extra) -> Params:
                   audit_post_blocks=post_blocks, **extra)
 
 
-def simulate(scenario: tuple, replicate: int):
+def simulate(scenario: tuple, replicate: int, panel: dict | None = None):
     tier, _, _, donors, _ = scenario
     params = scenario_params(scenario)
     span = periods(EFFECTIVE, params)
     days = (span["post_end"] - span["pre_start"]).days + 1
     rng = np.random.default_rng(zlib.crc32("|".join(map(str, (*scenario, replicate))).encode()))
-    samples = scheduled_panel(donors + 1, span["pre_start"], days, tier, rng)
+    samples = scheduled_panel(donors + 1, span["pre_start"], days, tier, rng, **(panel or {}))
     calls, cells, corridors = audit_inputs(samples, tier, params)
     return span, calls[pooled.is_peak(calls["requested_at"], params)], cells, corridors
 
@@ -189,8 +204,8 @@ def treated_estimate(peak: pd.DataFrame, cells: pd.DataFrame, params: Params,
 
 def run_audits(task: tuple) -> list[dict]:
     part, scenario, replicate = task
-    span, peak, cells, corridors = simulate(scenario, replicate)
-    _, variants, deltas, resamples = PARTS[part]
+    _, variants, deltas, resamples, panel = PARTS[part]
+    span, peak, cells, corridors = simulate(scenario, replicate, panel)
     injected = {d: inject_bti_effect(peak, TREATED, span["post_start"], span["post_end"], d)[0]
                 for d in deltas if d > 0}
     records = []
@@ -211,6 +226,7 @@ def run_audits(task: tuple) -> list[dict]:
         placebos = tables["audit_placebos"]
         with np.errstate(divide="ignore", invalid="ignore"):
             placebo_cv = (placebos["post_rmspe"] / placebos["cv_pre_rmspe"]).to_numpy(float)
+            placebo_std = (placebos["effect"].abs() / placebos["cv_pre_rmspe"]).to_numpy(float)
         shared: dict = {}
         base |= {"pre_rmspe": row.pre_rmspe, "cv_pre_rmspe": row.cv_pre_rmspe,
                  "n_active_donors": row.n_active_donors}
@@ -225,6 +241,8 @@ def run_audits(task: tuple) -> list[dict]:
                                   placebos["rmspe_ratio"]),
                 "p_cv_ratio": rank_p(cv_ratio, placebo_cv),
                 "p_abs_effect": rank_p(abs(est["effect"]), placebos["effect"].abs()),
+                "p_std_effect": rank_p(abs(est["effect"]) / row.cv_pre_rmspe
+                                       if row.cv_pre_rmspe > 0 else np.nan, placebo_std),
             })
     return records
 
@@ -237,9 +255,9 @@ def excludes_zero(frame: pd.DataFrame, low: str, high: str) -> np.ndarray:
 def with_detections(frame: pd.DataFrame) -> pd.DataFrame:
     upward = np.where(frame["delta"] > 0, frame["effect"] > 0, True)
     out = frame.copy()
-    for rule in ("ratio", "cv_ratio", "abs_effect"):
-        if f"p_{rule}" in out:
-            out[rule] = (out[f"p_{rule}"] <= ALPHA) & upward
+    for rule in RANKS:
+        out[rule] = (((out[f"p_{rule}"] <= ALPHA) & upward).astype(float)
+                     if f"p_{rule}" in out else np.nan)
     out["cs"] = excludes_zero(out, "cs_low", "cs_high")
     if "ci_low" in out and out["ci_low"].notna().any():
         out["interval"] = excludes_zero(out, "ci_low", "ci_high")
@@ -249,11 +267,13 @@ def with_detections(frame: pd.DataFrame) -> pd.DataFrame:
 
 def mde(power: pd.Series) -> str:
     """Smallest delta from which every larger delta reaches POWER."""
+    if power.isna().all():
+        return "—"
     found = None
     for delta, value in sorted(power.items(), reverse=True):
         if delta == 0:
             break
-        if value < POWER:
+        if pd.isna(value) or value < POWER:
             break
         found = delta
     return f"{found:.2f}" if found is not None else f"> {max(power.index):.2f}"
@@ -456,7 +476,8 @@ def preblock_report(frame: pd.DataFrame) -> list[str]:
     summary = []
     detail = []
     for (tier, donors, variant), group in ok.groupby(["tier", "donors", "variant"]):
-        powers = {rule: ({}, {}) for rule in ("abs_effect", "ratio", "cv_ratio", "cs", "oracle")}
+        powers = {rule: ({}, {}) for rule in ("abs_effect", "std_effect", "ratio", "cv_ratio",
+                                              "cs", "oracle")}
         rows = []
         for pre in pres:
             at = group[group["pre_blocks"] == pre]
@@ -465,7 +486,7 @@ def preblock_report(frame: pd.DataFrame) -> list[str]:
                                & (frame["variant"] == variant) & (frame["pre_blocks"] == pre)
                                & (frame["delta"] == 0)]
             if null.empty:
-                rows.append([weeks(int(pre)), cell(1.0), *["—"] * 14])
+                rows.append([weeks(int(pre)), cell(1.0), *["—"] * 16])
                 continue
             sd = null["effect"].std(ddof=1)
             by_delta = at.groupby("delta")
@@ -484,6 +505,7 @@ def preblock_report(frame: pd.DataFrame) -> list[str]:
                 cell(Z * sd), cell(null["abs_effect"].mean()),
                 cell(by_delta["abs_effect"].mean().get(0.10)),
                 cell(by_delta["abs_effect"].mean().get(0.20)), mde(by_delta["abs_effect"].mean()),
+                cell(null["std_effect"].mean()), mde(by_delta["std_effect"].mean()),
                 cell(null["ratio"].mean()), mde(by_delta["ratio"].mean()), cell(null["cs"].mean()),
                 cell(((cs10["cs_low"] <= 0.10) & (cs10["cs_high"] >= 0.10)).mean()),
                 cell(((cs20["cs_low"] <= 0.20) & (cs20["cs_high"] >= 0.20)).mean()),
@@ -495,12 +517,48 @@ def preblock_report(frame: pd.DataFrame) -> list[str]:
                    *table(["pre blocks", "withheld", "donors used", "exact pre fits",
                            "pre / held-out RMSPE", "null effect sd", "MDE oracle",
                            "size |effect|", "power 0.10 |effect|", "power 0.20 |effect|",
-                           "MDE |effect|", "size ratio", "MDE ratio", "size cs",
+                           "MDE |effect|", "size std", "MDE std", "size ratio", "MDE ratio",
+                           "size cs",
                            "cs coverage 0.10", "cs coverage 0.20"], rows), ""]
     lines += ["### Pre blocks needed", "",
               *table(["tier", "donors", "weights", "rule", "needed for 0.10",
                       "needed for 0.20"], summary), "", *detail]
     return lines
+
+
+def mean_of(frame: pd.DataFrame, column: str) -> float:
+    return frame[column].mean() if column in frame and frame[column].notna().any() else np.nan
+
+
+def stress_report(frame: pd.DataFrame, baselines: list[tuple[str, pd.DataFrame, str]],
+                  heading: str, description: str) -> list[str]:
+    """One stressed part against the same scenarios and seeds from unstressed parts."""
+    rules = (*RANKS, "cs", "interval")
+    lines = [heading, "", description, ""]
+    frame = with_detections(frame)
+    ready = [(label, with_detections(b), variant) for label, b, variant in baselines
+             if b is not None]
+    rows = []
+    for key, group in frame.groupby(SCENARIO, sort=True):
+        pairs = []
+        for label, base, variant in ready:
+            match = base[(base[SCENARIO] == pd.Series(key, index=SCENARIO)).all(axis=1)
+                         & (base["variant"] == variant)]
+            if not match.empty:
+                pairs.append((label, match))
+        pairs.append(("stressed", group))
+        for label, g in pairs:
+            ok = g[g["status"] == "ok"]
+            null, at = ok[ok["delta"] == 0], ok[np.isclose(ok["delta"], 0.20)]
+            covers = (((at["ci_low"] <= 0.20) & (at["ci_high"] >= 0.20)).mean()
+                      if "ci_low" in at and at["ci_low"].notna().any() else np.nan)
+            rows.append(scenario_cells(key, g) + [label, str(len(null))]
+                        + [cell(mean_of(null, r)) for r in rules] + [cell(covers)]
+                        + [cell(mean_of(at, r)) for r in RANKS])
+    lines += table(["tier", "block days", "pre blocks", "donors (used)", "post days", "withheld",
+                    "panels from", "panels", *[f"size {RULES.get(r, r)}" for r in rules],
+                    "interval coverage 0.20", *[f"power 0.20 {RULES[r]}" for r in RANKS]], rows)
+    return lines + [""]
 
 
 def sha() -> str:
@@ -528,9 +586,10 @@ def report(frames: dict[str, pd.DataFrame], replicates: dict[str, int], minutes:
         "",
         f"Rules. `ratio`: the published placebo p, post/pre RMSPE ratio ranked, p <= {ALPHA}. "
         "`cv ratio`: the same with the leave-one-block-out pre RMSPE. `|effect|`: treated "
-        "|effect| ranked among placebo |effects|. `cs`: the block confidence sequence at the "
-        "last post block excludes zero. `interval` / `equal`: the synthetic-control / "
-        "equal-weight bootstrap interval excludes zero. For a positive effect every rule "
+        "|effect| ranked among placebo |effects|. `std |effect|`: treated |effect| over its own "
+        "leave-one-block-out pre RMSPE, ranked among the placebos' same ratio. `cs`: the "
+        "block confidence sequence at the last post block excludes zero. `interval` / "
+        "`equal`: the synthetic-control / equal-weight bootstrap interval excludes zero. For a positive effect every rule "
         "also needs the estimate's sign right. `oracle`: (1.96 + 0.84) x the sd of the null "
         "effect, what a test that knew the estimator's true spread would need.",
         "",
@@ -550,6 +609,23 @@ def report(frames: dict[str, pd.DataFrame], replicates: dict[str, int], minutes:
         lines += bootstrap_report(frames["bootstrap"])
     if "preblocks" in frames:
         lines += preblock_report(frames["preblocks"])
+    baselines = [("exchangeable, pre-block sweep", frames.get("preblocks"), "demeaned"),
+                 ("exchangeable, bootstrap sweep", frames.get("bootstrap"), "calls")]
+    if "stress" in frames:
+        lines += stress_report(
+            frames["stress"], baselines, "## 4. Exchangeability broken on purpose",
+            "The treated corridor is fixed as the most congested and most volatile corridor "
+            f"panel_model can draw ({STRESS}). Donors come from the same seeds as the matching "
+            "exchangeable panels, so only the treated corridor differs. A rule whose "
+            "false-positive rate rises here is exact only when the treated corridor is typical "
+            "of its donors, and interventions are not placed on typical roads.")
+    if "drift" in frames:
+        lines += stress_report(
+            frames["drift"], baselines, "## 5. Weekly drift 2.5 times larger",
+            f"Every corridor's week-to-week drift has sd {DRIFT_WEEK_SD} instead of 0.08; the "
+            "treated corridor is exchangeable again. The call-level bootstrap treats calls "
+            "within a period as independent, so this is where its interval should break if it "
+            "is going to.")
     return "\n".join(lines) + "\n"
 
 
@@ -565,7 +641,8 @@ def main() -> int:
     args = parser.parse_args()
     parts = {"both": ("design", "bootstrap"), "all": tuple(PARTS)}.get(args.part, (args.part,))
     replicates = {"design": args.replicates, "bootstrap": args.bootstrap_replicates,
-                  "preblocks": args.replicates}
+                  "preblocks": args.replicates, "stress": args.bootstrap_replicates,
+                  "drift": args.bootstrap_replicates}
     if args.quick:
         replicates = {part: 4 for part in replicates}
     started = time.time()

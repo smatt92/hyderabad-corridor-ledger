@@ -11,7 +11,10 @@ scheduled_panel adds two sources of slow variation an audit has to see
 through, both applied to the excess over free flow:
   shared_day_sd      a city-wide daily shock shared by every corridor
   corridor_week_sd   each corridor's own week-to-week drift
-Their sizes are assumptions, not estimates from Hyderabad data.
+Their sizes are assumptions, not estimates from Hyderabad data. `first` overrides
+c00's base, volatility and spread after they are drawn, so the other corridors
+stay identical: the audit's stress test uses it to make the treated corridor
+unlike its donors on purpose.
 
 inject_bti_effect adds an intervention of known size: it stretches one
 corridor's peak-hour travel times about their mean, which keeps the mean and
@@ -38,7 +41,7 @@ def hour_factor(h: np.ndarray) -> np.ndarray:
 
 def scheduled_panel(n_corridors: int, first_day: pd.Timestamp, days: int, tier: str,
                     rng: np.random.Generator, shared_day_sd: float = 0.10,
-                    corridor_week_sd: float = 0.08) -> pd.DataFrame:
+                    corridor_week_sd: float = 0.08, first: dict | None = None) -> pd.DataFrame:
     """Samples for corridors c00, c01, ... at every slot of their tier's schedule."""
     first_day = pd.Timestamp(first_day).normalize()
     by_day = [schedule.day_slots(tier, first_day + pd.Timedelta(days=d)) for d in range(days)]
@@ -56,6 +59,10 @@ def scheduled_panel(n_corridors: int, first_day: pd.Timestamp, days: int, tier: 
         spread = 1.22 + rng.random() * 0.62
         miss = 0.16 + rng.random() * 0.22 if rng.random() < 0.18 else rng.random() * 0.12
         free = 300 + rng.random() * 1300
+        if i == 0 and first:
+            base = first.get("base", base)
+            volatility = first.get("volatility", volatility)
+            spread = first.get("spread", spread)
         weekly = rng.normal(0, corridor_week_sd, days // 7 + 1)
         jitter = rng.normal(0, volatility, len(slots)) * (0.4 + (hour_factor(hour) - 1))
         tti = base * shape * (1 + jitter)

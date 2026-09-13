@@ -296,6 +296,25 @@ def test_placebo_summary_by_hand():
     assert rank is None and np.isnan(p) and not extreme and "No placebo" in verdict
 
 
+def test_the_placebo_rank_holds_its_size_by_construction():
+    """If the treated corridor is exchangeable with its donors, its statistic is equally
+    likely to hold any of the n + 1 ranks, so P(p <= alpha) = floor(alpha (n + 1)) / (n + 1),
+    at most alpha, whatever the distribution, the fit or the spread. No variance is
+    estimated. Ties count against the treated corridor, which only lowers the rate."""
+    rng = np.random.default_rng(20260913)
+    draws = {"normal": lambda size: rng.normal(size=size),
+             "lognormal": lambda size: rng.lognormal(size=size),
+             "tied": lambda size: rng.integers(0, 4, size=size).astype(float)}
+    for n in (9, 19, 39):
+        exact = np.floor(0.05 * (n + 1)) / (n + 1)
+        for name, draw in draws.items():
+            rows = draw((4000, n + 1))
+            rejected = np.mean([placebo_summary(r[0], r[1:], 0.05)[1] <= 0.05 for r in rows])
+            assert rejected <= exact + 0.012, (n, name, rejected)
+            if name != "tied":
+                assert rejected == pytest.approx(exact, abs=0.012), (n, name)
+
+
 def test_estimators_disagree_on_sign_or_interval():
     assert not estimators_disagree(0.20, 0.10, 0.30, 0.18, 0.05, 0.30)
     assert estimators_disagree(0.20, 0.10, 0.30, -0.10, -0.20, 0.00)   # opposite signs
