@@ -38,11 +38,12 @@ def panel(active_ids=("placeholder-01",)):
 
 
 class FakeLedger:
-    def __init__(self, samples=0, failures=0, runs=0, used=0, recorded=()):
+    def __init__(self, samples=0, failures=0, runs=0, used=0, recorded=(), refused=False):
         self.counts = {"samples": samples, "failed_samples": failures, "collector_runs": runs}
         self.used = used
+        self.refused = refused
         self.recorded = set(recorded)
-        self.samples, self.failures, self.runs = [], [], {}
+        self.samples, self.failures, self.runs, self.responses = [], [], {}, []
 
     def count(self, table):
         return self.counts[table]
@@ -52,6 +53,12 @@ class FakeLedger:
 
     def attempts_between(self, start, end):
         return self.used
+
+    def quota_refused_since(self, start):
+        return self.refused
+
+    def insert_responses(self, rows):
+        self.responses.extend(rows)
 
     def start_run(self, run_id, sha):
         self.runs[run_id] = {"sha": sha}
@@ -87,7 +94,7 @@ def transport_from(responses):
         item = responses[len(calls) - 1]
         if isinstance(item, BaseException):
             raise item
-        return item
+        return item if len(item) == 3 else (item[0], {}, item[1])   # (status, headers, body)
 
     transport.calls = calls
     return transport
@@ -117,12 +124,85 @@ def test_records_one_sample_for_the_due_slot():
 
 def test_retry_with_jitter_then_success():
     ledger = FakeLedger()
-    report, _ = go(ledger, [(429, b"slow down"), (200, OK_BODY)])
+    report, _ = go(ledger, [(503, b"busy"), (200, OK_BODY)])
     (row,) = ledger.samples
     assert row["attempts"] == 2 and report.attempts == 2
     # the sample's time is the successful attempt's, after a jittered wait under 2 s
+    # and never under the one-second spacing
     waited = datetime.fromisoformat(row["requested_at"]) - MORNING
-    assert timedelta(0) <= waited <= timedelta(seconds=2)
+    assert timedelta(seconds=1) <= waited <= timedelta(seconds=2)
+
+
+THREE = ("placeholder-01", "placeholder-02", "placeholder-03")
+
+
+def test_calls_are_at_least_a_second_apart_across_corridors_and_retries():
+    clock = Clock(MORNING)
+    stamps = []
+
+    def transport(url):
+        stamps.append(clock.now)
+        return (503, {}, b"busy") if len(stamps) == 1 else (200, {}, OK_BODY)
+
+    run(panel(THREE), FakeLedger(), transport, "k", clock, random.Random(3), clock.sleep,
+        "123.1", "a" * 40)
+    assert len(stamps) == 4
+    assert min((b - a).total_seconds() for a, b in zip(stamps, stamps[1:], strict=False)) >= 1.0
+
+
+def test_a_429_with_a_short_retry_after_is_waited_out_and_retried():
+    ledger = FakeLedger()
+    report, _ = go(ledger, [(429, {"retry-after": "7"}, b""), (200, OK_BODY)])
+    (row,) = ledger.samples
+    assert row["attempts"] == 2 and report.outcome == "ok"
+    assert datetime.fromisoformat(row["requested_at"]) - MORNING >= timedelta(seconds=7)
+    (kept,) = ledger.responses
+    assert (kept["reason"], kept["limit_kind"], kept["http_status"]) == ("status_429", "qps", 429)
+
+
+def test_a_quota_429_is_never_retried_and_stops_the_run():
+    ledger = FakeLedger()
+    report, transport = go(ledger, [(429, b'{"error": "limit"}')], active=THREE)
+    assert len(transport.calls) == 1
+    (row,) = ledger.failures
+    assert (row["error_class"], row["http_status"], row["attempts"]) == ("quota_exhausted", 429, 1)
+    assert report.quota_refused and report.skipped_quota == 2 and report.attempts == 1
+    assert ledger.runs["123.1"]["outcome"] == "quota_exhausted"
+    assert ledger.runs["123.1"]["skipped_quota"] == 2
+    assert ledger.responses[0]["limit_kind"] == "quota"
+
+
+def test_after_a_quota_refusal_no_call_is_made_until_the_utc_day_turns():
+    ledger = FakeLedger(runs=3, refused=True)
+    report, transport = go(ledger, [])
+    assert transport.calls == [] and report.skipped_quota == 1
+    assert not report.quota_refused and ledger.runs["123.1"]["outcome"] == "quota_exhausted"
+
+
+def test_headers_are_kept_for_the_first_response_and_every_403_and_429():
+    ledger = FakeLedger()
+    go(ledger, [
+        (200, {"tracking-id": "t1", "set-cookie": "s=1", "location": "https://x/?key=k&a=1"},
+         OK_BODY),
+        (200, {"tracking-id": "t2"}, OK_BODY),
+        (403, {"tracking-id": "t3"}, b"forbidden"),
+    ], active=THREE)
+    assert [(r["corridor_id"], r["reason"], r["headers"]["tracking-id"])
+            for r in ledger.responses] == [("placeholder-01", "first_response", "t1"),
+                                           ("placeholder-03", "status_403", "t3")]
+    first = ledger.responses[0]
+    assert first["headers"]["set-cookie"] == "not kept"
+    assert "key=k" not in first["headers"]["location"]
+    assert (first["collector_run"], first["attempt"], first["limit_kind"]) == ("123.1", 1, None)
+
+
+def test_the_first_kept_response_is_the_first_one_that_arrived():
+    ledger = FakeLedger()
+    failures = [TimeoutError(), TimeoutError(), TimeoutError()]
+    go(ledger, [*failures, (200, {"tracking-id": "t"}, OK_BODY)],
+       active=("placeholder-01", "placeholder-02"))
+    assert [(r["corridor_id"], r["reason"]) for r in ledger.responses] == [
+        ("placeholder-02", "first_response")]
 
 
 def test_exhausted_retries_record_a_failure_never_a_silent_drop():

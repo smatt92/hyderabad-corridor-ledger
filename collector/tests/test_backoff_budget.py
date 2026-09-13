@@ -1,10 +1,10 @@
 import random
 import urllib.error
-from datetime import date, datetime, time
+from datetime import UTC, date, datetime, time
 
 import pytest
 
-from backoff import backoff_delays, error_class, retryable
+from backoff import backoff_delays, error_class, limit_kind, retry_after_seconds, retryable
 from budget import allowance, check_fits, day_plan
 from schedule import IST
 
@@ -67,3 +67,24 @@ def test_allowance_formula_by_hand():
     assert allowance(ist(1, 30), plan, used_today=20, capacity=100) == 5
     assert allowance(ist(2, 0), plan, used_today=20, capacity=100) == 80
     assert allowance(ist(2, 0), [], used_today=0) == 0
+
+
+def test_a_429_is_qps_only_when_retry_after_asks_for_a_minute_or_less():
+    now = datetime(2026, 9, 14, 3, 0, tzinfo=UTC)
+    assert limit_kind(429, {"retry-after": "1"}, now) == "qps"
+    assert limit_kind(429, {"retry-after": "60"}, now) == "qps"
+    assert limit_kind(429, {"retry-after": "61"}, now) == "quota"
+    assert limit_kind(429, {}, now) == "quota"                      # TomTom documents none
+    assert limit_kind(429, {"retry-after": "soon"}, now) == "quota"
+    assert limit_kind(429, {"retry-after": "Mon, 14 Sep 2026 03:00:30 GMT"}, now) == "qps"
+    assert limit_kind(429, {"retry-after": "Tue, 15 Sep 2026 00:00:00 GMT"}, now) == "quota"
+    assert limit_kind(403, {}, now) is None
+    assert limit_kind(503, {"retry-after": "1"}, now) is None
+
+
+def test_retry_after_reads_seconds_and_http_dates():
+    now = datetime(2026, 9, 14, 3, 0, tzinfo=UTC)
+    assert retry_after_seconds({"retry-after": " 12 "}, now) == 12.0
+    assert retry_after_seconds({"retry-after": "Mon, 14 Sep 2026 03:00:30 GMT"}, now) == 30.0
+    assert retry_after_seconds({"retry-after": "Mon, 14 Sep 2026 02:00:00 GMT"}, now) == 0.0
+    assert retry_after_seconds({}, now) is None

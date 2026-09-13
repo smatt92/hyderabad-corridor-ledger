@@ -9,6 +9,7 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections import defaultdict
 from datetime import UTC, datetime
 
 PAGE_SIZE = 1000  # PostgREST's max-rows on Supabase
@@ -101,15 +102,38 @@ class Ledger:
         return found
 
     def attempts_between(self, start: datetime, end: datetime) -> int:
-        """HTTP attempts spent on calls requested in [start, end): the budget used."""
-        return sum(
-            row["attempts"]
-            for table in OUTCOME_TABLES
+        """HTTP attempts spent in [start, end): the budget used.
+
+        Each run counts the larger of two records, because each misses attempts the
+        other keeps. Outcome rows miss the attempts behind an outcome that was never
+        inserted (a duplicate slot, a failed insert). The run row misses a run killed
+        before it finished, which never wrote its count."""
+        by_run: dict[str | None, int] = defaultdict(int)
+        for table in OUTCOME_TABLES:
             for row in self.db.select_all(table, [
-                ("select", "attempts"), ("requested_at", f"gte.{iso(start)}"),
+                ("select", "collector_run,attempts"), ("requested_at", f"gte.{iso(start)}"),
                 ("requested_at", f"lt.{iso(end)}"),
-            ])
-        )
+            ]):
+                by_run[row["collector_run"]] += row["attempts"]
+        for run in self.db.select_all("collector_runs", [
+            ("select", "id,attempts"), ("started_at", f"gte.{iso(start)}"),
+            ("started_at", f"lt.{iso(end)}"),
+        ], order="id.asc"):
+            by_run[run["id"]] = max(by_run[run["id"]], run["attempts"])
+        return sum(by_run.values())
+
+    def quota_refused_since(self, start: datetime) -> bool:
+        """Whether TomTom refused a call for quota at or after `start`."""
+        _, rows = self.db.request("GET", "failed_samples", [
+            ("select", "seq"), ("error_class", "eq.quota_exhausted"),
+            ("requested_at", f"gte.{iso(start)}"), ("limit", "1"),
+        ])
+        return bool(rows)
+
+    def insert_responses(self, rows: list[dict]) -> None:
+        """TomTom response headers worth keeping: see migration 0011."""
+        if rows:
+            self.db.request("POST", "tomtom_responses", body=rows, prefer="return=minimal")
 
     def start_run(self, run_id: str, sha: str | None) -> None:
         self.db.request("POST", "collector_runs", body={"id": run_id, "collector_sha": sha},

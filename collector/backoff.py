@@ -6,13 +6,55 @@ retrying in lockstep (Brooker, "Exponential Backoff and Jitter", 2015).
 Every attempt, retries included, spends a budget token.
 """
 
+import email.utils
 import random
 import urllib.error
+from collections.abc import Mapping
+from datetime import UTC, datetime
+from typing import Literal
 
 ATTEMPTS = 3
 BASE_SECONDS = 2.0
 CAP_SECONDS = 20.0
 RETRYABLE_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504})
+QPS_WAIT_SECONDS = 1.0
+SHORT_RETRY_AFTER_SECONDS = 60.0
+
+LimitKind = Literal["qps", "quota"]
+
+
+def retry_after_seconds(headers: Mapping[str, str], now: datetime) -> float | None:
+    """Seconds a Retry-After header asks for, as delta-seconds or an HTTP date. None when
+    absent or unreadable."""
+    value = (headers.get("retry-after") or "").strip()
+    if not value:
+        return None
+    if value.isdigit():
+        return float(value)
+    try:
+        when = email.utils.parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    return max(0.0, (when - now).total_seconds())
+
+
+def limit_kind(status: int | None, headers: Mapping[str, str], now: datetime) -> LimitKind | None:
+    """What a 429 means. None for any other status.
+
+    TomTom returns 429 both for "too many requests in a given amount of time" and
+    "when limits are exceeded", and documents no body or header that tells the two
+    apart, Retry-After included (docs.tomtom.com, read 2026-09-14). They need opposite
+    handling: a QPS refusal clears in about a second, a quota refusal lasts until the
+    allowance resets, and retrying it only spends calls. A Retry-After of a minute or
+    less is read as QPS. Anything else, including no Retry-After, is read as quota:
+    the conservative error costs the rest of the UTC day's slots, the other one
+    burns calls against an exhausted allowance."""
+    if status != 429:
+        return None
+    wait = retry_after_seconds(headers, now)
+    return "qps" if wait is not None and wait <= SHORT_RETRY_AFTER_SECONDS else "quota"
 
 
 def backoff_delays(

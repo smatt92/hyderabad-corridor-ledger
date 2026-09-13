@@ -285,9 +285,29 @@ unauditable, however good the estimator. This decides seeding order.
 - Budget: a token bucket of 2,400 calls per IST day, released as slots come
   due, with 15% held back for retries. Every HTTP attempt spends a token.
   `python collector/config.py` fails in CI when the active panel cannot fit.
-- Retries: timeouts, connection errors, 429 and 5xx, three attempts with full
-  jitter backoff. When they run out, the slot goes to `failed_samples` with
-  its error class. A failure is never dropped.
+  The meter counts each run by the larger of its run row and its outcome rows:
+  outcome rows miss an outcome that was never inserted, the run row misses a
+  run killed before it finished.
+- Spacing: at most one HTTP attempt a second (`MIN_SPACING_SECONDS`), a fifth
+  of TomTom's default Routing limit of 5 QPS. That is a ceiling for the whole
+  project only because `collector.yml` is the one workflow holding
+  `TOMTOM_API_KEY` and its concurrency group never runs two collectors at once;
+  `collector/tests/test_workflows.py` checks both.
+- Retries: timeouts, connection errors, 5xx, and a 429 whose Retry-After asks
+  for a minute or less, three attempts with full jitter backoff. When they run
+  out, the slot goes to `failed_samples` with its error class. A failure is
+  never dropped.
+- Quota: TomTom returns 429 for too many requests and for exhausted usage
+  limits alike, and documents no header or body that tells them apart
+  (docs.tomtom.com, read 2026-09-14). Any other 429 is a quota refusal: never
+  retried, recorded as `quota_exhausted`, and no call is made until 00:00 UTC,
+  when the first run makes one call to see whether it cleared. The run that
+  received it fails. Reading an unclear 429 as quota costs the rest of a UTC
+  day; reading it as QPS spends calls against an exhausted allowance.
+- TomTom's own count: the bucket is a governor that counts our calls, not a
+  meter of TomTom's. The headers of each run's first response and of every 403
+  and 429 go to `tomtom_responses` (0011), redacted, cookies not kept. If
+  TomTom ever reports its count or limit, it is there.
 - `length_m` from the response is the only distance anywhere in the system.
 - A response with route points, or over 4 KB gzipped, is recorded as a
   `geometry_leak` failure and fails the run.
