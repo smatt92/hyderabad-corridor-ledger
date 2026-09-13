@@ -51,10 +51,9 @@ logic cannot be attributed, the dataset it produced cannot be trusted either.
 
 - Supabase: project `hyderabad-corridor-ledger`, ref `duejdeswzjepliqfkjyf`,
   region `ap-south-1` (Mumbai), org `sutytlpyraimbvdqdicf`.
-- Vercel: not created or linked yet. When it is: project
-  `hyderabad-corridor-ledger`, not Git-connected, and `vercel.json` sets
-  `git.deploymentEnabled: false`. It hosts `web/` and `api/` as Vercel
-  Services (P-04) and nothing else.
+- Vercel: never created or linked, and nothing is deployed. `vercel.json` is
+  committed for P-04 with `git.deploymentEnabled: false` and `web/` and
+  `api/` as its only services.
 - GitHub: `smatt92/hyderabad-corridor-ledger`, public, with secret scanning
   and push protection on.
 
@@ -67,6 +66,7 @@ logic cannot be attributed, the dataset it produced cannot be trusted either.
 | `SUPABASE_URL` | yes | yes | no |
 | `SUPABASE_PUBLISHABLE_KEY` | no | yes | no |
 | `TOMTOM_TILE_KEY` (separate, domain-restricted) | no | yes, before P2 | no |
+| `HEAD_HASH_SMTP_*`, `HEAD_HASH_MAIL_FROM`, `HEAD_HASH_MAIL_TO` | yes | **never** | **never** |
 
 - The collector runs in GitHub Actions with the service key. Nothing else
   holds it: not a Vercel env var, not a client bundle, not a committed file.
@@ -123,6 +123,13 @@ chain.
   records each head hash and first break in `chain_verifications`, and
   returns them. `daily.yml` runs it nightly and copies the heads into the job
   summary, outside the database.
+- The same job mails both heads to a dedicated witness mailbox
+  (`collector/mail_heads.py`), because a head kept only inside the database
+  it audits proves nothing. The mailbox is write-only for this project and
+  nothing here reads it. The SMTP credential in GitHub should be able to
+  send to that mailbox but not log in to it: a credential that can read the
+  witness can also delete from it. The step runs even when the walk finds a
+  break, and fails loudly until the `HEAD_HASH_*` secrets are set.
 - Any change to a canonical function is a new format version.
 
 ## Storage budget (500 MB free tier)
@@ -219,6 +226,7 @@ retired) and `supersedes`.
 |---|---|
 | Slots missing from yesterday (IST) | `collector/gaps.py` in `daily.yml`; writes `gap_reports` |
 | Head hash and first break of both chains | `collector/chain.py` in `daily.yml` |
+| Chain heads copied outside the database | `collector/mail_heads.py` in `daily.yml` |
 | Database at or over 400 MB | `db-size.yml` |
 | A measured corridor's geometry changed | `immutability.py` in `tests.yml` and `corridors.yml` |
 | Scheduled workflows disabled after 60 idle days | `keepalive.yml` re-enables them through the API weekly |
@@ -356,8 +364,8 @@ Other definitions worth knowing before changing them:
 
 ## Read API and frontend (P-04)
 
-Vercel hosts the frontend (`web/`) and the read API (`api/`) and nothing
-else. The collector, chain verification, archive, metrics and exports run in
+Vercel is to host the frontend (`web/`) and the read API (`api/`) and
+nothing else. No Vercel project exists yet. The collector, chain verification, archive, metrics and exports run in
 GitHub Actions.
 
 ### Route construction: hard rule
