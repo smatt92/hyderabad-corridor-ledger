@@ -11,7 +11,7 @@ Pooling windows end on the last local day with a successful call:
 
 BTI, PTI and every p95 exist only as statistics of pooled calls
 (metrics.pooled): never computed from one day or one hour cell, published only
-at or above their floor, and always with a bootstrap interval. Pooled counts
+at or above their floor, as point values with no interval. Pooled counts
 are published beside them, so a withheld value says why.
 
 TTI appears against both free-flow bases wherever it appears. Quantities that
@@ -29,25 +29,20 @@ from metrics.params import BASES, Params
 MISSING = ["n_expected", "n_ok", "missing_rate", "low_confidence"]
 CENTRAL_QUANTILES = {"p25": 0.25, "p50": 0.5, "p75": 0.75}
 
-LEDGER_TRAVEL = [
-    "n_peak", "tt_mean_peak_s", "tt_p95_peak_s", "tt_p95_peak_ci_low", "tt_p95_peak_ci_high",
-    "bti_peak", "bti_peak_ci_low", "bti_peak_ci_high",
-]
-LEDGER_PTI = [f"pti_{b}_peak{s}" for b in BASES for s in ("", "_ci_low", "_ci_high")]
+LEDGER_TRAVEL = ["n_peak", "tt_mean_peak_s", "tt_p95_peak_s", "bti_peak"]
+LEDGER_PTI = [f"pti_{b}_peak" for b in BASES]
 STATS_COLUMNS = [
     "corridor_id", "window_start", "window_end", *MISSING, "length_meters", "ff_tomtom_s",
     "ff_p5_s", *LEDGER_TRAVEL, *LEDGER_PTI,
 ]
 DATASET_COLUMNS = [
     "id", "window_start", "window_end", "n_corridors", "n_expected", "n_ok", "missing_rate",
-    "low_confidence", "p95_min_samples", "central_min_samples", "bootstrap_resamples",
+    "low_confidence", "p95_min_samples", "central_min_samples",
 ]
 DAY_COLUMNS = ["corridor_id", "day", *MISSING, "tt_mean_s", "tti_tomtom", "tti_p5"]
 PROFILE_STATS = [
-    "n_tti_p5", "tt_mean_s", "tt_p50_s", "tt_p95_s", "tt_p95_ci_low", "tt_p95_ci_high", "bti",
-    "bti_ci_low", "bti_ci_high",
-    *[f"tti_{b}_{s}" for b in BASES
-      for s in ("p25", "p50", "p75", "p95", "p95_ci_low", "p95_ci_high")],
+    "n_tti_p5", "tt_mean_s", "tt_p50_s", "tt_p95_s", "bti",
+    *[f"tti_{b}_{s}" for b in BASES for s in ("p25", "p50", "p75", "p95")],
 ]
 PROFILE_COLUMNS = ["corridor_id", "hour", "window_start", "window_end", *MISSING, *PROFILE_STATS]
 HEATMAP_COLUMNS = [
@@ -60,8 +55,7 @@ NETWORK_COLUMNS = [
 ]
 PAIR_COLUMNS = [
     "pair_id", "hour", "window_start", "window_end", "primary_id", "alternate_id", "primary_n",
-    "alternate_n", "primary_tt_p95_s", "alternate_tt_p95_s", "advantage_p95_s",
-    "advantage_ci_low", "advantage_ci_high", "low_confidence",
+    "alternate_n", "primary_tt_p95_s", "alternate_tt_p95_s", "advantage_p95_s", "low_confidence",
 ]
 
 
@@ -129,12 +123,10 @@ def ledger_stats(calls: pd.DataFrame, params: Params = Params()) -> pd.DataFrame
     peak = calls[pooled.is_peak(calls["requested_at"], params)]
     rows = []
     for corridor_id, group in peak.groupby("corridor_id"):
-        s = pooled.travel(group["travel_time_s"], params, ("ledger", corridor_id))
+        s = pooled.travel(group["travel_time_s"], params)
         rows.append({
             "corridor_id": corridor_id, "n_peak": s["n"], "tt_mean_peak_s": s["mean"],
-            "tt_p95_peak_s": s["p95"], "tt_p95_peak_ci_low": s["p95_ci_low"],
-            "tt_p95_peak_ci_high": s["p95_ci_high"], "bti_peak": s["bti"],
-            "bti_peak_ci_low": s["bti_ci_low"], "bti_peak_ci_high": s["bti_ci_high"],
+            "tt_p95_peak_s": s["p95"], "bti_peak": s["bti"],
         })
     return pd.DataFrame(rows, columns=["corridor_id", *LEDGER_TRAVEL]).set_index("corridor_id")
 
@@ -150,8 +142,8 @@ def corridor_stats(
 
     length_meters is the median lengthInMeters that TomTom measured on successful
     calls: measured, never derived from coordinates. The ledger's BTI and PTI pool
-    every successful peak-hour call in the window; PTI divides that pooled p95, and
-    its interval, by each free-flow reference.
+    every successful peak-hour call in the window; PTI divides that pooled p95 by
+    each free-flow reference. Point values beside n_peak: no interval is published.
     """
     start, end = window
     ok = samples[samples["ok"]]
@@ -174,9 +166,7 @@ def corridor_stats(
     for col in LEDGER_TRAVEL[1:]:
         out[col] = out[col].astype(float)
     for basis, reference in (("tomtom", "ff_tomtom_s"), ("p5", "ff_p5_s")):
-        for suffix, source in (("", "tt_p95_peak_s"), ("_ci_low", "tt_p95_peak_ci_low"),
-                               ("_ci_high", "tt_p95_peak_ci_high")):
-            out[f"pti_{basis}_peak{suffix}"] = out[source] / out[reference].astype(float)
+        out[f"pti_{basis}_peak"] = out["tt_p95_peak_s"] / out[reference].astype(float)
     return out.reset_index().assign(window_start=start, window_end=end)[STATS_COLUMNS]
 
 
@@ -193,7 +183,6 @@ def dataset_stats(indexed: pd.DataFrame, window, params: Params = Params()) -> p
         "low_confidence": bool(np.isnan(rate) or rate > params.low_confidence_missing_rate),
         "p95_min_samples": params.p95_min_samples,
         "central_min_samples": params.central_min_samples,
-        "bootstrap_resamples": params.bootstrap_resamples,
     }])[DATASET_COLUMNS]
 
 
@@ -207,22 +196,17 @@ def metrics_day(indexed: pd.DataFrame, params: Params = Params()) -> pd.DataFram
 
 def hour_stats(corridor_id: str, hour: int, calls: pd.DataFrame, params: Params) -> dict:
     """One corridor-hour of the profile, pooled over its calls."""
-    travel = pooled.travel(calls["travel_time_s"], params, ("profile", corridor_id, hour))
+    travel = pooled.travel(calls["travel_time_s"], params)
     row = {
         "corridor_id": corridor_id, "hour": hour, "n_tti_p5": int(calls["tti_p5"].notna().sum()),
         "tt_mean_s": travel["mean"], "tt_p50_s": travel["p50"], "tt_p95_s": travel["p95"],
-        "tt_p95_ci_low": travel["p95_ci_low"], "tt_p95_ci_high": travel["p95_ci_high"],
-        "bti": travel["bti"], "bti_ci_low": travel["bti_ci_low"],
-        "bti_ci_high": travel["bti_ci_high"],
+        "bti": travel["bti"],
     }
     for basis in BASES:
         values = calls[f"tti_{basis}"]
         for name, q in CENTRAL_QUANTILES.items():
             row[f"tti_{basis}_{name}"] = pooled.quantile(values, q, params)
-        p95, low, high = pooled.tail(values, pooled.p95_rows, params,
-                                     ("profile", corridor_id, hour, basis))
-        row |= {f"tti_{basis}_p95": p95, f"tti_{basis}_p95_ci_low": low,
-                f"tti_{basis}_p95_ci_high": high}
+        row[f"tti_{basis}_p95"] = pooled.quantile(values, 0.95, params)
     return row
 
 
@@ -231,7 +215,7 @@ def profile_hourly(
 ) -> pd.DataFrame:
     """24-hour profile over the profile window: every successful call at each local
     hour, pooled. Mean, median and TTI quartiles at the central floor; p95 travel time,
-    BTI and TTI p95, each with its interval, at the p95 floor."""
+    BTI and TTI p95 at the p95 floor, each a point value beside its count."""
     start, end = window
     keys = ["corridor_id", "hour"]
     rows = [hour_stats(corridor_id, hour, calls, params)
@@ -316,8 +300,9 @@ def pair_advantage_hourly(
     params: Params = Params(),
 ) -> pd.DataFrame:
     """p95 travel time of the primary minus the declared alternate, per local hour.
-    Each side pools its calls at that hour over the profile window; the difference
-    carries an interval from independent resamples of the two sides.
+    Each side pools its calls at that hour over the profile window. The difference is
+    a point value, published only when both sides reach the p95 floor, beside both
+    counts; no interval is published (docs/ledger_intervals.md).
 
     Only pairs that declare an alternate appear. A pair with one corridor has
     nothing to compare against, and no second route is ever derived for it.
@@ -340,8 +325,8 @@ def pair_advantage_hourly(
         for hour in range(24):
             p = pooled.clean(calls.get((pair.primary_id, hour), []))
             a = pooled.clean(calls.get((pair.alternate_id, hour), []))
-            advantage, low, high = pooled.difference(p, a, pooled.p95_rows, params,
-                                                     ("pair", pair.pair_id, hour))
+            advantage = (pooled.quantile(p, 0.95, params)
+                         - pooled.quantile(a, 0.95, params))
             # no profile row for an hour means nothing measured: low confidence
             both = (bool(confident.get((pair.primary_id, hour), False))
                     and bool(confident.get((pair.alternate_id, hour), False)))
@@ -350,7 +335,7 @@ def pair_advantage_hourly(
                 "alternate_id": pair.alternate_id, "primary_n": len(p), "alternate_n": len(a),
                 "primary_tt_p95_s": pooled.quantile(p, 0.95, params),
                 "alternate_tt_p95_s": pooled.quantile(a, 0.95, params),
-                "advantage_p95_s": advantage, "advantage_ci_low": low, "advantage_ci_high": high,
+                "advantage_p95_s": advantage,
                 "low_confidence": not both,
             })
     return pd.DataFrame(rows).assign(window_start=start, window_end=end)[PAIR_COLUMNS]

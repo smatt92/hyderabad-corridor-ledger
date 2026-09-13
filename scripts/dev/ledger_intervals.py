@@ -15,7 +15,8 @@ that drift was large.
 Each replicate simulates one 120-day panel of three corridors with fixed profiles
 (scripts/dev/panel_model.py): c00 and c01 identical, a pair whose true advantage
 is zero, and c02 more congested. It computes every interval with the pipeline's
-own functions over the pipeline's windows, and compares it with the true value:
+resampling over the pipeline's windows (the call-level bootstrap with the keys the
+pipeline used before 0009 withdrew these intervals), and compares it with the true value:
 the same statistic of the stationary process, from one panel of TRUTH_DAYS days.
 Scenarios:
   independent calls    no shared shock, no drift: checks the harness itself
@@ -50,7 +51,6 @@ sys.path.insert(0, str(ROOT))
 from metrics import pooled  # noqa: E402
 from metrics.cells import local_day_hour  # noqa: E402
 from metrics.params import Params  # noqa: E402
-from metrics.readmodel import ledger_stats  # noqa: E402
 from scripts.dev.panel_model import scheduled_panel  # noqa: E402
 
 FIRST_DAY = pd.Timestamp("2026-01-01")
@@ -84,6 +84,18 @@ def record(statistic, corridor, hour, value, low, high, n) -> dict:
             "value": value, "ci_low": low, "ci_high": high, "n": n}
 
 
+def travel_intervals(values, params: Params, key) -> dict:
+    """pooled.travel with the percentile intervals the ledger published before 0009."""
+    v = pooled.clean(values)
+    out = pooled.travel(v, params) | dict.fromkeys(
+        ("p95_ci_low", "p95_ci_high", "bti_ci_low", "bti_ci_high"), np.nan)
+    if len(v) >= params.p95_min_samples:
+        p95_draws, bti_draws = pooled.draws(v, [pooled.p95_rows, pooled.bti_rows], params, key)
+        out["p95_ci_low"], out["p95_ci_high"] = pooled.interval(p95_draws, params)
+        out["bti_ci_low"], out["bti_ci_high"] = pooled.interval(bti_draws, params)
+    return out
+
+
 def free_flow_p5(calls: pd.DataFrame, params: Params) -> float:
     start, end = params.ff_p5_night_hours
     night = calls.loc[calls["hour"].between(start, end - 1), "travel_time_s"].to_numpy(float)
@@ -97,24 +109,26 @@ def intervals(ok: pd.DataFrame, params: Params) -> list[dict]:
     profile = ok[ok["day"] > end - pd.Timedelta(days=params.profile_window_days)]
     recent = ok[ok["day"] > end - pd.Timedelta(days=params.ff_p5_window_days)]
     out = []
-    for cid, row in ledger_stats(read, params).iterrows():
-        out.append(record("ledger p95 travel time", cid, None, row.tt_p95_peak_s,
-                          row.tt_p95_peak_ci_low, row.tt_p95_peak_ci_high, row.n_peak))
-        out.append(record("ledger BTI", cid, None, row.bti_peak, row.bti_peak_ci_low,
-                          row.bti_peak_ci_high, row.n_peak))
+    peak = read[pooled.is_peak(read["requested_at"], params)]
+    for cid, group in peak.groupby("corridor_id"):
+        s = travel_intervals(group["travel_time_s"], params, ("ledger", cid))
+        out.append(record("ledger p95 travel time", cid, None, s["p95"], s["p95_ci_low"],
+                          s["p95_ci_high"], s["n"]))
+        out.append(record("ledger BTI", cid, None, s["bti"], s["bti_ci_low"],
+                          s["bti_ci_high"], s["n"]))
         # corridor_stats divides the p95 and its interval by each free-flow reference
         references = {"tomtom": float(read.loc[read["corridor_id"] == cid,
                                                "no_traffic_travel_time_s"].median()),
                       "p5": free_flow_p5(recent[recent["corridor_id"] == cid], params)}
         for basis, reference in references.items():
             out.append(record(f"ledger PTI ({basis})", cid, None,
-                              row.tt_p95_peak_s / reference, row.tt_p95_peak_ci_low / reference,
-                              row.tt_p95_peak_ci_high / reference, row.n_peak))
+                              s["p95"] / reference, s["p95_ci_low"] / reference,
+                              s["p95_ci_high"] / reference, s["n"]))
     for hour in HOURS:
         calls = {cid: g["travel_time_s"].to_numpy(float)
                  for cid, g in profile[profile["hour"] == hour].groupby("corridor_id")}
         for cid, values in calls.items():
-            s = pooled.travel(values, params, ("profile", cid, hour))
+            s = travel_intervals(values, params, ("profile", cid, hour))
             out.append(record("profile p95 travel time", cid, hour, s["p95"], s["p95_ci_low"],
                               s["p95_ci_high"], s["n"]))
             out.append(record("profile BTI", cid, hour, s["bti"], s["bti_ci_low"],

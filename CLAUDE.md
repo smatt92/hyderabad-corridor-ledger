@@ -349,12 +349,17 @@ densities and requires no effect.
 - Percentiles are empirical, linear between order statistics. Do not use
   Harrell-Davis: at p95 its weights concentrate on the top order statistics,
   so it inherits the sparsity it was meant to fix and overshoots.
-- Every published p95, and every value built on one, carries a percentile
-  bootstrap interval from 2,000 resamples, seeded from the statistic's key so
-  it reproduces. The ledger shows the point value; the expanded row shows
-  "0.42 [0.31, 0.58]". The intervention audit is the exception: its effect
-  compares corridors across weeks, where resampling calls understates the
-  spread, so it publishes a placebo rank and no interval.
+- No interval is published for any p95-derived value: not the ledger, not the
+  profile, not the route comparison, not the audit. Every interval was a
+  percentile bootstrap that resampled calls, as if calls from the same day and
+  week were independent. In simulation the ledger's p95 and PTI intervals
+  covered their true value in 68-84% of panels at the model's default
+  day-to-day and week-to-week correlation and 41-58% with stronger weekly
+  drift, and two identical corridors showed a pair "lead" in 10-20% of hours
+  (`docs/ledger_intervals.md`). Each value is published beside its pooled count
+  and window instead (migration 0009). Do not reintroduce an interval, or gate
+  one, without a calibration run on measured Hyderabad correlation that holds
+  coverage.
 - Any view showing a p95-derived metric states its pooling window in visible
   text: the dates, what was pooled, and the count.
 - Tier A pooling yields ~360 calls per corridor-hour at 90 days. Tiers B and C
@@ -474,7 +479,7 @@ Pairs sharing endpoints is enforced by `collector/config.py` and the
 - Every response, errors included, carries `as_of` and `missingness_rate`.
 - Tail statistics (p95, BTI, PTI) come only from the pooled tables:
   `corridor_stats` (the ledger), `profile_hourly`, `pair_advantage_hourly`
-  and `intervention_audit`, each with its window, count and interval. Hourly
+  and `intervention_audit`, each with its window and count. Hourly
   and daily series never carry them. A payload that includes one also
   carries `floors` from `dataset_stats`.
 - Data responses are `Cache-Control: public, max-age=0, s-maxage=3600,
@@ -515,8 +520,8 @@ Pairs sharing endpoints is enforced by `collector/config.py` and the
   basis it shows. Network pulse and the wall's network state use travel time
   against each corridor's own normal, which needs no basis.
 - A p95-derived number appears only as the API publishes it: the point value
-  in compact views, its interval in expanded ones, and its pooling window
-  stated in visible text. Below its floor it is an em dash with the
+  beside its pooled count, with its pooling window stated in visible text. No
+  interval, whisker or "lead" is drawn for it. Below its floor it is an em dash with the
   insufficient-samples state and the count, never a number.
 - Staleness and low confidence are rendered, never hidden. Metrics older than
   30 hours show as STALE, low-confidence cells are hatched and dimmed, and an

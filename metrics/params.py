@@ -7,7 +7,7 @@ recomputes them from raw under the new version.
 
 from dataclasses import dataclass
 
-METHOD_VERSION = "p02.7"
+METHOD_VERSION = "p02.8"
 LOCAL_TZ = "Asia/Kolkata"
 BASES = ("tomtom", "p5")
 
@@ -28,6 +28,9 @@ class Params:
     # published only at or above their floor. Percentiles are empirical.
     p95_min_samples: int = 200
     central_min_samples: int = 30
+    # No interval is published anywhere (docs/ledger_intervals.md, docs/audit_power.md).
+    # The bootstrap settings serve the calibration scripts; bootstrap_alpha is also the
+    # audit's placebo test level.
     bootstrap_resamples: int = 2000
     bootstrap_alpha: float = 0.05
     bootstrap_seed: int = 20260913

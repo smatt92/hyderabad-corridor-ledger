@@ -7,7 +7,7 @@ from metrics.params import Params
 from tests.helpers import local
 
 ONE_TO_200 = np.arange(1, 201, dtype=float)
-TAIL = ("p95", "p95_ci_low", "p95_ci_high", "bti", "bti_ci_low", "bti_ci_high")
+TAIL = ("p95", "bti")
 
 
 def test_floors_are_by_quantile():
@@ -26,27 +26,28 @@ def test_missing_values_never_count_toward_a_floor():
 
 
 def test_travel_statistics_by_hand():
-    s = pooled.travel(ONE_TO_200, Params(), ("hand",))
+    s = pooled.travel(ONE_TO_200, Params())
     assert s["n"] == 200
     assert (s["mean"], s["p50"], s["p95"]) == pytest.approx((100.5, 100.5, 190.05))
     assert s["bti"] == pytest.approx((190.05 - 100.5) / 100.5)
-    assert s["p95_ci_low"] <= s["p95"] <= s["p95_ci_high"]
-    assert s["bti_ci_low"] <= s["bti"] <= s["bti_ci_high"]
+    # point values only: no interval is published (docs/ledger_intervals.md)
+    assert set(s) == {"n", "mean", "p50", "p95", "bti"}
 
 
 def test_below_the_p95_floor_only_central_statistics_are_published():
-    s = pooled.travel(ONE_TO_200[:199], Params(), ("thin",))
+    s = pooled.travel(ONE_TO_200[:199], Params())
     assert s["n"] == 199 and s["mean"] == pytest.approx(100.0)
     assert all(np.isnan(s[k]) for k in TAIL)
 
 
-def test_bootstrap_is_reproducible_keyed_and_full_size():
+def test_calibration_bootstrap_is_reproducible_keyed_and_full_size():
+    # used only by scripts/dev to reproduce the evidence for withdrawing intervals
     values = np.random.default_rng(1).lognormal(6.8, 0.3, 400)
-    first = pooled.tail(values, pooled.bti_rows, Params(), ("x", 1))
-    assert first == pooled.tail(values, pooled.bti_rows, Params(), ("x", 1))
-    assert first[1:] != pooled.tail(values, pooled.bti_rows, Params(), ("x", 2))[1:]
-    (sample,) = pooled.draws(values, [pooled.p95_rows], Params(), ("x",))
-    assert len(sample) == 2000
+    (first,) = pooled.draws(values, [pooled.bti_rows], Params(), ("x", 1))
+    (again,) = pooled.draws(values, [pooled.bti_rows], Params(), ("x", 1))
+    (other,) = pooled.draws(values, [pooled.bti_rows], Params(), ("x", 2))
+    assert np.array_equal(first, again) and not np.array_equal(first, other)
+    assert len(first) == 2000
 
 
 def test_pooled_bti_does_not_depend_on_sample_count():

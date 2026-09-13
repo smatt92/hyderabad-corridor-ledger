@@ -71,8 +71,9 @@ def test_compute_all_end_to_end_invariants():
 
     ledger = tables["corridor_stats"].set_index("corridor_id")
     assert ledger.loc["a", "n_peak"] == 35 * 8  # 07:00-10:00 and 17:00-20:00, every day
-    assert ledger.loc["a", "bti_peak_ci_low"] <= ledger.loc["a", "bti_peak"] \
-        <= ledger.loc["a", "bti_peak_ci_high"]
+    assert ledger.loc["a", "bti_peak"] > 0
+    assert not [c for t in tables.values() for c in t.columns if "_ci_" in c
+                and t is not tables["recovery_cox"] and t is not tables["recovery_km"]]
 
 
 def test_compute_all_refuses_empty_input():

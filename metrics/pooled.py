@@ -17,10 +17,13 @@ Percentiles are empirical, linear between order statistics (numpy's default).
 Harrell-Davis is deliberately not used: at p95 its weights concentrate on the
 top order statistics, so it inherits the sparsity it was meant to fix.
 
-Every published tail statistic carries a percentile bootstrap interval from
-bootstrap_resamples resamples of the pooled calls. The generator is seeded from
-the parameters and the statistic's key, so the same calls always give the
-same interval.
+No interval is published. A percentile bootstrap that resamples calls treats
+calls from the same day and week as independent, and traffic is not: in
+simulation (docs/ledger_intervals.md) the ledger's p95 interval covered its true
+value in 68-84% of panels at ordinary day-to-day and week-to-week variation, and
+41-58% with stronger weekly drift. Every tail statistic is published as a point
+value beside its pooled count. draws, interval and difference remain only for the
+calibration scripts in scripts/dev and for reproducing that evidence.
 """
 
 import zlib
@@ -99,29 +102,16 @@ def interval(sample: np.ndarray, params: Params) -> tuple[float, float]:
     return float(low), float(high)
 
 
-def tail(values, statistic: Statistic, params: Params, key) -> tuple[float, float, float]:
-    """(value, ci_low, ci_high) of a tail statistic, all NaN below the p95 floor."""
-    v = clean(values)
-    if len(v) < params.p95_min_samples:
-        return NAN, NAN, NAN
-    (sample,) = draws(v, [statistic], params, key)
-    return float(statistic(v[np.newaxis, :])[0]), *interval(sample, params)
-
-
-def travel(values, params: Params, key) -> dict:
+def travel(values, params: Params) -> dict:
     """Pooled travel-time statistics. n always; mean and median at the central floor;
-    p95 and BTI, each with its interval from the same resamples, at the p95 floor."""
+    p95 and BTI at the p95 floor. Point values: no interval is published."""
     v = clean(values)
-    out = {"n": len(v), "mean": mean(v, params), "p50": quantile(v, 0.5, params)}
-    out |= dict.fromkeys(("p95", "p95_ci_low", "p95_ci_high", "bti", "bti_ci_low", "bti_ci_high"),
-                         NAN)
+    out = {"n": len(v), "mean": mean(v, params), "p50": quantile(v, 0.5, params),
+           "p95": NAN, "bti": NAN}
     if len(v) >= params.p95_min_samples:
-        p95_draws, bti_draws = draws(v, [p95_rows, bti_rows], params, key)
         row = v[np.newaxis, :]
         out["p95"] = float(p95_rows(row)[0])
-        out["p95_ci_low"], out["p95_ci_high"] = interval(p95_draws, params)
         out["bti"] = float(bti_rows(row)[0])
-        out["bti_ci_low"], out["bti_ci_high"] = interval(bti_draws, params)
     return out
 
 

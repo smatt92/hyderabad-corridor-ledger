@@ -218,24 +218,24 @@ def test_pair_with_declared_alternate(client):
     assert body["alternate"]["id"] == "miyapur-hitec-alt"
     assert len(body["primary"]["profile"]["tt_p95_s"]) == 24
     assert body["advantage"]["advantage_p95_s"][8] == 60.0
-    assert body["advantage"]["advantage_ci_low"][8] == 20.0
+    # interval columns still in a stored row are never served
+    assert not {"advantage_ci_low", "advantage_ci_high"} & set(body["advantage"])
     assert body["window"] == {"start": "2026-05-16", "end": "2026-09-12"}
-    assert body["primary"]["profile"]["bti_ci_high"][8] == 0.46
+    assert not [k for k in body["primary"]["profile"] if "_ci_" in k]
     assert body["primary"]["origin"] == {"name": "Miyapur", "lat": 17.497, "lon": 78.36}
 
 
-def test_ledger_serves_pooled_peak_hours_with_intervals_and_floors(client):
+def test_ledger_serves_pooled_peak_hours_as_point_values_with_counts(client):
     body = client.get("/api/corridors").json()
-    assert body["floors"] == {"p95_min_samples": 200, "central_min_samples": 30,
-                              "bootstrap_resamples": 2000}
+    assert body["floors"] == {"p95_min_samples": 200, "central_min_samples": 30}
     by_id = {c["id"]: c for c in body["corridors"]}
     ledger = by_id["miyapur-hitec"]["ledger"]
     assert ledger["window"] == {"start": "2026-06-15", "end": "2026-09-12"}
     assert ledger["n"] == 620 and ledger["hours"].startswith("06:30-10:30")
-    assert ledger["bti"] == {"value": 0.42, "ci_low": 0.31, "ci_high": 0.58}
+    assert (ledger["bti"], ledger["tt_p95_s"], ledger["pti_p5"]) == (0.42, 2130.0, 2.03)
     thin = by_id["miyapur-hitec-alt"]["ledger"]
     assert thin["n"] == 180  # the count that fell short of the floor
-    assert thin["bti"] == {"value": None, "ci_low": None, "ci_high": None}
+    assert thin["bti"] is None
 
 
 def test_series_never_carry_cell_level_tail_statistics(client):
@@ -249,7 +249,8 @@ def test_profile_states_its_own_pooling_window(client):
     body = client.get("/api/corridors/miyapur-hitec/profile").json()
     assert body["window"] == {"start": "2026-05-16", "end": "2026-09-12"}
     assert "each local hour" in body["pooling"]
-    assert body["profile"]["bti_ci_low"][8] == 0.3
+    assert body["profile"]["bti"][8] == 0.38
+    assert not [k for k in body["profile"] if "_ci_" in k]
     assert body["floors"]["p95_min_samples"] == 200
 
 
@@ -281,7 +282,7 @@ def test_audit_publishes_donors_placebos_blocks_and_the_cross_check(client):
     assert donors["kukatpally-madhapur"]["short_pre_blocks"] == 0
     assert [v["variant"] for v in body["sensitivity"]] == ["base", "relaxed_one_block"]
     assert body["sensitivity"][1]["n_fit_blocks"] == 5
-    assert body["floors"]["bootstrap_resamples"] == 2000
+    assert "bootstrap_resamples" not in body["floors"]
 
 
 def test_unknown_pair_and_bad_hour(client):

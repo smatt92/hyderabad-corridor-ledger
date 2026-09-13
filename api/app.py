@@ -38,19 +38,17 @@ DAILY_COLUMNS = ["day", "n_expected", "n_ok", "missing_rate", "low_confidence", 
                  "tti_tomtom", "tti_p5"]
 PROFILE_COLUMNS = [
     "hour", "n_expected", "n_ok", "missing_rate", "low_confidence", "n_tti_p5", "tt_mean_s",
-    "tt_p50_s", "tt_p95_s", "tt_p95_ci_low", "tt_p95_ci_high", "bti", "bti_ci_low", "bti_ci_high",
-    *[f"tti_{b}_{s}" for b in BASES
-      for s in ("p25", "p50", "p75", "p95", "p95_ci_low", "p95_ci_high")],
+    "tt_p50_s", "tt_p95_s", "bti",
+    *[f"tti_{b}_{s}" for b in BASES for s in ("p25", "p50", "p75", "p95")],
 ]
 COMPARE_PROFILE_COLUMNS = [
-    "hour", "n_ok", "tt_p50_s", "tt_p95_s", "tt_p95_ci_low", "tt_p95_ci_high", "bti",
-    "bti_ci_low", "bti_ci_high", "missing_rate", "low_confidence",
+    "hour", "n_ok", "tt_p50_s", "tt_p95_s", "bti", "missing_rate", "low_confidence",
 ]
 ADVANTAGE_COLUMNS = [
     "hour", "primary_n", "alternate_n", "primary_tt_p95_s", "alternate_tt_p95_s",
-    "advantage_p95_s", "advantage_ci_low", "advantage_ci_high", "low_confidence",
+    "advantage_p95_s", "low_confidence",
 ]
-FLOOR_FIELDS = ("p95_min_samples", "central_min_samples", "bootstrap_resamples")
+FLOOR_FIELDS = ("p95_min_samples", "central_min_samples")
 PEAK_HOURS = "06:30-10:30, 16:30-21:00 IST"
 PROFILE_POOLING = "all successful calls at each local hour across the window"
 AUDIT_FIELDS = [
@@ -140,14 +138,9 @@ def dataset(store: Store) -> Row | None:
 
 
 def floors(ds: Row | None) -> dict | None:
-    """The floors and resample count the published numbers were held to, as recorded
-    by the pipeline that computed them."""
+    """The floors the published numbers were held to, as recorded by the pipeline that
+    computed them."""
     return ds and {k: ds.get(k) for k in FLOOR_FIELDS}
-
-
-def interval(row: Row, value: str, prefix: str) -> dict:
-    return {"value": row.get(value), "ci_low": row.get(f"{prefix}_ci_low"),
-            "ci_high": row.get(f"{prefix}_ci_high")}
 
 
 def corridor_or_404(store: Store, corridor_id: str) -> Row:
@@ -169,10 +162,8 @@ def corridor_view(row: Row, stats: Row | None) -> dict:
     ledger = stats and {
         "window": {"start": stats["window_start"], "end": stats["window_end"]},
         "hours": PEAK_HOURS, "n": stats.get("n_peak"), "tt_mean_s": stats.get("tt_mean_peak_s"),
-        "tt_p95_s": interval(stats, "tt_p95_peak_s", "tt_p95_peak"),
-        "bti": interval(stats, "bti_peak", "bti_peak"),
-        "pti_tomtom": interval(stats, "pti_tomtom_peak", "pti_tomtom_peak"),
-        "pti_p5": interval(stats, "pti_p5_peak", "pti_p5_peak"),
+        "tt_p95_s": stats.get("tt_p95_peak_s"), "bti": stats.get("bti_peak"),
+        "pti_tomtom": stats.get("pti_tomtom_peak"), "pti_p5": stats.get("pti_p5_peak"),
     }
     return {
         "id": row["id"], "code": row.get("code"), "name": row["name"],

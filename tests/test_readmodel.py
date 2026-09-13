@@ -118,12 +118,10 @@ def test_ledger_pools_peak_hour_calls_into_one_distribution():
     assert a.n_peak == 3                                   # 02:00 is not a peak hour
     assert a.tt_mean_peak_s == pytest.approx(620.0)
     assert a.tt_p95_peak_s == pytest.approx(638.0)         # position 1.9: 620 + 0.9 * 20
-    assert a.tt_p95_peak_ci_low <= a.tt_p95_peak_s <= a.tt_p95_peak_ci_high
     assert a.bti_peak == pytest.approx(18 / 620)
     assert a.pti_tomtom_peak == pytest.approx(638 / 500)
     assert a.pti_p5_peak == pytest.approx(638 / 310)
-    assert (a.pti_tomtom_peak_ci_low, a.pti_tomtom_peak_ci_high) == pytest.approx(
-        (a.tt_p95_peak_ci_low / 500, a.tt_p95_peak_ci_high / 500))
+    assert not [c for c in out.columns if "_ci_" in c]  # point values beside n_peak
     assert out.loc["b", ["tt_p95_peak_s", "bti_peak"]].isna().all()
 
 
@@ -134,8 +132,8 @@ def test_dataset_stats_records_the_floors():
     assert (row["n_corridors"], row["n_expected"], row["n_ok"]) == (2, 20, 17)
     assert row["missing_rate"] == pytest.approx(0.15)
     assert row["low_confidence"] is False  # exactly 15% is not above 15%
-    assert (row["p95_min_samples"], row["central_min_samples"], row["bootstrap_resamples"]) == (
-        200, 30, 2000)
+    assert (row["p95_min_samples"], row["central_min_samples"]) == (200, 30)
+    assert "bootstrap_resamples" not in row
 
 
 def test_metrics_day_means_over_hours_with_a_value():
@@ -167,8 +165,7 @@ def test_profile_hourly_pools_every_call_at_the_hour():
     # n = 5, linear interpolation at position (n - 1) * q: 1, 2, 3, 3.8
     assert (h8.tt_p50_s, h8.tt_p95_s, h8.tt_mean_s) == pytest.approx((800, 980, 800))
     assert h8.bti == pytest.approx(0.225)                     # (980 - 800) / 800
-    assert h8.tt_p95_ci_low <= h8.tt_p95_s <= h8.tt_p95_ci_high
-    assert h8.bti_ci_low <= h8.bti <= h8.bti_ci_high
+    assert not [c for c in out.columns if "_ci_" in c]
     assert [h8.tti_tomtom_p25, h8.tti_tomtom_p50, h8.tti_tomtom_p75, h8.tti_tomtom_p95] == \
         pytest.approx([1.2, 1.4, 1.6, 1.76])
     assert h8.tti_p5_p95 == pytest.approx(2.76)
@@ -251,7 +248,7 @@ def test_network_hourly_against_same_hour_same_weekday_baseline():
     assert worse["state"].iloc[0] == "worse"            # +20%
 
 
-def test_pair_advantage_pools_each_side_with_an_interval():
+def test_pair_advantage_is_a_point_difference_beside_both_counts():
     corridors = pd.DataFrame({
         "corridor_id": ["a", "b", "c"], "pair_id": ["PR-01", "PR-01", "PR-02"],
         "role": ["primary", "alternate", "primary"],
@@ -277,7 +274,7 @@ def test_pair_advantage_pools_each_side_with_an_interval():
     assert (h8.primary_tt_p95_s, h8.alternate_tt_p95_s, h8.advantage_p95_s) == pytest.approx(
         (1380, 1180, 200))
     assert (h8.primary_n, h8.alternate_n) == (5, 5)
-    assert h8.advantage_ci_low <= 200 <= h8.advantage_ci_high
+    assert not [c for c in out.columns if "_ci_" in c]
     assert not h8.low_confidence
     h9 = out.loc[9]
     assert (h9.primary_n, h9.alternate_n) == (2, 0)
