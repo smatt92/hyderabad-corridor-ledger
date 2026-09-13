@@ -46,7 +46,7 @@ export function StatList({ items }: { items: [string, ComponentChildren][] }) {
 export function Select(props: {
   label: string;
   value: string;
-  options: { value: string; label: string }[];
+  options: { value: string; label: string; disabled?: boolean }[];
   onChange: (value: string) => void;
 }) {
   return (
@@ -58,7 +58,7 @@ export function Select(props: {
         style={{ fontFamily: MONO, fontSize: "12px", padding: "6px 8px", border: "1px solid #1a1917", background: "#fbfaf7", maxWidth: "340px" }}
       >
         {props.options.map((o) => (
-          <option key={o.value} value={o.value}>
+          <option key={o.value} value={o.value} disabled={o.disabled}>
             {o.label}
           </option>
         ))}

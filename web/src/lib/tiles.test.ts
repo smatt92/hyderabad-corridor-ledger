@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HYDERABAD, frameFor, project, tilesFor, toFrame, trafficTileUrl } from "./tiles";
+import { BASEMAPS, HYDERABAD, frameFor, project, tilesFor, tilesPerView, toFrame, trafficTileUrl } from "./tiles";
 
 describe("project", () => {
   it("matches Web Mercator reference points", () => {
@@ -51,6 +51,34 @@ describe("tile urls", () => {
   it("uses the relative0 flow style and escapes the key", () => {
     expect(trafficTileUrl({ x: 1469, y: 928, left: 0, top: 0 }, "a&b")).toBe(
       "https://api.tomtom.com/traffic/map/4/tile/flow/relative0/11/1469/928.png?tileSize=512&key=a%26b",
+    );
+  });
+});
+
+describe("basemap modes", () => {
+  const frame = frameFor(HYDERABAD);
+
+  it("draws 256 px satellite tiles at zoom 12 on the frame of 512 px tiles at zoom 11", () => {
+    expect(BASEMAPS.satellite.tileSize * 2 ** BASEMAPS.satellite.zoom).toBe(512 * 2 ** 11);
+    const tiles = tilesFor(frame, 12, 256);
+    expect(Math.min(...tiles.map((t) => t.left))).toBeLessThanOrEqual(0);
+    expect(Math.min(...tiles.map((t) => t.top))).toBeLessThanOrEqual(0);
+    expect(Math.max(...tiles.map((t) => t.left + 256))).toBeGreaterThanOrEqual(frame.width);
+    expect(Math.max(...tiles.map((t) => t.top + 256))).toBeGreaterThanOrEqual(frame.height);
+  });
+
+  it("counts the TomTom tiles each mode requests per view, the figures the tile budget is worked from", () => {
+    expect(tilesPerView("minimal")).toEqual({ basemap: 12, traffic: 12 });
+    expect(tilesPerView("street")).toEqual({ basemap: 12, traffic: 12 });
+    expect(tilesPerView("satellite")).toEqual({ basemap: 42, traffic: 0 });
+  });
+
+  it("minimal and street request the very same tiles, and satellite its own", () => {
+    const tile = tilesFor(frame)[0]!;
+    expect(BASEMAPS.minimal.url(tile, "k")).toBe(BASEMAPS.street.url(tile, "k"));
+    expect(BASEMAPS.minimal.filter).toBeDefined();
+    expect(BASEMAPS.satellite.url({ x: 2938, y: 1846, left: 0, top: 0 }, "a&b")).toBe(
+      "https://api.tomtom.com/map/1/tile/sat/main/12/2938/1846.jpg?key=a%26b",
     );
   });
 });

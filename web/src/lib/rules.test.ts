@@ -64,7 +64,17 @@ describe("map tiles", () => {
   it("every map tile hides its whole layer when it fails to load", () => {
     const imgs = [...code(join(SRC, "analyst/MapView.tsx")).matchAll(/<img\b[^>]*>/g)].map((m) => m[0]);
     expect(imgs).toHaveLength(2);
-    for (const img of imgs) expect(img).toMatch(/onError=\{fail\("(basemap|traffic)"\)\}/);
+    for (const img of imgs) expect(img).toMatch(/onError=\{fail\((mode|"traffic")\)\}/);
+  });
+
+  it("no Google map tile is requested anywhere", () => {
+    for (const file of sourceFiles(SRC)) {
+      expect(code(file), relative(ROOT, file)).not.toMatch(/(mt\d*|khms\d*)\.google\.|maps\.googleapis\.com|tile\.googleapis\.com|google\.[a-z.]+\/(vt|kh)\//);
+    }
+  });
+
+  it("the map decides what it may draw over each basemap through drawnCorridors", () => {
+    expect(code(join(SRC, "analyst/MapView.tsx"))).toMatch(/drawnCorridors\(mode, /);
   });
 
   it("traffic tiles refresh only while the tab is visible", () => {

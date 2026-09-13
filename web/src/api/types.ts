@@ -64,6 +64,17 @@ export interface CorridorLedger {
   pti_p5: Maybe<number>;
 }
 
+/**
+ * The road TomTom routes through a corridor's declared points, fetched once when the
+ * corridor was verified and simplified for drawing. Absent until then.
+ */
+export interface CorridorPath {
+  /** [lat, lon] pairs, in the direction of travel. */
+  points: [number, number][];
+  fetched_at: string;
+  source: string;
+}
+
 export interface CorridorView {
   id: string;
   code: Maybe<string>;
@@ -78,6 +89,8 @@ export interface CorridorView {
   missingness_rate: Maybe<number>;
   low_confidence: Maybe<boolean>;
   ledger: Maybe<CorridorLedger>;
+  /** A stored road, or null: the map then draws a straight connector and labels it one. */
+  path?: Maybe<CorridorPath>;
 }
 
 export interface Corridor extends CorridorView {
