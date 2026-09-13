@@ -6,9 +6,9 @@ import { BlockChart } from "../charts/BlockChart";
 import { PlaceboRanks } from "../charts/PlaceboRanks";
 import { SlopeChart } from "../charts/SlopeChart";
 import {
-  type BlockRow, auditPeriods, blockRows, confidencePercent, donorStatusText, donorWeightText, estimatorStatement, fmtRate,
-  fmtSettling, incompletePreComparison, orderDonors, placeboFloor, placeboResolutionText, rankRatios, selectionBiasText,
-  sensitivityStatement, sensitivityStatusText, settlingWindow, statusNotice, variantText,
+  type BlockRow, NO_SEQUENTIAL_TEST, auditPeriods, blockRows, confidencePercent, donorStatusText, donorWeightText, estimatorStatement,
+  fmtRate, fmtSettling, incompletePreComparison, orderDonors, placeboFloor, placeboResolutionText, postPeriodOpen, rankRatios,
+  selectionBiasText, sensitivityStatement, sensitivityStatusText, settlingWindow, statusNotice, variantText,
 } from "../lib/audit";
 import { CARD, FAINT, INK, MID, MONO, RULE, RUST, SOFT, TEXT } from "../lib/color";
 import { meetsFloor, resolveFloors } from "../lib/floors";
@@ -72,10 +72,11 @@ function Statement({ alert, headline, detail }: { alert: boolean; headline: stri
   );
 }
 
-function BlockTable({ rows, floor }: { rows: BlockRow[]; floor: number }) {
+/** Until the post period closes, the gap column says in its header that a gap is descriptive, not a test. */
+function BlockTable({ rows, floor, postOpen }: { rows: BlockRow[]; floor: number; postOpen: boolean }) {
   return (
     <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "820px" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "680px" }}>
         <thead>
           <tr>
             <th style={th}>period</th>
@@ -85,15 +86,13 @@ function BlockTable({ rows, floor }: { rows: BlockRow[]; floor: number }) {
             <th style={thRight}>treated calls</th>
             <th style={thRight}>treated BTI</th>
             <th style={thRight}>synthetic BTI</th>
-            <th style={thRight}>gap</th>
-            <th style={thRight}>running mean</th>
-            <th style={thRight}>confidence sequence</th>
+            <th style={thRight}>{postOpen ? "gap · descriptive, not a test" : "gap"}</th>
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={10} style={cell({ color: MID })}>No blocks were published.</td>
+              <td colSpan={8} style={cell({ color: MID })}>No blocks were published.</td>
             </tr>
           ) : null}
           {rows.map((r, i) => (
@@ -106,8 +105,6 @@ function BlockTable({ rows, floor }: { rows: BlockRow[]; floor: number }) {
               <td style={num()}>{fmtNum(r.treated)}</td>
               <td style={num()}>{fmtNum(r.synthetic)}</td>
               <td style={num()}>{fmtSigned(r.gap)}</td>
-              <td style={num()}>{fmtSigned(r.runningMean)}</td>
-              <td style={num()}>{r.csLow === null && r.csHigh === null ? EM_DASH : `[${fmtSigned(r.csLow)}, ${fmtSigned(r.csHigh)}]`}</td>
             </tr>
           ))}
         </tbody>
@@ -225,9 +222,9 @@ function Method({ a, floor }: { a: AuditRow; floor: number }) {
       donor as the treated corridor. The treated corridor’s ratio of post-period to pre-period RMSPE is ranked among the placebos’, ties counting against it, and the
       permutation p-value is (1 + placebos at least as large) / (1 + placebos), so it can never fall below 1 / (1 + placebos). The equal-weight mean of the same donors over
       the same periods is a cross-check with its own interval. The audit is rerun with stricter and looser completeness thresholds for donor pre blocks to show how far the
-      estimate depends on that choice. Until the post period closes the headline stays unpublished, and an always-valid confidence sequence over the completed post blocks is
-      published instead; it may be read after every block without inflating its error rate. This is not a causal claim beyond the assumption that, without the change, the
-      treated corridor’s BTI would have followed its synthetic control.
+      estimate depends on that choice. {NO_SEQUENTIAL_TEST} Until the post period closes the headline stays unpublished, and a post block’s gap between treated and
+      synthetic BTI is descriptive, not a test. This is not a causal claim beyond the assumption that, without the change, the treated corridor’s BTI would have followed its
+      synthetic control.
     </p>
   );
 }
@@ -277,6 +274,7 @@ export function Audit({ interventions, corridors }: { interventions: Interventio
   const conf = confidencePercent(audit.alpha);
   const rows = { pre: blockRows(data.blocks?.pre, "pre"), post: blockRows(data.blocks?.post, "post") };
   const allRows = [...rows.pre, ...rows.post];
+  const postOpen = postPeriodOpen(audit);
   const donors = orderDonors(data.donors);
   const placebos = data.placebos ?? [];
   const sensitivityRows = data.sensitivity ?? [];
@@ -288,7 +286,10 @@ export function Audit({ interventions, corridors }: { interventions: Interventio
   const blocksSection = (
     <Section
       title="Blocks"
-      sub={`Blocks of ${audit.block_days} days. Each block’s BTI is pooled over that block’s peak-hour calls and used only from ${q} calls. The change and the excluded settling period are drawn at their dates.`}
+      sub={
+        `Blocks of ${audit.block_days} days. Each block’s BTI is pooled over that block’s peak-hour calls and used only from ${q} calls. The change and the excluded settling period are drawn at their dates.` +
+        (postOpen ? " The post period has not closed, so a post block’s gap between treated and synthetic BTI is descriptive, not a test." : "")
+      }
     >
       {allRows.some((r) => r.treated !== null || r.synthetic !== null) ? (
         <BlockChart
@@ -307,7 +308,7 @@ export function Audit({ interventions, corridors }: { interventions: Interventio
         <div style={{ fontSize: "12.5px", color: MID }}>No block BTI has been published yet.</div>
       )}
       <div style={{ marginTop: "16px" }}>
-        <BlockTable rows={allRows} floor={q} />
+        <BlockTable rows={allRows} floor={q} postOpen={postOpen} />
       </div>
     </Section>
   );
@@ -361,8 +362,8 @@ export function Audit({ interventions, corridors }: { interventions: Interventio
             <StatList
               items={[
                 ["completed post blocks", `${audit.post_blocks_complete} of ${audit.post_blocks}`],
-                ["blocks in the sequence", count(audit.cs_blocks)],
-                [`always-valid ${conf}% confidence sequence`, `${fmtSignedInterval(audit.cs_mean, audit.cs_low, audit.cs_high)} BTI`],
+                ["sequential test", "none · the audit reports once, after the post period closes"],
+                ["post-block gaps", "descriptive, not a test"],
                 ["headline effect", `${EM_DASH} waits for the post period to close on ${fmtDay(audit.post_end)}`],
               ]}
             />

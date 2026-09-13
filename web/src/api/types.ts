@@ -346,11 +346,6 @@ export interface Audit {
   /** effect - equal_effect. */
   estimator_gap: Maybe<number>;
   estimators_disagree: Maybe<boolean>;
-  /** Always-valid confidence sequence over completed post blocks, published while status is "post_partial". */
-  cs_blocks: Maybe<number>;
-  cs_mean: Maybe<number>;
-  cs_low: Maybe<number>;
-  cs_high: Maybe<number>;
   alpha: number;
   resamples: number;
   low_confidence: boolean;
@@ -419,9 +414,6 @@ export interface AuditBlocks {
   treated_bti: Col<number>;
   synthetic_bti: Col<number>;
   gap: Col<number>;
-  running_mean: Col<number>;
-  cs_low: Col<number>;
-  cs_high: Col<number>;
 }
 
 export interface AuditResponse extends Envelope {

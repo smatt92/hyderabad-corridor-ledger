@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { Audit, AuditBlocks, AuditDonor, AuditPlacebo } from "../api/types";
 import {
-  auditPeriods, blockRows, blockSegments, confidencePercent, dayNumber, donorStatusText, donorWeightText,
+  NO_SEQUENTIAL_TEST, auditPeriods, blockRows, blockSegments, confidencePercent, dayNumber, donorStatusText, donorWeightText,
   estimatorStatement, exclusionText, fmtRate, fmtSettling, incompletePreComparison, orderDonors, placeboFloor,
-  placeboResolutionText, rankRatios, selectionBiasText, sensitivityStatement, sensitivityStatusText, settlingWindow,
-  statusNotice, thinnestBlock, variantText,
+  placeboResolutionText, postPeriodOpen, rankRatios, selectionBiasText, sensitivityStatement, sensitivityStatusText,
+  settlingWindow, statusNotice, thinnestBlock, variantText,
 } from "./audit";
 import { MINUS } from "./format";
 import { EM_DASH } from "./route";
@@ -57,10 +57,6 @@ const audit: Audit = {
   equal_ci_high: 0.19,
   estimator_gap: -0.02,
   estimators_disagree: false,
-  cs_blocks: null,
-  cs_mean: null,
-  cs_low: null,
-  cs_high: null,
   alpha: 0.05,
   resamples: 2000,
   low_confidence: false,
@@ -76,9 +72,6 @@ const blocks = (over: Partial<AuditBlocks> = {}): AuditBlocks => ({
   treated_bti: [0.4, null, 0.42],
   synthetic_bti: [0.39, 0.41, 0.4],
   gap: [0.01, null, 0.02],
-  running_mean: [null, null, null],
-  cs_low: [null, null, null],
-  cs_high: [null, null, null],
   ...over,
 });
 
@@ -121,6 +114,12 @@ describe("periods", () => {
   it("reads alpha as a confidence level", () => {
     expect(confidencePercent(0.05)).toBe(95);
     expect(confidencePercent(0.1)).toBe(90);
+  });
+
+  it("keeps the post period open until every post block has completed", () => {
+    expect(postPeriodOpen(audit)).toBe(false);
+    expect(postPeriodOpen({ ...audit, status: "post_partial", post_blocks_complete: 1 })).toBe(true);
+    expect(postPeriodOpen({ ...audit, status: "post_pending", post_blocks_complete: 0 })).toBe(true);
   });
 });
 
@@ -304,19 +303,27 @@ describe("status notices", () => {
     expect(n.kicker).toBe("Post period still open");
     expect(n.body).toContain("The 9-day settling period, 3 Mar–10 Mar 2026, is excluded.");
     expect(n.body).toContain("0 of 2 have completed");
-    expect(n.body).toContain("close on 7 Apr 2026");
+    expect(n.body).toContain("before it closes on 7 Apr 2026");
+    expect(n.body).toContain(NO_SEQUENTIAL_TEST);
     const inferred = statusNotice({ ...audit, status: "post_pending", settle_end: null }, "X", 200, rows)!;
     expect(inferred.body).toContain("The 9-day settling period, 2 Mar 2026–10 Mar 2026 INFERRED, is excluded.");
   });
 
-  it("publishes the confidence sequence while the post period is partial, and says the headline waits", () => {
-    const partial = { ...audit, status: "post_partial" as const, post_blocks_complete: 1, effect: null, cs_blocks: 1, cs_mean: 0.08, cs_low: -0.02, cs_high: 0.18 };
+  it("says the audit reports once, after the post period closes, and labels partial post gaps descriptive", () => {
+    const partial = { ...audit, status: "post_partial" as const, post_blocks_complete: 1, effect: null };
     const n = statusNotice(partial, "Hitec City–Gachibowli", 200, rows)!;
-    expect(n.kicker).toBe("Post period in progress · interim");
+    expect(n.kicker).toBe("Post period in progress");
     expect(n.body).toContain("stay unpublished until the post period closes on 7 Apr 2026");
-    expect(n.body).toContain("always-valid 95% confidence sequence");
-    expect(n.body).toContain(`+0.08 [${MINUS}0.02, +0.18] BTI after 1 block.`);
-    expect(n.body).toContain("may be read after every block without inflating its error rate");
+    expect(n.body).toContain(NO_SEQUENTIAL_TEST);
+    expect(n.body).toContain("The gaps between Hitec City–Gachibowli and its synthetic control in the completed post blocks are descriptive, not a test.");
+    expect(n.body).not.toContain("always-valid");
+    expect(n.body).not.toContain("read after every block");
+  });
+
+  it("states plainly why there is no sequential test", () => {
+    expect(NO_SEQUENTIAL_TEST).toBe(
+      "The audit reports once, after the post period closes. There is no sequential test: the block confidence sequence was removed because it rejected no-effect panels far more often than its nominal 5%.",
+    );
   });
 
   it("explains that the treated corridor's own pair is never a donor", () => {

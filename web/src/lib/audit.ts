@@ -20,7 +20,7 @@ function plural(n: Num, one: string, many: string): string {
   return n === 1 ? one : many;
 }
 
-/** The confidence level of an interval or sequence at the payload's alpha. */
+/** The confidence level of an interval at the payload's alpha. */
 export function confidencePercent(alpha: number): number {
   return Math.round((1 - alpha) * 100);
 }
@@ -83,6 +83,20 @@ export function auditPeriods(a: Audit, floor: number): [string, string][] {
   ];
 }
 
+/** True until every post block has completed. */
+export function postPeriodOpen(a: Audit): boolean {
+  return a.post_blocks_complete < a.post_blocks;
+}
+
+/**
+ * Stated wherever a reader could look for a reading of a partial post period.
+ * There is deliberately no sequential test: in simulation the block confidence
+ * sequence excluded zero on 12–18% of no-effect panels (six pre blocks, 28 post
+ * days) against a nominal 5%.
+ */
+export const NO_SEQUENTIAL_TEST =
+  "The audit reports once, after the post period closes. There is no sequential test: the block confidence sequence was removed because it rejected no-effect panels far more often than its nominal 5%.";
+
 // ---------------------------------------------------------------------------
 // Blocks
 
@@ -96,9 +110,6 @@ export interface BlockRow {
   treated: number | null;
   synthetic: number | null;
   gap: number | null;
-  runningMean: number | null;
-  csLow: number | null;
-  csHigh: number | null;
 }
 
 /** Columnar blocks as rows. A value the payload does not carry stays null. */
@@ -116,9 +127,6 @@ export function blockRows(blocks: AuditBlocks | null | undefined, period: "pre" 
     treated: finite(at(blocks.treated_bti, i)),
     synthetic: finite(at(blocks.synthetic_bti, i)),
     gap: finite(at(blocks.gap, i)),
-    runningMean: finite(at(blocks.running_mean, i)),
-    csLow: finite(at(blocks.cs_low, i)),
-    csHigh: finite(at(blocks.cs_high, i)),
   }));
 }
 
@@ -429,22 +437,18 @@ export function statusNotice(a: Audit, corridorName: string, floor: number, rows
         kicker: "Post period still open",
         body:
           `The change took effect on ${fmtDay(a.effective_day)}. The ${a.settle_days}-day settling period, ${fmtSettling(settlingWindow(a))}, is excluded. ` +
-          `The post period runs ${post} in ${a.post_blocks} ${plural(a.post_blocks, "block", "blocks")} of ${a.block_days} days, and ${a.post_blocks_complete} of ${a.post_blocks} have completed, so nothing after the change is published yet. ` +
-          `Once a post block completes, the audit publishes an always-valid confidence sequence; the headline effect waits for the post period to close on ${fmtDay(a.post_end)}.`,
+          `The post period runs ${post} in ${a.post_blocks} ${plural(a.post_blocks, "block", "blocks")} of ${a.block_days} days, and ${a.post_blocks_complete} of ${a.post_blocks} have completed, so nothing after the change is published before it closes on ${fmtDay(a.post_end)}. ` +
+          NO_SEQUENTIAL_TEST,
       };
-    case "post_partial": {
-      const conf = confidencePercent(a.alpha);
+    case "post_partial":
       return {
-        kicker: "Post period in progress · interim",
+        kicker: "Post period in progress",
         body:
           `${a.post_blocks_complete} of ${a.post_blocks} post blocks have completed (post period ${post}). ` +
           `The headline synthetic-control effect and its equal-weight cross-check stay unpublished until the post period closes on ${fmtDay(a.post_end)}. ` +
-          `Until then the audit publishes an always-valid ${conf}% confidence sequence for the gap between ${corridorName} and its synthetic control over the completed post blocks: ` +
-          `${fmtSignedInterval(a.cs_mean, a.cs_low, a.cs_high)} BTI after ${a.cs_blocks ?? EM_DASH} ${plural(a.cs_blocks, "block", "blocks")}. ` +
-          "A confidence sequence may be read after every block without inflating its error rate, so reading it now and again after the next block is legitimate. " +
-          "A fixed-horizon interval could not be read that way, which is why the headline is not shown early.",
+          `${NO_SEQUENTIAL_TEST} ` +
+          `The gaps between ${corridorName} and its synthetic control in the completed post blocks are descriptive, not a test.`,
       };
-    }
     case "no_controls":
       return {
         kicker: "Audit withheld",
