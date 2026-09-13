@@ -300,8 +300,8 @@ densities and requires no effect.
 - Pooling units: the 24-hour profile pools every call at each local hour over
   the profile window (120 days). The ledger pools peak-hour calls
   (06:30-10:30, 16:30-21:00 IST) over the trailing 90 days, one distribution
-  per corridor. The audit pools peak-hour calls over each fixed 28-day period
-  and computes BTI once per period.
+  per corridor. The audit pools peak-hour calls into 14-day blocks and into
+  whole periods, and computes each BTI once on its pool.
 - Floors by quantile: p95-derived statistics need 200 pooled calls; mean and
   median need 30. Below a floor the value is NULL and the pooled count is
   published beside it. The frontend renders an em dash, an insufficient-samples
@@ -334,11 +334,25 @@ Other definitions worth knowing before changing them:
 - Before/after uses always-valid confidence sequences on STL-adjusted daily
   TTI, so `before_after` may be read every day. A fixed-horizon p-value may
   not be.
-- The intervention audit (`metrics/audit.py`) is a different estimator. It
-  pools BTI once per fixed 28-day period, takes a difference in differences
-  against the equal-weight mean of untreated corridors, and reports a
-  bootstrap interval. It publishes no effect until the post period has
-  closed, so re-reading it cannot change the answer.
+- The intervention audit (`metrics/audit.py`) is a synthetic control on pooled
+  BTI. Donor weights are fitted on six 14-day pre blocks, each block's BTI
+  pooled at the p95 floor. The headline compares BTI pooled once over the whole
+  pre and post periods. The donor pool excludes every treated corridor and the
+  treated corridor's own pair: traffic diverting onto a paired alternate is a
+  consequence of the intervention, so it is contaminated, not a control.
+  Weights are published donor by donor, with every exclusion's reason.
+- Placebo runs repeat the procedure with each donor as the treated corridor.
+  The treated post/pre RMSPE ratio is ranked among them, and the published
+  verdict says plainly when the effect is not extreme, including when there
+  are too few placebos for any effect to be.
+- The equal-weight mean of the same donors is published as a cross-check,
+  with the gap between the two estimates and whether they disagree.
+- The headline waits for the post period to close. Before that, an
+  always-valid confidence sequence over completed post blocks may be read
+  after every block without inflating error.
+- An audit needs 84 pre days, 9 settling days and 28 post days of data. Until
+  then its status says why it is withheld, and every period boundary is
+  recorded, never inferred.
 
 ## Read API and frontend (P-04)
 

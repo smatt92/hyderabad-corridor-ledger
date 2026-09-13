@@ -7,7 +7,7 @@ recomputes them from raw under the new version.
 
 from dataclasses import dataclass
 
-METHOD_VERSION = "p02.4"
+METHOD_VERSION = "p02.5"
 LOCAL_TZ = "Asia/Kolkata"
 BASES = ("tomtom", "p5")
 
@@ -69,10 +69,16 @@ class Params:
     network_baseline_min: int = 3
     network_state_band_pct: float = 7.0
 
-    # Intervention audit: BTI pooled once over each fixed period.
-    audit_pre_days: int = 28
+    # Intervention audit (metrics.audit). Periods are whole blocks of
+    # audit_block_days; each block's BTI pools its peak-hour calls and needs the
+    # p95 floor, which Tier B/C reach in 14 days (about 238 calls). Synthetic
+    # control weights are fitted on the pre blocks. A placebo whose pre-period
+    # RMSPE exceeds audit_poor_fit_ratio times the treated one is flagged.
+    audit_block_days: int = 14
+    audit_pre_blocks: int = 6
     audit_settle_days: int = 9
-    audit_post_days: int = 28
+    audit_post_blocks: int = 2
+    audit_poor_fit_ratio: float = 5.0
 
     def __post_init__(self) -> None:
         if self.p95_min_samples < self.central_min_samples:

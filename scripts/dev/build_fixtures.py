@@ -31,7 +31,7 @@ from metrics.pipeline import compute_all  # noqa: E402
 
 OUT = ROOT / ".fixtures" / "tables"
 LAST_DAY = pd.Timestamp("2026-09-12")
-DAYS = 120
+DAYS = 180  # long enough for an audit's six 14-day pre blocks
 CADENCE_S = 1800
 RNG = np.random.default_rng(20260913)
 

@@ -20,7 +20,8 @@ PAGE_SIZE = 1000  # PostgREST's max rows per request on Supabase
 WRITE_BATCH = 500
 DATE_COLUMNS = {
     "day", "as_of", "window_start", "window_end", "detected_at", "segment_start",
-    "effective_day", "pre_start", "pre_end", "post_start", "post_end",
+    "effective_day", "pre_start", "pre_end", "settle_start", "settle_end", "post_start",
+    "post_end", "block_start", "block_end",
 }
 CORRIDOR_METADATA = [
     "id", "code", "name", "pair_id", "class", "origin_name", "origin_lat", "origin_lon",

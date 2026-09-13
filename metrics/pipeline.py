@@ -60,6 +60,7 @@ def compute_all(
     events = recovery_events(tti, daily_missing, params)
     day = metrics_day(indexed, params)
     profile = profile_hourly(tti, indexed, hours_window, params)
+    audits = intervention_audits(tti, cells, corridors, interventions, params)
 
     tables = {
         "metrics_daily": add_hourly_context(indexed, window)[METRICS_DAILY_COLUMNS],
@@ -82,6 +83,6 @@ def compute_all(
         "pair_advantage_hourly": pair_advantage_hourly(
             tti, profile, corridors, hours_window, params
         ),
-        "intervention_audit": intervention_audits(tti, cells, interventions, params),
+        **audits,
     }
     return {name: frame.assign(method_version=METHOD_VERSION) for name, frame in tables.items()}

@@ -54,11 +54,21 @@ FLOOR_FIELDS = ("p95_min_samples", "central_min_samples", "bootstrap_resamples")
 PEAK_HOURS = "06:30-10:30, 16:30-21:00 IST"
 PROFILE_POOLING = "all successful calls at each local hour across the window"
 AUDIT_FIELDS = [
-    "status", "effective_day", "settle_days", "pre_start", "pre_end", "post_start", "post_end",
-    "n_pre", "n_post", "n_controls", "treated_pre", "treated_post", "control_pre", "control_post",
-    "effect", "ci_low", "ci_high", "alpha", "resamples", "weights", "low_confidence",
-    "method_version",
+    "status", "effective_day", "settle_days", "pre_start", "pre_end", "settle_start", "settle_end",
+    "post_start", "post_end", "block_days", "pre_blocks", "post_blocks", "post_blocks_complete",
+    "n_pre", "n_post", "n_donors", "treated_pre", "treated_post", "synthetic_pre",
+    "synthetic_post", "effect", "ci_low", "ci_high", "pre_rmspe", "post_rmspe", "rmspe_ratio",
+    "n_placebos", "placebo_p_value", "placebo_extreme", "placebo_verdict", "equal_control_pre",
+    "equal_control_post", "equal_effect", "equal_ci_low", "equal_ci_high", "estimator_gap",
+    "estimators_disagree", "cs_blocks", "cs_mean", "cs_low", "cs_high", "alpha", "resamples",
+    "low_confidence", "method_version",
 ]
+DONOR_FIELDS = ["corridor_id", "included", "weight", "exclusion", "n_pre", "n_post", "pre_bti",
+                "post_bti"]
+PLACEBO_FIELDS = ["corridor_id", "effect", "pre_rmspe", "post_rmspe", "rmspe_ratio",
+                  "poor_pre_fit", "weights"]
+BLOCK_FIELDS = ["block", "block_start", "block_end", "complete", "n_treated", "treated_bti",
+                "synthetic_bti", "gap", "running_mean", "cs_low", "cs_high"]
 
 VERIFICATION_FIELDS = [
     "verified_at", "ok", "rows_checked", "first_seq", "head_seq", "head_row_hash", "breaks",
@@ -362,12 +372,23 @@ def audit(store: StoreDep, intervention_id: Annotated[str, Path(pattern=INTERVEN
     row = one(store.select("intervention_audit", [("intervention_id", "eq", intervention_id)],
                            limit=1))
     corridor = corridor_or_404(store, iv["corridor_id"])
+    by_intervention = [("intervention_id", "eq", intervention_id)]
+    codes = {c["id"]: c.get("code") for c in store.select("corridors")}
+    donors = store.select("audit_donors", by_intervention, [("corridor_id", "asc")])
+    placebos = store.select("audit_placebos", by_intervention, [("corridor_id", "asc")])
+    blocks = store.select("audit_blocks", by_intervention, [("block", "asc")])
     body = {
         "intervention": {k: iv[k] for k in ("id", "corridor_id", "effective_at", "description")},
         "corridor": {"id": corridor["id"], "code": corridor.get("code"), "name": corridor["name"]},
         "metric": "bti",
         "floors": floors(dataset(store)),
         "audit": row and {k: row.get(k) for k in AUDIT_FIELDS},
+        # every donor considered, with its weight or the reason it was excluded
+        "donors": [{k: d.get(k) for k in DONOR_FIELDS} | {"code": codes.get(d["corridor_id"])}
+                   for d in donors],
+        "placebos": [{k: p.get(k) for k in PLACEBO_FIELDS} for p in placebos],
+        "blocks": {period: columnar([b for b in blocks if b["period"] == period], BLOCK_FIELDS)
+                   for period in ("pre", "post")},
     }
     return respond(store, body, row and row["computed_at"], row and row["missing_rate"])
 

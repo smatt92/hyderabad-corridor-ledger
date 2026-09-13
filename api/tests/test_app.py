@@ -84,10 +84,40 @@ def tables():
         "interventions": [{"id": "signal-retiming", "corridor_id": "miyapur-hitec",
                            "effective_at": "2026-08-01T00:00:00+05:30",
                            "description": "Signal retiming, 6 junctions"}],
-        "intervention_audit": [{"intervention_id": "signal-retiming", "status": "ok",
-                                "effect": -0.04, "ci_low": -0.09, "ci_high": 0.01,
-                                "resamples": 2000, "missing_rate": 0.06,
-                                "computed_at": COMPUTED}],
+        "intervention_audit": [{
+            "intervention_id": "signal-retiming", "corridor_id": "miyapur-hitec", "status": "ok",
+            "effective_day": "2026-08-01", "settle_days": 9, "pre_start": "2026-05-09",
+            "pre_end": "2026-07-31", "settle_start": "2026-08-01", "settle_end": "2026-08-09",
+            "post_start": "2026-08-10", "post_end": "2026-09-06", "effect": -0.04,
+            "ci_low": -0.09, "ci_high": 0.01, "equal_effect": -0.02, "equal_ci_low": -0.07,
+            "equal_ci_high": 0.03, "estimator_gap": -0.02, "estimators_disagree": False,
+            "n_placebos": 1, "placebo_p_value": 1.0, "placebo_extreme": False,
+            "placebo_verdict": "Not extreme: 1 of 1 placebo runs on untreated donors show a "
+                               "post/pre fit ratio at least as large as the treated corridor's",
+            "resamples": 2000, "missing_rate": 0.06, "computed_at": COMPUTED}],
+        "audit_donors": [
+            {"intervention_id": "signal-retiming", "corridor_id": "kukatpally-madhapur",
+             "included": True, "weight": 1.0, "exclusion": None, "n_pre": 2400, "n_post": 800},
+            {"intervention_id": "signal-retiming", "corridor_id": "miyapur-hitec-alt",
+             "included": False, "weight": None, "exclusion": "same_pair", "n_pre": 2300,
+             "n_post": 790},
+        ],
+        "audit_placebos": [{"intervention_id": "signal-retiming",
+                            "corridor_id": "kukatpally-madhapur", "effect": 0.01,
+                            "pre_rmspe": 0.02, "post_rmspe": 0.03, "rmspe_ratio": 1.5,
+                            "poor_pre_fit": False, "weights": {}}],
+        "audit_blocks": [
+            {"intervention_id": "signal-retiming", "period": "post", "block": 0,
+             "block_start": "2026-08-10", "block_end": "2026-08-23", "complete": True,
+             "n_treated": 400, "treated_bti": 0.38, "synthetic_bti": 0.41, "gap": -0.03,
+             "running_mean": -0.03, "cs_low": -0.2, "cs_high": 0.14},
+            {"intervention_id": "signal-retiming", "period": "pre", "block": 1,
+             "block_start": "2026-05-23", "block_end": "2026-06-05", "complete": True,
+             "n_treated": 400, "treated_bti": 0.42, "synthetic_bti": 0.41, "gap": 0.01},
+            {"intervention_id": "signal-retiming", "period": "pre", "block": 0,
+             "block_start": "2026-05-09", "block_end": "2026-05-22", "complete": True,
+             "n_treated": 400, "treated_bti": 0.40, "synthetic_bti": 0.41, "gap": -0.01},
+        ],
         "chain_verifications": [
             walk(1, "samples", "2026-09-12T22:00:00+00:00", 9),
             walk(2, "failed_samples", "2026-09-12T22:00:00+00:00", 1),
@@ -206,11 +236,22 @@ def test_profile_states_its_own_pooling_window(client):
     assert body["floors"]["p95_min_samples"] == 200
 
 
-def test_audit_reports_the_pooled_estimate_and_its_interval(client):
+def test_audit_publishes_donors_placebos_blocks_and_the_cross_check(client):
     body = client.get("/api/interventions/signal-retiming/audit").json()
     audit = body["audit"]
     assert (audit["effect"], audit["ci_low"], audit["ci_high"]) == (-0.04, -0.09, 0.01)
-    assert not {"cs_low", "cs_high", "synthetic_pre", "pre_rmse"} & set(audit)
+    assert (audit["equal_effect"], audit["estimators_disagree"]) == (-0.02, False)
+    assert audit["placebo_verdict"].startswith("Not extreme")
+    assert (audit["settle_start"], audit["settle_end"]) == ("2026-08-01", "2026-08-09")
+    assert not {"control_pre", "weights", "n_controls"} & set(audit)
+    donors = {d["corridor_id"]: d for d in body["donors"]}
+    assert (donors["kukatpally-madhapur"]["weight"], donors["kukatpally-madhapur"]["code"]) == (
+        1.0, "HC-03")
+    assert donors["miyapur-hitec-alt"]["exclusion"] == "same_pair"
+    assert donors["miyapur-hitec-alt"]["weight"] is None
+    assert body["placebos"][0]["rmspe_ratio"] == 1.5
+    assert body["blocks"]["pre"]["block"] == [0, 1]
+    assert body["blocks"]["post"]["cs_low"] == [-0.2]
     assert body["floors"]["bootstrap_resamples"] == 2000
 
 

@@ -26,7 +26,7 @@ def synthetic_panel(days=35):
 
 # 35 days of hourly calls is a small panel: floors and audit periods scaled to it.
 SMALL = Params(p95_min_samples=50, central_min_samples=10, bootstrap_resamples=200,
-               audit_pre_days=14, audit_settle_days=3, audit_post_days=7)
+               audit_block_days=7, audit_pre_blocks=2, audit_settle_days=3, audit_post_blocks=1)
 
 
 def test_compute_all_end_to_end_invariants():
@@ -41,10 +41,15 @@ def test_compute_all_end_to_end_invariants():
         "metrics_daily", "worst15_daily", "corridor_rankings", "stl_daily", "change_points",
         "recovery_events", "recovery_km", "recovery_cox", "before_after", "dataset_stats",
         "corridor_stats", "metrics_day", "profile_hourly", "heatmap_weekly", "network_hourly",
-        "pair_advantage_hourly", "intervention_audit",
+        "pair_advantage_hourly", "intervention_audit", "audit_donors", "audit_placebos",
+        "audit_blocks",
     }
     assert len(tables["pair_advantage_hourly"]) == 24
-    assert tables["intervention_audit"]["status"].tolist() == ["ok"]
+    # b is a's declared alternate: contaminated by the intervention, so never a donor,
+    # which leaves this two-corridor panel with no control at all
+    assert tables["intervention_audit"]["status"].tolist() == ["no_controls"]
+    donors = tables["audit_donors"].set_index("corridor_id")
+    assert donors.loc["b", "exclusion"] == "same_pair"
     assert all((t["method_version"] == METHOD_VERSION).all() for t in tables.values())
 
     md = tables["metrics_daily"]
