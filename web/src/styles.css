@@ -1,0 +1,12 @@
+html,body{margin:0;padding:0}
+body{background:#f4f3ef;color:#191815;font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;font-size:14px;line-height:1.4}
+*{box-sizing:border-box}
+a{color:#8a4413;text-decoration:none;border-bottom:1px solid rgba(138,68,19,.35)}
+a:hover{color:#5d2c09;border-bottom-color:#5d2c09}
+button{font-family:inherit}
+input[type=range]{accent-color:#8a4413}
+::selection{background:#e6dfd2}
+.uplot,.uplot *{font-family:ui-monospace,Menlo,Consolas,monospace}
+@keyframes ledger-wall-progress{from{width:0}to{width:100%}}
+@keyframes ledger-wall-pulse{0%,100%{opacity:1}50%{opacity:.45}}
+@media (prefers-reduced-motion:reduce){*{animation-duration:0s!important;animation-iteration-count:1!important}}

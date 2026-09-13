@@ -1,0 +1,23 @@
+# Tokens and keys never live in files in this repo, .env included.
+.env
+.env.*
+
+# Local tool state
+.vercel/
+supabase/.temp/
+supabase/.branches/
+node_modules/
+.DS_Store
+
+# Frontend
+web/dist/
+
+# Local previews: fixture tables from the pipeline, machine-specific launch config
+.fixtures/
+.claude/launch.json
+
+# Python
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/

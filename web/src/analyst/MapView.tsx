@@ -1,0 +1,154 @@
+import { useEffect, useMemo, useState } from "preact/hooks";
+import type { Corridor } from "../api/types";
+import { LegendBar } from "../encodings/LegendBar";
+import { INK, MID, MONO, RAMP_DEG, SOFT, TEXT, ramp } from "../lib/color";
+import { fmtHour, fmtIst, fmtNum } from "../lib/format";
+import { Scheduler } from "../lib/scheduler";
+import { HYDERABAD, TILE_SIZE, basemapTileUrl, frameFor, tilesFor, toFrame, trafficTileUrl } from "../lib/tiles";
+import { type Basis, Select, kicker } from "./common";
+import type { SeriesView } from "./series";
+
+const TILE_KEY = __TOMTOM_TILE_KEY__;
+const TRAFFIC_REFRESH_MS = 120_000;
+
+interface Props {
+  corridors: Corridor[];
+  views: Map<string, SeriesView>;
+  day: string;
+  hour: number;
+  asOf: string | null;
+}
+
+/**
+ * Static map of Greater Hyderabad: TomTom raster tiles as plain <img> elements
+ * with an SVG overlay. No pan, no zoom, no map library. Each pair is drawn as a
+ * straight connector between its measured origin and destination; the line is
+ * not the road taken.
+ */
+export function MapView({ corridors, views, day, hour, asOf }: Props) {
+  const [basis, setBasis] = useState<Basis>("tomtom");
+  const [trafficEpoch, setTrafficEpoch] = useState(0);
+  useEffect(() => {
+    const scheduler = new Scheduler();
+    scheduler.every(TRAFFIC_REFRESH_MS, () => setTrafficEpoch((n) => n + 1));
+    return () => scheduler.stop();
+  }, []);
+
+  const frame = useMemo(() => frameFor(HYDERABAD), []);
+  const tiles = useMemo(() => tilesFor(frame), [frame]);
+  const shown = useMemo(() => corridors.filter((c) => c.role !== "alternate"), [corridors]);
+  const values = shown.map((c) => views.get(c.id)?.value(basis === "tomtom" ? "tti_tomtom" : "tti_p5", day, hour) ?? null);
+  const present = values.filter((v): v is number => v != null);
+  const [lo, hi] = present.length ? [Math.min(...present), Math.max(...present)] : [1, 2];
+
+  const nodes = useMemo(() => {
+    const degree = new Map<string, { lat: number; lon: number; n: number }>();
+    for (const c of shown) {
+      for (const p of [c.origin, c.destination]) {
+        const name = p.name ?? `${p.lat},${p.lon}`;
+        const entry = degree.get(name) ?? { lat: p.lat, lon: p.lon, n: 0 };
+        entry.n++;
+        degree.set(name, entry);
+      }
+    }
+    const placed: [number, number, number, number][] = [];
+    return [...degree.entries()]
+      .sort((a, b) => b[1].n - a[1].n)
+      .map(([name, { lat, lon }]) => {
+        const pt = toFrame(frame, lat, lon);
+        const box: [number, number, number, number] = [pt.x + 7, pt.y - 20, pt.x + 7 + name.length * 8.4 + 8, pt.y - 3];
+        const free = !placed.some((b) => !(box[2] < b[0] || box[0] > b[2] || box[3] < b[1] || box[1] > b[3]));
+        if (free) placed.push(box);
+        return { name, pt, label: free };
+      });
+  }, [shown, frame]);
+
+  const pct = (v: number, of: number) => `${(v / of) * 100}%`;
+  const tileStyle = (left: number, top: number) => ({
+    position: "absolute" as const,
+    left: pct(left, frame.width),
+    top: pct(top, frame.height),
+    width: pct(TILE_SIZE, frame.width),
+    height: pct(TILE_SIZE, frame.height),
+    pointerEvents: "none" as const,
+  });
+
+  return (
+    <div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "24px", alignItems: "flex-end", justifyContent: "space-between", marginBottom: "14px" }}>
+        <div>
+          <h2 style={{ margin: "0 0 4px", fontSize: "19px", letterSpacing: "-.01em" }}>Corridor map</h2>
+          <p style={{ margin: 0, color: "#5b584f", fontSize: "13px", maxWidth: "62ch" }}>
+            Declared corridors over a desaturated basemap with a traffic-flow tile layer beneath. Colour is TTI at the scrubber position. Each corridor is drawn as a straight origin-to-destination connector — we hold no road geometry and no trajectories, so none is drawn.
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: "14px", alignItems: "center", flexWrap: "wrap" }}>
+          <Select label="Free-flow" value={basis} options={[{ value: "tomtom", label: "TomTom" }, { value: "p5", label: "Observed p5" }]} onChange={(v) => setBasis(v as Basis)} />
+          <div style={{ fontFamily: MONO, fontSize: "11.5px", color: TEXT, border: `1px solid ${INK}`, padding: "7px 10px", fontVariantNumeric: "tabular-nums" }}>
+            indices {fmtIst(asOf)} · {fmtHour(hour)} · traffic tiles refresh every 2 min
+          </div>
+        </div>
+      </div>
+
+      <div style={{ position: "relative", width: "100%", maxWidth: "1000px", aspectRatio: `${frame.width} / ${frame.height}`, border: `1px solid ${INK}`, overflow: "hidden", background: "#eceae4" }}>
+        {TILE_KEY
+          ? tiles.map((t) => (
+              <img key={`b${t.x}_${t.y}`} src={basemapTileUrl(t, TILE_KEY)} alt="" loading="lazy" decoding="async" style={{ ...tileStyle(t.left, t.top), filter: "grayscale(1) contrast(.8) brightness(1.1)" }} />
+            ))
+          : null}
+        {TILE_KEY
+          ? tiles.map((t) => (
+              <img key={`t${t.x}_${t.y}_${trafficEpoch}`} src={trafficTileUrl(t, TILE_KEY)} alt="" decoding="async" style={{ ...tileStyle(t.left, t.top), opacity: 0.85 }} />
+            ))
+          : null}
+        <svg viewBox={`0 0 ${frame.width} ${frame.height}`} style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} role="img" aria-label="Straight connectors between measured corridor endpoints">
+          {!TILE_KEY ? (
+            <text x={frame.width / 2} y={frame.height - 24} font-size={15} font-family={MONO} fill="#a8a59d" text-anchor="middle">
+              no browser tile key in this build · basemap and traffic tiles not loaded
+            </text>
+          ) : null}
+          {shown.map((c, i) => {
+            const a = toFrame(frame, c.origin.lat, c.origin.lon);
+            const b = toFrame(frame, c.destination.lat, c.destination.lon);
+            const v = values[i];
+            const t = v == null ? 0 : (v - lo) / (hi - lo || 1);
+            return (
+              <line key={c.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke-linecap="round"
+                stroke={v == null ? "#8b8880" : ramp(RAMP_DEG, t)}
+                stroke-width={v == null ? 3 : 3.4 + t * 5}
+                stroke-dasharray={v == null ? "4 7" : undefined}
+                opacity={v == null ? 0.8 : 0.95}>
+                <title>{`${c.code} ${c.name}: TTI ${fmtNum(v)}`}</title>
+              </line>
+            );
+          })}
+          {nodes.map((n) => (
+            <g key={n.name}>
+              <circle cx={n.pt.x} cy={n.pt.y} r={3.2} fill="#3a3832" />
+              {n.label ? (
+                <text x={n.pt.x + 7} y={n.pt.y - 6} font-size={14} font-family={MONO} fill="#3a3832" stroke="#f4f3ef" stroke-width={3.6} paint-order="stroke">
+                  {n.name}
+                </text>
+              ) : null}
+            </g>
+          ))}
+        </svg>
+      </div>
+      <div style={{ marginTop: "8px", fontSize: "11.5px", color: MID, maxWidth: "88ch", lineHeight: 1.5 }}>
+        Lines are straight connectors between measured endpoints, not roads. We store routeRepresentation=summaryOnly, so we hold no route geometry; a drawn line must never be read as the road taken. Dashed grey connectors have no published value at this hour.
+      </div>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "30px", marginTop: "14px", alignItems: "flex-end" }}>
+        <div>
+          <div style={{ ...kicker, marginBottom: "6px" }}>Corridor TTI · {basis === "tomtom" ? "TomTom" : "observed p5"} free-flow</div>
+          <LegendBar stops={RAMP_DEG} labels={[fmtNum(lo), "", "", "", fmtNum(hi)]} />
+        </div>
+        <div style={{ fontFamily: MONO, fontSize: "10.5px", color: SOFT, lineHeight: 1.6, maxWidth: "58ch" }}>
+          <div>layer 1 · desaturated raster basemap, TomTom</div>
+          <div>layer 2 · traffic-flow tiles, TomTom relative0 raster, 2-min refresh</div>
+          <div>layer 3 · origin–destination connectors, one per pair, coloured by TTI — not road geometry</div>
+        </div>
+      </div>
+    </div>
+  );
+}

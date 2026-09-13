@@ -1,0 +1,37 @@
+name: db-size
+
+on:
+  schedule:
+    - cron: '23 4 * * 1'  # Mondays 04:23 UTC
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  db-size:
+    name: db-size
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log database size and enforce the 400 MB ceiling
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          LIMIT_BYTES: '400000000'  # 400 MB; the free tier stops at 500 MB
+        run: |
+          bytes=$(curl -fsS -X POST "$SUPABASE_URL/rest/v1/rpc/log_db_size" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H 'Content-Type: application/json' \
+            -d '{}')
+          if ! [[ $bytes =~ ^[0-9]+$ ]]; then
+            echo "::error::log_db_size returned an unexpected response"
+            exit 1
+          fi
+          mb=$((bytes / 1000000))
+          echo "Database size: ${mb} MB (${bytes} bytes)" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$bytes" -ge "$LIMIT_BYTES" ]; then
+            echo "::error::Database is ${mb} MB, at or over the 400 MB ceiling. Archive and prune before the 500 MB free tier runs out."
+            exit 1
+          fi

@@ -1,0 +1,34 @@
+[project]
+name = "hyderabad-corridor-ledger"
+version = "0.2.0"
+description = "Metrics engine for the Hyderabad corridor ledger"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "numpy>=2.5.3,<3",
+  "pandas>=3.0.5,<4",
+  "pyarrow>=25.0.1",
+  "scipy>=1.18.1,<2",
+  "statsmodels>=0.15.0,<0.16",
+]
+
+[dependency-groups]
+dev = ["pytest>=9.1.1", "ruff>=0.16.7"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.ruff.lint.flake8-bugbear]
+# Params is a frozen dataclass, so a shared default instance is safe.
+extend-immutable-calls = ["metrics.params.Params"]

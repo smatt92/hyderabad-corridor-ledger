@@ -1,0 +1,25 @@
+name: authorship
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  authorship:
+    name: authorship
+    runs-on: ubuntu-latest
+    steps:
+      # Check out the PR head itself, not the merge commit GitHub creates.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check authorship, messages and signatures of every commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/check-authorship.sh HEAD

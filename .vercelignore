@@ -1,0 +1,13 @@
+# Vercel hosts the frontend (web/) and the read API (api/) only. The collector,
+# metrics pipeline, migrations and every fixture stay out of the upload.
+.venv
+**/.venv
+node_modules
+**/node_modules
+.fixtures
+metrics
+tests
+scripts
+supabase
+api/tests
+web/dist
