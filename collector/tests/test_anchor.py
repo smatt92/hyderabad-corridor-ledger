@@ -10,6 +10,7 @@ from test_chain import S1, S2
 import anchor
 from anchor import anchor_name, anchor_problems, encode, heads_document
 from chain import row_hash
+from store import DatabaseError
 
 NOW = datetime(2026, 9, 14, 21, 30, tzinfo=UTC)
 
@@ -83,6 +84,9 @@ class FakeStorage(anchor.Storage):
     def read(self, path):
         return self.objects.get(path)
 
+    def read_stored(self, path):
+        return self.objects.get(path)
+
     def write(self, path, payload, content_type, replace):
         if path in self.objects and not replace:
             raise RuntimeError(f"{path} exists")
@@ -104,3 +108,97 @@ def test_publish_then_check_verifies_signatures_and_the_chain():
     assert (problems, n) == ([], 1)
     problems, n, _ = anchor.check(storage, verify=lambda heads, bundle: "not daily.yml on main")
     assert n == 0 and problems == [f"{name}: signature does not verify: not daily.yml on main"]
+
+
+NOT_FOUND = '{"statusCode":"404","error":"not_found","message":"Object not found"}'
+
+
+class CachedStorageApi:
+    """The storage API as the project URL serves it. A write lands at once. The public URL
+    keeps serving the first version of an object it cached. The authenticated read of a
+    replaced object returns the previous version `lag` more times before the new one."""
+
+    def __init__(self, lag=0):
+        self.objects, self.previous, self.cached = {}, {}, {}
+        self.lag, self.stale, self.requests = lag, 0, []
+
+    def raw(self, method, path, data=None, headers=None):
+        self.requests.append((method, path))
+        name = path.split(f"/{anchor.BUCKET}/", 1)[1]
+        if method == "POST":
+            if name in self.objects:
+                self.previous[name], self.stale = self.objects[name], self.lag
+            self.objects[name] = data
+            return {}, b'{"Key": "archive"}'
+        if "/public/" in path:
+            if name not in self.cached and name in self.objects:
+                self.cached[name] = self.objects[name]
+            body = self.cached.get(name)
+        elif self.stale and name in self.previous:
+            self.stale -= 1
+            body = self.previous[name]
+        else:
+            body = self.objects.get(name)
+        if body is None:
+            raise DatabaseError(f"GET {path}: HTTP 400: {NOT_FOUND}")
+        return {}, body
+
+
+def storage_over(api):
+    sleeps = []
+    return anchor.Storage(api, sleep=sleeps.append), sleeps
+
+
+def test_a_replaced_object_that_reads_back_stale_is_confirmed_from_storage_itself():
+    api = CachedStorageApi(lag=1)
+    storage, sleeps = storage_over(api)
+    storage.write(anchor.INDEX, b"[1]", "application/json", replace=True)
+    assert storage.read(anchor.INDEX) == b"[1]"                # the public copy is now cached
+    storage.write(anchor.INDEX, b"[1, 2]", "application/json", replace=True)
+    assert sleeps == [anchor.READ_BACK_WAITS[0]]               # one stale read, then the bytes
+    assert storage.read(anchor.INDEX) == b"[1]"                # the public URL is still stale,
+    assert sum("/public/" in p for _, p in api.requests) == 2  # and write never read it
+
+
+def test_bytes_that_never_match_still_fail_the_write_loudly():
+    api = CachedStorageApi(lag=99)
+    storage, sleeps = storage_over(api)
+    storage.write(anchor.INDEX, b"[1]", "application/json", replace=True)
+    with pytest.raises(RuntimeError, match="did not read back as written: wrote 6 bytes, "
+                                           "storage still held 3 different bytes"):
+        storage.write(anchor.INDEX, b"[1, 2]", "application/json", replace=True)
+    assert sleeps == list(anchor.READ_BACK_WAITS)
+
+
+def test_a_write_storage_never_holds_fails_and_an_auth_refusal_is_never_read_as_absent():
+    class Dropping(CachedStorageApi):
+        def raw(self, method, path, data=None, headers=None):
+            if method == "POST":
+                return {}, b"{}"
+            return super().raw(method, path, data, headers)
+
+    storage, _ = storage_over(Dropping())
+    with pytest.raises(RuntimeError, match="storage still held no object"):
+        storage.write("heads/x.json", b"{}", "application/json", replace=False)
+
+    class Unauthorised(CachedStorageApi):
+        def raw(self, method, path, data=None, headers=None):
+            raise DatabaseError(f"GET {path}: HTTP 400: headers must have required property "
+                                "'authorization'")
+
+    storage, _ = storage_over(Unauthorised())
+    with pytest.raises(DatabaseError, match="authorization"):
+        storage.read_stored(anchor.INDEX)
+
+
+def test_publish_appends_to_the_index_storage_holds_not_a_stale_public_copy():
+    api = CachedStorageApi()
+    storage, _ = storage_over(api)
+    first = [{"heads": "heads/a.json", "bundle": "heads/a.sigstore.json"}]
+    both = [*first, {"heads": "heads/b.json", "bundle": "heads/b.sigstore.json"}]
+    api.objects[anchor.INDEX] = json.dumps(first).encode()
+    assert storage.read(anchor.INDEX)                      # the CDN caches the first index
+    api.objects[anchor.INDEX] = json.dumps(both).encode()  # the second anchor's index lands
+    name = anchor.publish(storage, encode(document(2, hex_of(S2))), b'{"bundle": 1}')
+    assert [e["heads"] for e in json.loads(api.objects[anchor.INDEX])] == [
+        "heads/a.json", "heads/b.json", name]

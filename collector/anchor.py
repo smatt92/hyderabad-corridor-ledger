@@ -33,6 +33,8 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -46,6 +48,9 @@ REPOSITORY = "smatt92/hyderabad-corridor-ledger"
 IDENTITY = f"https://github.com/{REPOSITORY}/.github/workflows/daily.yml@refs/heads/main"
 ISSUER = "https://token.actions.githubusercontent.com"
 MAX_AGE = timedelta(hours=2)  # the walk being anchored must be tonight's
+# Reading a write back: once at once, then after each of these waits. Storage can lag its
+# own write for a moment; bytes that still differ after the last wait fail the write.
+READ_BACK_WAITS = (0.5, 1.0, 2.0, 4.0)
 WALK_FIELDS = ("table_name", "verified_at", "rows_checked", "first_seq", "head_seq",
                "head_row_hash", "breaks", "first_break_seq", "first_break_problem", "ok")
 
@@ -109,10 +114,14 @@ def anchor_problems(anchors: list[tuple[str, dict]], chains: dict[str, list[dict
 class Storage:
     """The public archive bucket and the public tables, through the project URL."""
 
-    def __init__(self, db):
+    def __init__(self, db, sleep: Callable[[float], None] = time.sleep):
         self.db = db
+        self.sleep = sleep
 
     def read(self, path: str) -> bytes | None:
+        """An object as anyone reads it, through the public URL. A CDN sits in front of that
+        URL and can go on serving the previous version of a replaced object for a while:
+        right for check, which verifies what the public sees, wrong for confirming a write."""
         from store import DatabaseError
         try:
             return self.db.raw("GET", f"storage/v1/object/public/{BUCKET}/{path}")[1]
@@ -121,11 +130,38 @@ class Storage:
                 return None
             raise
 
+    def read_stored(self, path: str) -> bytes | None:
+        """An object as the bucket holds it, through the authenticated endpoint with the
+        database key, not the cached public URL. None only when storage reports the object
+        missing. Any other refusal raises: the route needs an Authorization header, which
+        store.Database sends for the service_role JWT CI holds, and without one this fails
+        loudly rather than falling back to the public copy."""
+        from store import DatabaseError
+        try:
+            return self.db.raw("GET", f"storage/v1/object/authenticated/{BUCKET}/{path}")[1]
+        except DatabaseError as exc:
+            if "HTTP 404" in str(exc) or ("HTTP 400" in str(exc) and "not_found" in str(exc)):
+                return None
+            raise
+
     def write(self, path: str, payload: bytes, content_type: str, replace: bool) -> None:
+        """Store an object, then confirm the bucket holds exactly these bytes. The check
+        reads storage itself (read_stored), again after each READ_BACK_WAITS wait, and fails
+        if the bytes still differ. It used to read the public URL, whose CDN served the
+        replaced heads/index.json stale and failed the 2026-09-13 23:11 UTC anchor although
+        the write had succeeded."""
         self.db.raw("POST", f"storage/v1/object/{BUCKET}/{path}", payload,
                     {"Content-Type": content_type, "x-upsert": "true" if replace else "false"})
-        if self.read(path) != payload:
-            raise RuntimeError(f"{path} did not read back as written")
+        stored = None
+        for wait in (0.0, *READ_BACK_WAITS):
+            if wait:
+                self.sleep(wait)
+            stored = self.read_stored(path)
+            if stored == payload:
+                return
+        found = "no object" if stored is None else f"{len(stored)} different bytes"
+        raise RuntimeError(f"{path} did not read back as written: wrote {len(payload)} bytes, "
+                           f"storage still held {found} after {len(READ_BACK_WAITS)} retries")
 
     def walks(self) -> list[dict]:
         _, rows = self.db.request("GET", "chain_verifications", [
@@ -170,7 +206,9 @@ def publish(storage: Storage, heads: bytes, bundle: bytes) -> str:
     bundle_name = name.removesuffix(".json") + ".sigstore.json"
     storage.write(name, heads, "application/json", replace=False)
     storage.write(bundle_name, bundle, "application/json", replace=False)
-    index = json.loads(storage.read(INDEX) or b"[]")
+    # the index as stored, not its public copy: appending to a stale copy would drop an
+    # earlier anchor from the index
+    index = json.loads(storage.read_stored(INDEX) or b"[]")
     index.append({"heads": name, "bundle": bundle_name})
     storage.write(INDEX, (json.dumps(index, indent=1) + "\n").encode(), "application/json",
                   replace=True)
