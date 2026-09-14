@@ -166,8 +166,11 @@ chain.
 
 ## Storage budget (500 MB free tier)
 
-The daily budget is 2,400 TomTom calls. At that ceiling the ledger gains about
-876k rows a year, and the 90-day hot window holds at most about 216k.
+The collector's daily ceiling is still 2,400 TomTom calls, a figure that was
+wrong: TomTom's free allowance is 20,000 calls a month (see Schedule, budget
+and retries). At 2,400 a day the ledger would gain about 876k rows a year and the
+90-day hot window hold about 216k. At 20,000 a month, the most the free tier
+allows, it gains about 235k rows a year, and the hot window holds about 58k.
 
 - Every sample requests `routeRepresentation=summaryOnly`. The collector
   refuses a sample response over 4 KB gzipped and `samples.raw_gz` has a 4 KB
@@ -314,8 +317,10 @@ unauditable, however good the estimator. This decides seeding order.
   withheld and a nominal 20 donors shrank to 9-12, too few for any placebo p to
   reach 0.05.
 - An audit needs at least 19 usable donors after exclusions; declare 20 or
-  more, since failures exclude some. The budget (2,400 calls a day, 15% held
-  back, 42 calls a day per Tier A corridor) fits about 48 Tier A corridors.
+  more, since failures exclude some. The "48 Tier A corridors" once written here
+  came from the wrong 2,400-a-day budget. At TomTom's free 20,000 calls a month,
+  no 15- or 20-minute panel of four treated corridors reaches 19 donors at any
+  failure rate (`docs/free_tier.md`).
 - What it can detect (simulation, Tier A, 28-day post period, 80% power; a
   56-day post period is untested): a BTI
   change of 0.20, about a third of a typical corridor's BTI, needs 24 weeks of
@@ -361,12 +366,17 @@ unauditable, however good the estimator. This decides seeding order.
   meter of TomTom's. The headers of each run's first response and of every 403
   and 429 go to `tomtom_responses` (0011), redacted, cookies not kept. If
   TomTom ever reports its count or limit, it is there.
-- Allowance: TomTom publishes the Routing API's free allowance as 20,000
-  calls a month, reset time undocumented (see "TomTom's terms and allowance").
-  `CAPACITY_PER_DAY` was set against a daily allowance TomTom no longer
-  publishes: a panel at the budget's 2,040 first attempts a day uses 20,000
-  calls in under ten days. Which allowance the account has shows only in its
-  TomTom dashboard, and Sahil decides which figure governs. The daily alarm
+- Allowance: TomTom's free Routing allowance is 20,000 calls a MONTH, reset
+  time undocumented (see "TomTom's terms and allowance").
+  - The 2,400-a-day budget in `collector/budget.py` was wrong. It came from a
+    search snippet quoting 2,500 free requests a day, not from TomTom's pricing
+    page. 2,400 a day is 74,400 calls in a 31-day month.
+  - It stays in the code only until the panel is resized.
+  - Size a panel in calls per 31-day month, with retries and road checks, against
+    20,000. Never size it in calls a day. `scripts/dev/free_tier.py` does this and
+    writes `docs/free_tier.md`.
+  - Whether this account is on a different plan shows only in its TomTom
+    dashboard. The daily alarm
   (`collector/gaps.py`) measures UTC months against the published figure: it
   fails at 80% of it, on any quota refusal, and when an IST day's attempts
   pass `CAPACITY_PER_DAY`, and warns when the month's rate carries past it.
@@ -489,11 +499,24 @@ densities and requires no effect.
   coverage.
 - Any view showing a p95-derived metric states its pooling window in visible
   text: the dates, what was pooled, and the count.
-- Tier A pooling yields ~360 calls per corridor-hour at 90 days. Tiers B and C
-  yield ~180 and cross the p95 floor at roughly 100 days, so their tail
-  metrics legitimately show insufficient samples for about three months. The
-  profile window is 120 days so that they do cross it; a 90-day window never
-  would.
+- When pooled statistics first clear their floors (`docs/free_tier.md`
+  section 5, from the schedule; ranges are 0% to 12.5% of calls failed):
+  - Ledger BTI and PTI pool every peak-hour call, so they appear after about
+    6-7 days at 15-minute peaks and 12-14 days at 30-minute peaks. They do not
+    take three months.
+  - The 24-hour profile and the route comparison pool one clock hour over 120
+    days. A full peak hour gets 4 calls a day at 15 minutes (floor at day 50-58)
+    and 2 at 30 minutes (day 100-115). A 90-day window would never reach the
+    floor at 30 minutes.
+  - 06:00, 10:00 and 16:00 are only partly inside the peak windows. At 30
+    minutes they get one call a day and never clear the p95 floor within 120
+    days; at 15 minutes they get two, and clear it at day 100-115. Their em
+    dashes are by design, and the README says so.
+  - The rhythm matrix takes a median per weekday and hour over 90 days (floor
+    30). At 30 minutes a corridor gets at most 26 calls a cell, so every
+    per-corridor cell stays empty. At 15 minutes full hours fill from week 8-9
+    and the partly covered hours never do. The citywide matrix pools corridors
+    and fills.
 - The hourly and daily series carry TTI and mean travel time with their counts
   (`n_ok`), and no tail statistic.
 

@@ -188,15 +188,20 @@ positions.
   published.
 - **Pooling.** BTI and PTI pool every peak-hour call (06:30–10:30 and
   16:30–21:00 IST) over the trailing 90 days. Each is shown beside the count
-  of calls pooled, and the scrubbers do not move them.
+  of calls pooled, and the scrubbers do not move them. Because they pool
+  every peak hour, they clear their floor early: around day 6–7 of collection
+  for a corridor measured every 15 minutes, and day 12–14 for one measured
+  every 30 minutes. Not day 90. See [When numbers first appear, and which never
+  do](#when-numbers-first-appear-and-which-never-do).
 - **No interval.** An interval that resampled calls treated calls from the
   same day and week as independent. In simulation it covered the true value
   in 68–84% of panels, not 95%
   ([docs/ledger_intervals.md](docs/ledger_intervals.md)).
 - **An em dash means below the sample floor, never zero.** The floor is 200
   pooled calls for anything derived from a p95, and 30 for a mean or median.
-  The count is shown beside the dash. Tier B and C corridors show dashes for
-  their tail values for roughly their first three months.
+  The count is shown beside the dash. Some dashes are permanent by design,
+  not a fault: see [When numbers first appear, and which never
+  do](#when-numbers-first-appear-and-which-never-do).
 
 ### 2. Network pulse
 
@@ -226,6 +231,9 @@ corridor behaving normally looks quiet. The view shows change, not severity.
   shows.
 - Cells below the floor stay empty, and low-confidence cells are hatched. The
   worst and best cells are called out.
+- For a corridor measured every 30 minutes, every cell stays empty. It gets at
+  most 26 calls per weekday and hour in the 90-day window, under the floor of 30.
+  The citywide matrix pools every corridor and does fill.
 
 It helps with choosing a departure time, and with arguments about signal
 timing or enforcement staffing.
@@ -242,7 +250,9 @@ declares no winner.
 
 - **Median and p95.** Both are shown for each side, each with its pooled
   count, pooled over the trailing 120 days. The median describes a normal day.
-  The p95 describes the day that makes you late.
+  The p95 describes the day that makes you late. A p95 at a single hour needs
+  months of collection, and some hours never get one: see [When numbers first
+  appear, and which never do](#when-numbers-first-appear-and-which-never-do).
 - **Both routes are measured.** Each must be declared and measured in its own
   right. We never compute an alternative. A corridor with no measured pair
   shows an empty state that says so. It never builds a second route.
@@ -343,6 +353,34 @@ design target is a 65-inch screen at 3–5 m.
 - **Degraded state.** If the API is unreachable or a refresh fails, an amber
   DEGRADED banner appears over the last good data, dimmed, saying when the
   failure started. The screen never goes blank.
+
+### When numbers first appear, and which never do
+
+A new corridor shows em dashes for a while, and some hours show them forever.
+Each pooled statistic appears only once enough calls clear its floor, so how
+soon depends on how often the corridor is measured at the peaks.
+
+| Statistic | Floor | Every 15 minutes | Every 30 minutes |
+|---|---|---|---|
+| Ledger BTI and PTI (every peak-hour call, 90 days) | 200 calls | day 6–7 | day 12–14 |
+| Profile and route comparison, a full peak hour (120 days) | 200 calls | day 50–58 | day 100–115 |
+| Profile and route comparison at 06:00, 10:00 and 16:00 (120 days) | 200 calls | day 100–115 | **never** |
+| Weekly rhythm, one corridor, a full peak hour (90 days) | 30 calls | week 8–9 | **never** |
+| Weekly rhythm, one corridor, 06:00, 10:00 and 16:00 (90 days) | 30 calls | **never** | **never** |
+
+Ranges run from no failed calls to 12.5% failed.
+
+**Why "never" is by design.**
+- 06:00, 10:00 and 16:00 lie only partly inside the peak windows (06:30–10:30,
+  16:30–21:00), so they get half the calls of a full hour.
+- Every 30 minutes that is one call a day, at most 120 in the profile's 120-day
+  window, so the p95 floor of 200 is never reached.
+- The rhythm matrix's median needs 30 calls per weekday and hour, and a 90-day
+  window holds each weekday only 12 or 13 times.
+
+A permanent em dash in those places means the corridor was never sampled densely
+enough there. It is not a fault. The arithmetic is in
+[docs/free_tier.md](docs/free_tier.md), section 5.
 
 ### Data export
 

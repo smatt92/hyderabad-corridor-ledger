@@ -685,14 +685,16 @@ metrics job rebuilds every derived table.
 |---|---|---|
 | Collector ceiling | 2,400 attempts per IST day | `collector/budget.py` |
 | Retry reserve | 15%, leaving 2,040 first attempts | `collector/budget.py` |
-| Tier A corridors that fit | 48 | 2,040 ÷ 42 |
+| Corridors the free allowance fits | no 15- or 20-minute panel of four treated corridors reaches 19 donors | [free_tier.md](free_tier.md), calls per 31-day month with retries and road checks |
 | Spacing | at least 1 s between attempts | `collector/fetch.py` |
 | TomTom's published free Routing allowance | 20,000 calls a month, reset time undocumented | TomTom pricing page, read 2026-09-14 |
 
-**The two budgets disagree.** The collector's ceiling was designed against a
-daily allowance TomTom no longer publishes. A panel at 2,040 calls a day uses
-the published monthly allowance in under ten days. Which figure applies to
-this account is unresolved.
+**The collector's ceiling is wrong.** The figure of 2,400 calls a day came from
+a search snippet quoting 2,500 free requests a day. TomTom's pricing page lists
+20,000 calls a month, and 2,400 a day is 74,400 in a 31-day month. Panels are
+now sized in calls per 31-day month, with retries and road checks, against
+20,000 ([free_tier.md](free_tier.md)). The code keeps 2,400 until the panel is
+resized.
 - The daily alarm fails at 80% of 20,000 in a UTC month, and on any quota
   refusal.
 - It warns when the month's rate carries past 20,000.
