@@ -8,6 +8,11 @@ node_modules
 metrics
 tests
 scripts
+# A bare name matches at any depth, so `scripts` also matches web/scripts/. Its
+# check-bundle.mjs is a build gate that `npm run build` runs, so it stays in the upload
+# (tests/test_deploy_config.py).
+!web/scripts/
+!web/scripts/**
 supabase
 api/tests
 web/dist

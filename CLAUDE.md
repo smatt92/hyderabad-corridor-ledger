@@ -51,9 +51,11 @@ logic cannot be attributed, the dataset it produced cannot be trusted either.
 
 - Supabase: project `hyderabad-corridor-ledger`, ref `duejdeswzjepliqfkjyf`,
   region `ap-south-1` (Mumbai), org `sutytlpyraimbvdqdicf`.
-- Vercel: never created or linked, and nothing is deployed. `vercel.json` is
-  committed for P-04 with `git.deploymentEnabled: false` and `web/` and
-  `api/` as its only services.
+- Vercel: project `hyderabad-corridor-ledger` (team `sahilmatt-6245s-projects`),
+  created 2026-09-14 and deployed from Sahil's Vercel CLI. Its first three
+  production builds failed, so nothing is served. Its only environment
+  variables are `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`. `vercel.json`
+  has `git.deploymentEnabled: false` and `web/` and `api/` as its only services.
 - GitHub: `smatt92/hyderabad-corridor-ledger`, public, with secret scanning
   and push protection on.
 
@@ -740,7 +742,7 @@ Other definitions worth knowing before changing them:
 ## Read API and frontend (P-04)
 
 Vercel is to host the frontend (`web/`) and the read API (`api/`) and
-nothing else. No Vercel project exists yet. The collector, chain verification, archive, metrics and exports run in
+nothing else. The project exists and serves nothing yet. The collector, chain verification, archive, metrics and exports run in
 GitHub Actions.
 
 ### Route construction: hard rule
@@ -781,6 +783,9 @@ A route we have not measured must never reach a user. Someone may drive it.
 Enforced by `web/src/lib/route.test.ts`, `web/src/lib/rules.test.ts` (no
 waypoints, haversine, midpoints, via nodes or great-circle trigonometry
 anywhere in `src/`) and `web/scripts/check-bundle.mjs` on the built bundle.
+`.vercelignore` must keep that script in the upload. Its bare `scripts` pattern
+once removed it, and the first deploy failed. `tests/test_deploy_config.py`
+fails if the upload drops it, or any tracked file a service is built from.
 Pairs sharing endpoints is enforced by `collector/config.py` and the
 `corridors_check_pair` trigger. Payloads name a pair's sides `primary` and
 `alternate`: the primary is the pair's `class: core` corridor, mapped in

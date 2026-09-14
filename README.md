@@ -137,7 +137,7 @@ As of 14 September 2026.
 | Collector | Scheduled every 5 minutes across the collection windows in GitHub Actions. It exits at once while no corridor is active. |
 | Hash chains | Both chains walked once, on 13 September. One Rekor anchor, covering two empty chains. |
 | Metrics engine | Built and tested on synthetic panels. Every derived table is empty. The nightly job has not run yet. |
-| Read API and dashboard | Built and tested against fixture data. **Not deployed**: no Vercel project, no `VERCEL_TOKEN`, no browser tile key. |
+| Read API and dashboard | Built and tested against fixture data. **Not deployed**: a Vercel project exists (14 September), but its first builds failed, so nothing is served. No browser tile key. |
 | Intervention audit (P-07) | Estimator and view built. No audit is possible until a corridor has 205 days of data. |
 | System View (P-05 design, P-06 build) | **Not built.** The design has not been delivered. |
 | Junction register | 16 candidates. None verified on satellite imagery. |
@@ -147,12 +147,12 @@ Waiting on Sahil:
 - verifying junction coordinates;
 - declaring real corridors to replace the placeholders;
 - the TomTom question above;
-- `VERCEL_TOKEN` and the tile key for deployment.
+- the tile key, and what a deployment should show before real data exists.
 
 ## Using the dashboard
 
-> **This section describes a site that is not deployed.** The Vercel phase is
-> blocked with no token, and the database holds zero real samples. Everything
+> **This section describes a site that is not deployed.** The Vercel project's
+> first builds failed, and the database holds zero real samples. Everything
 > below was checked against synthetic fixture data, which the dashboard marks
 > with a SAMPLE DATA banner. No screenshots are included. Remove this note when
 > the first real deploy lands.

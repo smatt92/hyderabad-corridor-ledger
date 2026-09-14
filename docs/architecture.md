@@ -67,8 +67,8 @@ flowchart LR
 - **Vercel.** Everything to the right of Supabase is meant for Vercel. The
   read API gets only the publishable key, and refuses to start if it finds the
   service key in its environment. The dashboard bundle holds no key but the
-  browser tile key. Neither is deployed: no Vercel project exists,
-  `VERCEL_TOKEN` is absent, and the tile key has not been created.
+  browser tile key. Neither is served yet: the Vercel project's first builds
+  failed, and the tile key has not been created.
 
 **Tiles.** Browsers pull map tiles straight from TomTom. Nothing in this
 system proxies or meters them, and TomTom's Terms do not allow a proxy that
@@ -772,7 +772,7 @@ flowchart LR
 
 **The data path.**
 - **P-00** left GitHub (signed history, rulesets, secret scanning) and
-  Supabase in place. Its Vercel half is blocked: no `VERCEL_TOKEN` exists.
+  Supabase in place. Its Vercel project exists; its first builds failed.
 - **P-01**, the collector, is built and scheduled, and measures nothing until
   a verified corridor is active.
 - **P-02** is built and tested on synthetic panels. The earlier P-02 brief
