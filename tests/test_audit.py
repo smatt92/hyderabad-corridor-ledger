@@ -1,7 +1,10 @@
+from dataclasses import replace
+
 import numpy as np
 import pandas as pd
 import pytest
 
+import metrics.audit as audit_module
 from metrics.audit import (
     UNRANKED,
     estimators_disagree,
@@ -394,3 +397,40 @@ def test_same_distribution_with_different_sample_counts_is_no_effect():
         equal.append(row["equal_effect"])
     assert abs(np.mean(synthetic)) < 0.05
     assert abs(np.mean(equal)) < 0.05
+
+
+def placebo_pool_widths(monkeypatch, params):
+    """(donors, corridors each placebo's synthetic control was fitted on) for the headline."""
+    runs = audit_module.Audit.placebo_runs
+    fitter = audit_module.Audit.fitter
+    seen = []
+
+    def recording(self, donors, fit_blocks, treated_pre_rmspe):
+        widths = []
+
+        def fit_and_record(y, x):
+            widths.append(x.shape[1])
+            return fitter(self, y, x)
+
+        self.fitter = fit_and_record
+        try:
+            return runs(self, donors, fit_blocks, treated_pre_rmspe)
+        finally:
+            del self.fitter
+            seen.append((list(donors), widths))
+
+    with monkeypatch.context() as patch:
+        patch.setattr(audit_module.Audit, "placebo_runs", recording)
+        audit(by_hand_panel(), PAIRS, params=params)
+    return seen[0]
+
+
+def test_placebo_pools_leave_out_the_treated_corridor_unless_told_to_include_it(monkeypatch):
+    # donors d1, d2 and d4, with d1 and d4 a pair: d1's pool is d2, d2's is d1 and d4
+    donors, widths = placebo_pool_widths(monkeypatch, PARAMS)
+    assert (donors, widths) == (["d1", "d2", "d4"], [1, 2, 1])
+    # Abadie's in-space placebos: the treated corridor joins every pool, so each placebo
+    # fits on as many corridors as the treated fit did, less its own pair
+    included = replace(PARAMS, audit_placebo_includes_treated=True)
+    donors, widths = placebo_pool_widths(monkeypatch, included)
+    assert (donors, widths) == (["d1", "d2", "d4"], [2, 3, 2])

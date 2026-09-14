@@ -93,6 +93,10 @@ class Params:
     audit_weights: str = "demeaned"
     audit_max_donors: int = 0
     audit_overfit_ratio: float = 0.5
+    # Placebo pools. False: a placebo is fitted on the other donors, one fewer corridor
+    # than the treated fit had. True: the treated corridor joins every placebo's pool, as
+    # in Abadie's in-space placebos, so every run fits on the same number of corridors.
+    audit_placebo_includes_treated: bool = False
 
     def __post_init__(self) -> None:
         if self.p95_min_samples < self.central_min_samples:

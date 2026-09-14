@@ -430,15 +430,20 @@ class Audit:
 
     def placebo_runs(self, donors: list[str], fit_blocks: list[int],
                      treated_pre_rmspe: float) -> tuple[list[dict], list[float]]:
-        x = np.array([[self.block(c, "pre", k)[1] for c in donors] for k in fit_blocks])
-        dp = np.array([self.pooled(c, "pre") for c in donors])
-        dq = np.array([self.pooled(c, "post") for c in donors])
+        """Each donor in turn as if treated, fitted on the other donors less its own pair.
+        With audit_placebo_includes_treated the treated corridor joins every pool too."""
+        columns = ([*donors, self.treated] if self.params.audit_placebo_includes_treated
+                   else list(donors))
+        x = np.array([[self.block(c, "pre", k)[1] for c in columns] for k in fit_blocks])
+        dp = np.array([self.pooled(c, "pre") for c in columns])
+        dq = np.array([self.pooled(c, "post") for c in columns])
         rows, ratios = [], []
         for i, placebo_id in enumerate(donors):
-            pool = [j for j, c in enumerate(donors) if j != i and not self.same_pair(placebo_id, c)]
+            pool = [j for j, c in enumerate(columns)
+                    if j != i and not self.same_pair(placebo_id, c)]
             if not pool:
                 continue
-            others = [donors[j] for j in pool]
+            others = [columns[j] for j in pool]
             model = self.fitter(x[:, i], x[:, pool])
             pre = rmspe(x[:, i] - model.synthetic(x[:, pool]))
             post = rmspe([self.block(placebo_id, "post", k)[1]
