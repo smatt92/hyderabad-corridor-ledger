@@ -135,7 +135,8 @@ been chosen.
   `supabase/migrations/`, named `NNNN_description.sql`, applied with
   `supabase db push`. A migration is immutable once applied to the linked
   project, and freely editable before that.
-- 0014 was applied before 0013 on 2026-09-14. 0013 (`probe_calls`) is held
+- 0014 and 0015 were applied before 0013 on 2026-09-14, each pushed alone with
+  0013 moved aside for the push. 0013 (`probe_calls`) is held
   until the probe question is settled with TomTom. A plain `supabase db push`
   refuses it as older than the remote's latest; applying it takes
   `supabase db push --include-all`, and only on Sahil's word.

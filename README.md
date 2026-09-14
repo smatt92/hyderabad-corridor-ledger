@@ -130,7 +130,7 @@ As of 14 September 2026.
 
 | Part | State |
 |---|---|
-| Database (Supabase, Mumbai) | Migrations 0001–0012 and 0014 applied; 0011 (TomTom response headers), 0012 (corridor roads and their weekly checks) and 0014 (the audit donor floor) on 14 September. 0013 (probe calls) is held until the probe question is settled with TomTom. 12 MB. |
+| Database (Supabase, Mumbai) | Migrations 0001–0012, 0014 and 0015 applied; 0011 (TomTom response headers), 0012 (corridor roads and their weekly checks), 0014 (the audit donor floor) and 0015 (the ranked-placebo floor) on 14 September. 0013 (probe calls) is held until the probe question is settled with TomTom. 12 MB. |
 | Probe mode | Built and off. It would measure how often TomTom calls fail, keeping only each attempt's corridor, time, attempt number, HTTP status and latency, never the response. It needs 0013, held until TomTom answers the probe question, and Sahil's decision to run. |
 | Corridors | 10 declared, all draft placeholders. None verified, none active. |
 | Measurements | 0 samples, 0 failed samples, 0 collector runs recorded. |
