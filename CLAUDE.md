@@ -97,6 +97,40 @@ history plus ongoing access.
   "independent analysis of purchased data", which is weaker. The README must
   say so plainly from the first day purchased data is used, not quietly later.
 
+**If TomTom refuses: self-collection.** No openly licensed source of observed
+travel times, speeds or congestion exists for Hyderabad or any Indian city
+(`docs/data-sources.md`, checked 2026-09-14). OpenTraffic, the closest match, is
+defunct and never covered India. If TomTom refuses, the only route to observed
+data this project may publish is collecting it:
+- **The design.** A volunteer GPS-probe fleet on Traccar (Apache-2.0),
+  map-matched to OpenStreetMap with Valhalla's Meili (MIT), with aggregated
+  output published under CC-BY or ODbL. Which of the two depends on whether the
+  output is a derivative database of OpenStreetMap; settle that before
+  publishing.
+- **Recruitment first.** The binding constraint is volunteer recruitment, not
+  code. Do not build the pipeline until volunteers exist.
+- **DPDP Act 2023.** Volunteer GPS traces are personal data. Consent must be
+  free, specific, informed, unconditional and unambiguous, and limited to the
+  data the purpose needs (s. 6(1)). It must be withdrawable as easily as it was
+  given (s. 6(4)), and processing stops on withdrawal (s. 6(6)). Collect the
+  minimum. Publish only aggregates that clear a minimum-contributor threshold,
+  never raw traces. The DPDP Rules 2025 were notified on 13 November 2025 and
+  take effect in phases to 14 May 2027. This is a reading, not legal advice.
+- **The number that decides it.** FHWA's handbook gives 6-14 test-vehicle runs
+  per time period for a mean within ±10% at 95% confidence. BTI and PTI need 200
+  pooled traversals.
+  - Ledger: its 90-day pool needs about 2.2 complete peak-window traversals a day
+    per directional corridor, every day, or 3.1 a weekday.
+  - Audit: its 14-day blocks need 14.3 a day, or 20 a weekday.
+  - Volunteers: for 14 corridors both ways, with each volunteer driving one
+    corridor each way every weekday, that is about 44 volunteers for the ledger
+    and 280 for the audit.
+  - Free flow: without TomTom's free-flow figure, TTI and PTI also need 20 night
+    traversals per directional corridor every 28 days.
+  - These are lower bounds (`docs/data-sources.md`).
+- **Never use** the Kaggle "Bangalore's Traffic Pulse" dataset: its source
+  cannot be traced.
+
 The project chose TomTom believing its terms permitted keeping the data. The
 sample log, the Parquet archive and the exports all store Results. Until
 Sahil settles this with TomTom, say so wherever retention or publication is
