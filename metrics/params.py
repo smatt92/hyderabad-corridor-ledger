@@ -7,7 +7,7 @@ recomputes them from raw under the new version.
 
 from dataclasses import dataclass
 
-METHOD_VERSION = "p02.9"
+METHOD_VERSION = "p02.10"
 LOCAL_TZ = "Asia/Kolkata"
 BASES = ("tomtom", "p5")
 
@@ -98,7 +98,9 @@ class Params:
     # in Abadie's in-space placebos, so every run fits on the same number of corridors.
     audit_placebo_includes_treated: bool = False
     # Donor floor. An audit with fewer usable donors is withheld (too_few_donors), and so
-    # is a sensitivity variant. With n placebos the smallest p is 1/(n+1), so 19 is the
+    # is one with fewer ranked placebos (too_few_placebos): donors are what is available,
+    # ranked placebos what the inference uses. Sensitivity variants are held to it alike.
+    # With n placebos the smallest p is 1/(n+1), so 19 is the
     # fewest at which p can reach 0.05. docs/donor_floor.md found the rank's false-positive
     # rate at its nominal 5% from 19 donors up (800 simulated panels per count).
     audit_min_donors: int = 19

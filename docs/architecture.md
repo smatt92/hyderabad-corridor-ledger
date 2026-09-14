@@ -576,7 +576,9 @@ flowchart TD
     SYN --> EFF["effect: treated minus synthetic, BTI pooled per period"]
     EFF --> PLA["placebo runs: each donor treated in turn"]
     PLA --> STD["standardised effect: size of effect over held-out pre RMSPE"]
-    STD --> RANK["rank r among n placebos and the treated corridor"]
+    STD --> RANKED{"at least 19 placebos ranked?"}
+    RANKED -->|"no"| W5["withheld: too_few_placebos"]
+    RANKED -->|"yes"| RANK["rank r among n placebos and the treated corridor"]
     RANK --> P["p = r / (n + 1), never below 1 / (n + 1)"]
     P --> V["verdict: extreme when p is 0.05 or less, with how many in n + 1 read extreme by chance"]
 ```
@@ -617,9 +619,11 @@ migration 0014, applied 14 September).
   divided by the corridor's own leave-one-block-out pre RMSPE.
 - **p and its floor.** p is the treated corridor's rank r over n + 1, and can
   never fall below 1 / (n + 1). With fewer than 19 placebos no effect can
-  reach 0.05, so an audit with fewer than 19 usable donors is withheld. A
-  verdict can still rest on fewer placebos than donors, when a placebo is left
-  unranked, and then it says so.
+  reach 0.05, so an audit is withheld with fewer than 19 usable donors
+  (`too_few_donors`) or fewer than 19 ranked placebos (`too_few_placebos`). A
+  placebo is unranked when its leave-one-block-out pre error is zero, so its
+  effect has no scale. `n_donors` and `n_placebos` sit side by side on every
+  audit row.
 
 **Published with every verdict:**
 - p, with its rank and the placebo count;

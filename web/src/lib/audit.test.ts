@@ -319,6 +319,7 @@ describe("sensitivity to the completeness threshold", () => {
     expect(sensitivityStatusText("no_controls")).toBe("no donor qualifies");
     expect(sensitivityStatusText("too_few_blocks")).toBe("too few common pre blocks to fit");
     expect(sensitivityStatusText("too_few_donors")).toBe("fewer donors than the audit’s floor");
+    expect(sensitivityStatusText("too_few_placebos")).toBe("fewer ranked placebos than the audit’s floor");
     expect(sensitivityStatusText(null)).toBe(EM_DASH);
   });
 });
@@ -334,7 +335,7 @@ describe("no interval", () => {
       sensitivityStatement({ ...audit, sensitivity_material: true }),
       sensitivityStatement({ ...audit, sensitivity_material: null }),
     ].flatMap((s) => [s.headline, s.detail]);
-    const notices = (["insufficient_pre", "insufficient_post", "post_pending", "post_partial", "no_controls", "too_few_donors"] as const).map(
+    const notices = (["insufficient_pre", "insufficient_post", "post_pending", "post_partial", "no_controls", "too_few_donors", "too_few_placebos"] as const).map(
       (status) => statusNotice({ ...audit, status }, "X", 200, { pre: [], post: [] })?.body ?? "",
     );
     for (const text of [...statements, ...notices, ...auditPeriods(audit, 200).flat()]) {
@@ -402,6 +403,15 @@ describe("status notices", () => {
     const n = statusNotice({ ...audit, status: "no_controls", n_donors: 0 }, "Hitec City–Gachibowli", 200, rows)!;
     expect(n.body).toContain("The treated corridor’s own pair is never a donor");
     expect(n.body).toContain("at least 200 pooled peak-hour calls in every pre block (12 blocks of 14 days, 15 Sep 2025–1 Mar 2026)");
+  });
+
+  it("withholds an audit with too few ranked placebos and says why a placebo goes unranked", () => {
+    const n = statusNotice({ ...audit, status: "too_few_placebos", n_donors: 20, n_placebos: 18, min_donors: 19 }, "Hitec City–Gachibowli", 200, rows)!;
+    expect(n.kicker).toBe("Audit withheld");
+    expect(n.body).toContain("20 corridors qualified as donors for Hitec City–Gachibowli, but only 18 of their placebo runs could be ranked, fewer than the 19 the audit needs.");
+    expect(n.body).toContain("leave-one-block-out pre-period error is zero");
+    expect(n.body).toContain("With 18 ranked placebos the smallest attainable p would be 1/19 = 0.053");
+    expect(n.body).toContain("no placebo was left unranked in 800 panels at 6 pre blocks or 800 at 12");
   });
 
   it("withholds an audit below the donor floor and names the floor from the payload", () => {

@@ -609,8 +609,7 @@ Other definitions worth knowing before changing them:
   corridor's own leave-one-block-out pre RMSPE. Raw |effect| ranked a noisy
   treated corridor as extreme on 11-12% of no-effect panels (40 donors); the
   in-sample RMSPE ratio breaks on exact pre fits. The published verdict says
-  plainly when the effect is not extreme, including when there are too few
-  placebos for any effect to be, and ends by stating how many audits in n + 1
+  plainly when the effect is not extreme, and ends by stating how many audits in n + 1
   read extreme by chance with no effect (1 in 22 with 21 placebos): a single
   extreme verdict is not a finding.
 - The audit view and `docs/methodology.md` open with the capability statement:
@@ -628,7 +627,15 @@ Other definitions worth knowing before changing them:
   audit row records the floor it was held to (`min_donors`, 0014). Withheld, not
   published as "not extreme": with fewer than 19 placebos no effect can reach
   p = 0.05, so that verdict would state a null the design guaranteed, not one
-  observed. Sahil decided to keep it withheld. In simulation
+  observed. Sahil decided to keep it withheld. The same holds for ranked
+  placebos: an audit or sensitivity rerun with fewer than 19 ranked is withheld
+  as `too_few_placebos` (0015), because donors are what is available and ranked
+  placebos are what the inference uses. `n_donors` and `n_placebos` sit side by
+  side on every row. A placebo is unranked when its leave-one-block-out pre
+  error is zero; in simulation none was, in 800 panels at 6 pre blocks or 800 at
+  12 (`docs/unranked_placebos.md`). The 6-43% exact-fit figure in
+  `docs/methodology.md` is a different condition (the treated corridor's
+  in-sample fit) from 50-panel cells. In simulation
   the rank held its nominal size from 19 up (`docs/donor_floor.md`), on
   panel_model's corridors, which are more alike than real ones: re-measure once
   real corridors exist. Putting the treated corridor into each placebo's pool

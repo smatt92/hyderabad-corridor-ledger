@@ -261,7 +261,7 @@ export interface InterventionsResponse extends Envelope {
   interventions: (Intervention & { audit_status: Maybe<string> })[];
 }
 
-export type AuditStatus = "ok" | "insufficient_pre" | "post_pending" | "post_partial" | "insufficient_post" | "no_controls" | "too_few_donors";
+export type AuditStatus = "ok" | "insufficient_pre" | "post_pending" | "post_partial" | "insufficient_post" | "no_controls" | "too_few_donors" | "too_few_placebos";
 
 /**
  * A synthetic-control audit of one intervention on pooled buffer time index.
@@ -319,6 +319,7 @@ export interface Audit {
    */
   std_effect?: Maybe<number>;
   /** Placebo runs with a standardised effect. */
+  /** Ranked placebos: runs whose standardised effect could be computed. Compare with n_donors; 0 when none was run. */
   n_placebos: number;
   /** (1 + placebos with a standardised effect at least as large) / (1 + placebos). */
   placebo_p_value: Maybe<number>;
@@ -383,7 +384,7 @@ export interface AuditSensitivity {
   variant: SensitivityVariant | string;
   block_floor: Maybe<number>;
   max_short_blocks: Maybe<number>;
-  status: "ok" | "no_controls" | "too_few_donors" | "too_few_blocks" | string;
+  status: "ok" | "no_controls" | "too_few_donors" | "too_few_placebos" | "too_few_blocks" | string;
   n_donors: Maybe<number>;
   n_fit_blocks: Maybe<number>;
   effect: Maybe<number>;

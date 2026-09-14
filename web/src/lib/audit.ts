@@ -428,6 +428,8 @@ export function sensitivityStatusText(status: string | null | undefined): string
       return "no donor qualifies";
     case "too_few_donors":
       return "fewer donors than the audit’s floor";
+    case "too_few_placebos":
+      return "fewer ranked placebos than the audit’s floor";
     case "too_few_blocks":
       return "too few common pre blocks to fit";
     default:
@@ -511,6 +513,18 @@ export function statusNotice(a: Audit, corridorName: string, floor: number, rows
           `${a.n_donors} ${plural(a.n_donors, "corridor qualifies", "corridors qualify")} as ${plural(a.n_donors, "a donor", "donors")} for ${corridorName}, fewer than the ${needed} the audit needs. ` +
           `With at most ${a.n_donors} placebo ${plural(a.n_donors, "run", "runs")} the smallest attainable p would be 1/${a.n_donors + 1} = ${(1 / (a.n_donors + 1)).toFixed(3)}, and no verdict is published below ${needed} usable donors. ` +
           `A donor needs at least ${floor} pooled peak-hour calls in every pre block (${a.pre_blocks} ${plural(a.pre_blocks, "block", "blocks")} of ${a.block_days} days, ${pre}), and the treated corridor’s own pair and every treated corridor are never donors.`,
+      };
+    }
+    case "too_few_placebos": {
+      const needed = a.min_donors ?? EM_DASH;
+      const ranked = a.n_placebos;
+      return {
+        kicker: "Audit withheld",
+        body:
+          `${a.n_donors} ${plural(a.n_donors, "corridor", "corridors")} qualified as donors for ${corridorName}, but only ${ranked} of ${plural(a.n_donors, "its", "their")} placebo runs could be ranked, fewer than the ${needed} the audit needs. ` +
+          `A placebo is left unranked when its leave-one-block-out pre-period error is zero: every pre block is predicted exactly by weights fitted on the others, so its effect has no scale. That happens when a donor’s series is an exact weighted mix of other donors’, as when two corridors measure the same road. ` +
+          `With ${ranked} ranked ${plural(ranked, "placebo", "placebos")} the smallest attainable p would be 1/${ranked + 1} = ${(1 / (ranked + 1)).toFixed(3)}, so a “not extreme” verdict would be guaranteed by the design, and none is published. ` +
+          "In simulation no placebo was left unranked in 800 panels at 6 pre blocks or 800 at 12, so an audit withheld this way is unusual and its donors are worth checking.",
       };
     }
   }

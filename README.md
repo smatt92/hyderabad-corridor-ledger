@@ -62,7 +62,8 @@ Real Hyderabad values are unknown until data arrives.
 
 - A change of 0.10 was not reliably detected at any pre-period up to 60 weeks.
   Power peaked at 0.72 with 20 donors and 0.74 with 40.
-- Below 19 usable donors the audit is withheld: no placebo p could reach 0.05.
+- Below 19 usable donors, or 19 ranked placebos, the audit is withheld: no
+  placebo p could reach 0.05.
   From 19 up, the placebo rank's false-positive rate held its nominal 5% on 800
   simulated no-effect panels per donor count
   ([docs/donor_floor.md](docs/donor_floor.md)).

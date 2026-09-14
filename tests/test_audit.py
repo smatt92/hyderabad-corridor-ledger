@@ -294,6 +294,40 @@ def test_placebos_exclude_their_own_pair_and_report_their_resolution():
     assert "no effect could reach p = 0.05" in row["placebo_verdict"]
 
 
+def test_an_audit_with_too_few_ranked_placebos_is_withheld():
+    # d5 is an exact mixture of d1 and d2 plus a constant, so with any pre block held out
+    # its synthetic control still reproduces it: zero held-out error, and it is not ranked
+    noisy_pre = [b + e for b, e in zip(mixture("pre", 0.1), PRE_NOISE, strict=True)]
+    d5_pre = [0.5 * a + 0.5 * b + 0.05 for a, b in zip(D1_PRE, D2_PRE, strict=True)]
+    d5_post = [0.5 * a + 0.5 * b + 0.05 for a, b in zip(D1_POST, D2_POST, strict=True)]
+    others = [f for f in by_hand_panel() if f["corridor_id"].iloc[0] != "t"]
+    panel = [*series("t", noisy_pre, mixture("post", 0.1 + EFFECT)), *others,
+             *series("d5", d5_pre, d5_post)]
+
+    ranked = audit(panel, PAIRS, params=replace(PARAMS, audit_min_donors=3))
+    (row,) = ranked["intervention_audit"].to_dict("records")
+    assert (row["status"], row["n_donors"], row["n_placebos"]) == ("ok", 4, 3)   # they diverge
+    assert np.isnan(ranked["audit_placebos"].set_index("corridor_id").loc["d5", "std_effect"])
+
+    withheld = audit(panel, PAIRS, params=replace(PARAMS, audit_min_donors=4))
+    (row,) = withheld["intervention_audit"].to_dict("records")
+    assert (row["status"], row["n_donors"], row["n_placebos"], row["min_donors"]) == (
+        "too_few_placebos", 4, 3, 4)
+    assert np.isnan(row["effect"]) and pd.isna(row["placebo_verdict"])
+    assert len(withheld["audit_placebos"]) == 4           # every placebo run still published
+    assert withheld["audit_sensitivity"].empty
+
+    # a variant is held to the same rule: strict_125 keeps only d5 and d6, each an exact
+    # shift of the other, so neither placebo is ranked
+    d6 = series("d6", [b + 0.03 for b in d5_pre], [b + 0.03 for b in d5_post], n=260)
+    wider = [*series("t", noisy_pre, mixture("post", 0.1 + EFFECT)), *others,
+             *series("d5", d5_pre, d5_post, n=260), *d6]
+    tables = audit(wider, PAIRS, params=replace(PARAMS, audit_min_donors=2))
+    assert tables["intervention_audit"]["status"].iloc[0] == "ok"
+    strict = tables["audit_sensitivity"].set_index("variant").loc["strict_125"]
+    assert (strict["status"], strict["n_donors"], strict["n_placebos"]) == (
+        "too_few_placebos", 2, 0)
+
 def test_every_verdict_states_how_often_chance_reads_extreme():
     # rank 1 of 22: extreme, and 1 audit in 22 would read extreme with no effect at all
     _, p, _, extreme, verdict = placebo_summary(100.0, [float(i) for i in range(21)], 0.05)

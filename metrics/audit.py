@@ -622,6 +622,11 @@ def audit_one(calls: Calls, cells: pd.DataFrame, pairs: dict, intervention_id: s
         return finish("post_partial")
 
     base = a.estimate(candidates, all_blocks)
+    audit["n_placebos"] = base["n_placebos"]
+    if base["n_placebos"] < params.audit_min_donors:
+        # donors are what is available; ranked placebos are what the inference uses
+        out["audit_placebos"] = base["placebos"]
+        return finish("too_few_placebos")
     audit |= {k: base[k] for k in HEADLINE + PLACEBO_SUMMARY}
     audit |= {
         "estimator_gap": base["effect"] - base["equal_effect"],
@@ -650,9 +655,12 @@ def audit_one(calls: Calls, cells: pd.DataFrame, pairs: dict, intervention_id: s
             else:
                 same = pool == candidates and fit_blocks == all_blocks
                 result = base if same else a.estimate(pool, fit_blocks)
-                row |= {"status": "ok"} | {k: result[k] for k in (
-                    "effect", "equal_effect", "placebo_rank", "n_placebos",
-                    "placebo_p_value", "placebo_p_floor")}
+                if result["n_placebos"] < params.audit_min_donors:
+                    row |= {"status": "too_few_placebos", "n_placebos": result["n_placebos"]}
+                else:
+                    row |= {"status": "ok"} | {k: result[k] for k in (
+                        "effect", "equal_effect", "placebo_rank", "n_placebos",
+                        "placebo_p_value", "placebo_p_floor")}
             out["audit_sensitivity"].append(row)
         low_effect, high_effect, material = sensitivity_summary(
             base["effect"], base["placebo_extreme"],

@@ -93,6 +93,15 @@ what comparable untreated corridors did over the same days.
   them, every interval reaching 5% ([donor_floor.md](donor_floor.md)). The 10%
   once read at 20 donors was 5 of 50 panels. These are panel_model's corridors,
   more alike than real ones.
+- **Ranked placebos, not donors.** The rank uses ranked placebos, so the floor
+  applies to them too: an audit with fewer than 19 placebos ranked is withheld
+  as `too_few_placebos`, and `n_donors` and `n_placebos` are both published. A
+  placebo is unranked when its leave-one-block-out pre error is zero, which
+  happens when a donor's series is an exact weighted mix of others'. In 800
+  panels at 6 pre blocks and 800 at 12 it never happened
+  ([unranked_placebos.md](unranked_placebos.md)). The treated corridor's exact
+  in-sample fits, 15% of panels at 6 blocks and none at 12, are a different
+  condition and do not unrank anything.
   The published p is always shown with its rank, the placebo count and that
   floor, and with how many audits in n + 1 would read extreme by chance with no
   effect at all: floor(0.05 × (n + 1)), one in 22 with 21 placebos. The rank
@@ -165,7 +174,7 @@ what comparable untreated corridors did over the same days.
 With six pre blocks and many donors, simplex weights can reproduce the
 treated corridor's pre series exactly, and an exact fit predicts nothing.
 Levels weights cut the share of exact fits at six pre blocks from 6–43% of
-panels to 2–20%, and a five-donor cap to 0%. Neither restored the placebo
+panels to 2–20% (50 panels per cell), and a five-donor cap to 0%. Neither restored the placebo
 ranking: at six pre blocks the RMSPE-ratio rank detected nothing up to 0.45
 BTI under any of the three. Neither changed the estimate's spread (null-effect
 sd 0.049–0.055 at 20 and 40 donors). Exact fits disappear at twelve pre blocks
