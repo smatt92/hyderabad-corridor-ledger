@@ -97,39 +97,41 @@ history plus ongoing access.
   "independent analysis of purchased data", which is weaker. The README must
   say so plainly from the first day purchased data is used, not quietly later.
 
-**If TomTom refuses: self-collection.** No openly licensed source of observed
-travel times, speeds or congestion exists for Hyderabad or any Indian city
-(`docs/data-sources.md`, checked 2026-09-14). OpenTraffic, the closest match, is
-defunct and never covered India. If TomTom refuses, the only route to observed
-data this project may publish is collecting it:
-- **The design.** A volunteer GPS-probe fleet on Traccar (Apache-2.0),
-  map-matched to OpenStreetMap with Valhalla's Meili (MIT), with aggregated
-  output published under CC-BY or ODbL. Which of the two depends on whether the
-  output is a derivative database of OpenStreetMap; settle that before
-  publishing.
-- **Recruitment first.** The binding constraint is volunteer recruitment, not
-  code. Do not build the pipeline until volunteers exist.
-- **DPDP Act 2023.** Volunteer GPS traces are personal data. Consent must be
-  free, specific, informed, unconditional and unambiguous, and limited to the
-  data the purpose needs (s. 6(1)). It must be withdrawable as easily as it was
-  given (s. 6(4)), and processing stops on withdrawal (s. 6(6)). Collect the
-  minimum. Publish only aggregates that clear a minimum-contributor threshold,
-  never raw traces. The DPDP Rules 2025 were notified on 13 November 2025 and
-  take effect in phases to 14 May 2027. This is a reading, not legal advice.
-- **The number that decides it.** FHWA's handbook gives 6-14 test-vehicle runs
-  per time period for a mean within ±10% at 95% confidence. BTI and PTI need 200
-  pooled traversals.
-  - Ledger: its 90-day pool needs about 2.2 complete peak-window traversals a day
-    per directional corridor, every day, or 3.1 a weekday.
-  - Audit: its 14-day blocks need 14.3 a day, or 20 a weekday.
-  - Volunteers: for 14 corridors both ways, with each volunteer driving one
-    corridor each way every weekday, that is about 44 volunteers for the ledger
-    and 280 for the audit.
-  - Free flow: without TomTom's free-flow figure, TTI and PTI also need 20 night
-    traversals per directional corridor every 28 days.
-  - These are lower bounds (`docs/data-sources.md`).
-- **Never use** the Kaggle "Bangalore's Traffic Pulse" dataset: its source
-  cannot be traced.
+**Volunteer self-collection: NOT VIABLE. Do not reopen it.** No openly licensed
+source of observed travel times, speeds or congestion exists for Hyderabad or any
+Indian city (`docs/data-sources.md`, checked 2026-09-14). The one way to create
+such data ourselves, a volunteer GPS-probe fleet, cannot meet this project's
+metrics:
+- The audit's 14-day blocks need about 280 volunteers driving the same corridors
+  every weekday (14 corridors, both ways), sustained through a 24-week pre-period
+  and a 28-day post period. That is not a recruitment problem; it is a different
+  organisation.
+- Even the ledger's weaker requirement, about 44 daily drivers, exceeds what a
+  solo project sustains.
+- Without a provider's free-flow figure, TTI and PTI rest on the observed night
+  p5, which needs 20 night runs per directional corridor every 28 days. Commuters
+  do not drive at 2am, so the metric that anchors TTI and PTI is the one
+  volunteers structurally cannot produce.
+- Every figure is a lower bound, counting complete corridor runs only.
+- Do not build any part of the Traccar pipeline.
+
+**The position.** Every route to observed, publishable travel-time data for
+Hyderabad is closed except two. Both were checked with sources, and neither is a
+guess; the sources and what they do not yet establish are in
+`docs/data-sources.md`.
+1. **A negotiated commercial licence.** TomTom sells Traffic Stats (historical
+   speeds, travel times and sample counts) through sales, and its Traffic Index
+   publishes Hyderabad figures. Whether a licence permits publishing is the
+   question put to TomTom.
+2. **Institutional access** through a university with existing Telangana
+   Government data permissions. IIIT Hyderabad is a named Technology Partner of
+   the Telangana Mobility AI Grand Challenge, and the state's TGDeX data
+   exchange links government data with research institutions. Whether such
+   access covers observed road travel times, and permits publication, is not
+   yet confirmed.
+
+**Never use** the Kaggle "Bangalore's Traffic Pulse" dataset: its source cannot be
+traced.
 
 The project chose TomTom believing its terms permitted keeping the data. The
 sample log, the Parquet archive and the exports all store Results. Until

@@ -14,9 +14,19 @@ for Hyderabad or any Indian city.** That is a negative: it covers the sources be
 every source that could exist. The closest thing to what this project needs, OpenTraffic's
 open speeds from ride-hailing GPS, is defunct and never covered India.
 
-So the data comes from TomTom under terms not yet settled (CLAUDE.md, "TomTom's terms and
-allowance"), from data bought under a licence that permits publishing, or from collecting it
-ourselves.
+Collecting the data ourselves is not viable either ("Volunteer self-collection: not viable",
+below).
+
+## The position: two routes remain
+
+Every route to observed, publishable travel-time data for Hyderabad is closed except two.
+Sahil checked both with sources; neither is a guess. The sources re-checked here on
+2026-09-14, and what they do not yet establish:
+
+| Route | Evidence | Not yet established | Checked |
+|---|---|---|---|
+| A negotiated commercial licence | [TomTom Traffic Stats](https://www.tomtom.com/products/traffic-stats/) sells historical speeds, travel times and sample counts for road networks in over 70 countries, through TomTom MOVE, batch delivery or an API, by contacting sales. TomTom's [Traffic Index](https://www.tomtom.com/traffic-index/city/hyderabad/) publishes Hyderabad figures, so TomTom holds Hyderabad trip data. | Whether a licence permits publishing, and whether it delivers individual travel times or only percentiles per time bin. Both are put to TomTom (CLAUDE.md). | opened (product page); search (the Hyderabad index page did not render) |
+| Institutional access through a university with existing Telangana Government data permissions | IIIT Hyderabad is a named Technology Partner of the Telangana Mobility AI Grand Challenge, with T-AIM and NASSCOM ([IIIT-H Mobility news](https://mobility.iiit.ac.in/news.php)). [TGDeX](https://tgdex.telangana.gov.in/), the state's data exchange built with IISc, links government datasets with research institutions, IIT Hyderabad and IIIT Hyderabad among them ([MediaNama, July 2025](https://www.medianama.com/2025/07/223-telangana-tgdex-india-first-state-led-ai-data-exchange/)). | Whether any such permission covers observed road travel times or speeds, and whether results could be published. | opened (IIIT-H news); search (the TGDeX portal did not render) |
 
 ## Catalogues
 
@@ -48,6 +58,12 @@ road speeds linked to OpenStreetMap and published them openly.
 | The code survives under mixed licences: LGPL-3.0 for the pipeline (reporter, datastore, analyst-ui, api, otv2-platform), GPL-3.0 for traffic-engine, MIT or Apache-2.0 for smaller repositories, and osmlr unspecified | [github.com/opentraffic](https://github.com/opentraffic) | API |
 | It never covered Hyderabad | No source found showing OpenTraffic data for any Indian city | search |
 
+## Academic data
+
+| Source | What it holds | Checked |
+|---|---|---|
+| [India Driving Dataset, IIIT Hyderabad](https://insaan.iiit.ac.in/datasets/) | Annotated road-scene images (over 46,000) and LiDAR frames from Hyderabad and Bengaluru, for computer vision. It was described as India's first open, public traffic dataset, but it holds no travel times, speeds or congestion ([FactorDaily](https://archive.factordaily.com/india-driving-dataset-iiit-hyderabad/), [Deccan Chronicle](https://www.deccanchronicle.com/southern-states/telangana/iiit-h-expands-indian-driving-dataset-for-research-on-indias-chaotic-roads-1902670)). | search |
+
 ## Indian portals
 
 | Portal | What it holds for this purpose | Checked |
@@ -76,10 +92,24 @@ Bangalore roads and intersections. Its metadata names no source, instrument, col
 method or period, and does not say whether the data is synthetic. Its provenance cannot be
 traced. Never use it in analysis, fixtures, validation or examples.
 
-## If TomTom refuses: self-collection
+## Volunteer self-collection: not viable
 
-The decision and its constraints are recorded in CLAUDE.md ("If TomTom refuses:
-self-collection"). The components, checked:
+**Not viable for this project. Do not reopen it.** A volunteer GPS-probe fleet was the only
+way to create observed data we could publish ourselves. The numbers in the next section
+close it:
+
+- The audit needs about 280 volunteers driving the same corridors every weekday, for 14
+  corridors both ways, sustained through a 24-week pre-period and a 28-day post period. That
+  is not a recruitment problem; it is a different organisation.
+- Even the ledger's weaker requirement, about 44 daily drivers, exceeds what a solo project
+  sustains.
+- Without a provider's free-flow figure, TTI and PTI rest on the observed night p5, which
+  needs 20 night runs per directional corridor every 28 days. Commuters do not drive at 2am,
+  so the metric that anchors TTI and PTI is the one volunteers structurally cannot produce.
+- Every figure is a lower bound, counting complete corridor runs only.
+
+Do not build any part of the Traccar pipeline. The components that were evaluated are
+recorded so the evaluation can be traced:
 
 | Component | Licence | Checked |
 |---|---|---|
@@ -88,11 +118,10 @@ self-collection"). The components, checked:
 | [DPDP Act 2023, section 6](https://indiankanoon.org/doc/15072321/): consent free, specific, informed, unconditional and unambiguous, limited to the data the purpose needs; withdrawable as easily as given; processing stops on withdrawal | statute | search |
 | [DPDP Rules 2025](https://en.wikipedia.org/wiki/Digital_Personal_Data_Protection_Rules,_2025): notified 13 November 2025, in force in phases to 14 May 2027 | rules | search |
 
-## Open question: how much volunteer driving the metrics need
+## The numbers that closed it
 
-**The number that decides whether the volunteer model can support this project at all:
-about 2.2 complete peak-window traversals a day, every day, per directional corridor,
-for ledger BTI and PTI. The audit needs 14.3 a day.**
+Ledger BTI and PTI need about 2.2 complete peak-window traversals a day, every day, per
+directional corridor. The audit needs 14.3 a day.
 
 [FHWA's Travel Time Data Collection Handbook](https://www.fhwa.dot.gov/ohim/handbook/chap3.pdf)
 (FHWA-PL-98-035, Tables 3-3 and 3-4) gives 6 to 14 test-vehicle runs per time period to
