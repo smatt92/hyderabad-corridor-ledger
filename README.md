@@ -62,7 +62,10 @@ Real Hyderabad values are unknown until data arrives.
 
 - A change of 0.10 was not reliably detected at any pre-period up to 60 weeks.
   Power peaked at 0.72 with 20 donors and 0.74 with 40.
-- With 10 donors, no placebo p can reach 0.05 at all.
+- Below 19 usable donors the audit is withheld: no placebo p could reach 0.05.
+  From 19 up, the placebo rank's false-positive rate held its nominal 5% on 800
+  simulated no-effect panels per donor count
+  ([docs/donor_floor.md](docs/donor_floor.md)).
 - Samples are never backfilled. A corridor must start collecting at least 24
   weeks before its intervention opens, so works that are announced but not yet
   begun are seeded first.

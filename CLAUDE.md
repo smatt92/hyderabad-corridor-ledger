@@ -76,6 +76,15 @@ and not necessarily the terms of Sahil's account.
 - A stored corridor road (0012) is a stored Result too. `corridors` is
   publicly readable, so a stored road is also published.
 
+**The number that decides whether this needs a paid licence.** The free tier
+supports an auditable panel only while fewer than roughly 6% of peak-hour calls
+fail. In `docs/free_tier.md`, some 30-minute panel still fits 20,000 calls a
+month, keeps 19 usable donors in 80% of audits and is withheld in at most 20% up
+to 6.4% of peak calls failed; from 7.7% none does. At panel_model's assumed rate,
+about 12%, no design is auditable. The real rate is unmeasured, and probe mode
+exists to measure it. This figure belongs in the TomTom conversation beside the
+terms question.
+
 The project chose TomTom believing its terms permitted keeping the data. The
 sample log, the Parquet archive and the exports all store Results. Until
 Sahil settles this with TomTom, say so wherever retention or publication is
@@ -316,8 +325,13 @@ unauditable, however good the estimator. This decides seeding order.
   floor once 16% of calls fail. In simulation 30-62% of Tier B audits were
   withheld and a nominal 20 donors shrank to 9-12, too few for any placebo p to
   reach 0.05.
-- An audit needs at least 19 usable donors after exclusions; declare 20 or
-  more, since failures exclude some. The "48 Tier A corridors" once written here
+- An audit needs at least 19 usable donors after exclusions
+  (`audit_min_donors`), and is withheld as `too_few_donors` below that (0014).
+  19 is where a placebo p of 0.05 first exists, and also the measured floor: on
+  800 simulated no-effect panels per donor count, the rank's false-positive
+  rate held its nominal 5% from 19 donors up (`docs/donor_floor.md`). The 10%
+  once read at 20 donors was 5 of 50 panels, an interval that includes 5%.
+  Declare more than 19, since failures exclude some. The "48 Tier A corridors" once written here
   came from the wrong 2,400-a-day budget. At TomTom's free 20,000 calls a month,
   no 15- or 20-minute panel of four treated corridors reaches 19 donors at any
   failure rate (`docs/free_tier.md`).
@@ -590,6 +604,14 @@ Other definitions worth knowing before changing them:
   published with the treated corridor's rank, the placebo count and that floor
   (`placebo_rank`, `n_placebos`, `placebo_p_floor`), in the verdict text, the
   API and the frontend.
+- The donor floor is 19 usable donors (`audit_min_donors`). Below it the audit
+  is withheld as `too_few_donors`, and so is each sensitivity rerun, and every
+  audit row records the floor it was held to (`min_donors`, 0014). In simulation
+  the rank held its nominal size from 19 up (`docs/donor_floor.md`), on
+  panel_model's corridors, which are more alike than real ones: re-measure once
+  real corridors exist. Putting the treated corridor into each placebo's pool
+  (`audit_placebo_includes_treated`) made no distinguishable difference, so it
+  stays off.
 - **Missingness in donor selection is not random.** A donor needs every pre
   block at the p95 floor, and failed calls cluster at peak hours on the most
   congested roads, so the corridors dropped for an incomplete pre block are

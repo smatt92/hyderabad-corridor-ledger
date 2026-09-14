@@ -174,8 +174,10 @@ PARTS = {  # grid, variants, deltas, bootstrap resamples, scheduled_panel argume
 
 def scenario_params(scenario: tuple, **extra) -> Params:
     _, block_days, pre_blocks, _, post_blocks = scenario
+    # audit_min_donors=0: these sweeps measure the estimator at every donor count,
+    # including counts below the published floor
     return Params(audit_block_days=block_days, audit_pre_blocks=pre_blocks,
-                  audit_post_blocks=post_blocks, **extra)
+                  audit_post_blocks=post_blocks, **({"audit_min_donors": 0} | extra))
 
 
 def simulate(scenario: tuple, replicate: int, panel: dict | None = None):
@@ -586,6 +588,7 @@ def freetier_report(frame: pd.DataFrame, heading: str, note: str) -> list[str]:
     frame = frame.reindex(columns=[*frame.columns, *(c for c in wanted if c not in frame.columns)])
     frame = with_detections(frame)
     replicates = int(frame["replicate"].max()) + 1
+    donor_floor = Params().audit_min_donors
     budget, audits, power = [], [], []
     for (tier, donors), group in frame.groupby(["tier", "donors"], sort=False):
         minutes, ids = schedule.CADENCE_MINUTES[tier], donors + TREATED_IDS
@@ -607,7 +610,7 @@ def freetier_report(frame: pd.DataFrame, heading: str, note: str) -> list[str]:
             label, str(donors), f"{peak_fail:.1%}", cell(1 - len(ran) / len(null)), reasons or "—",
             cell(ran["n_donors"].mean(), 1) if len(ran) else "—",
             cell(ran["n_donors"].quantile(0.1), 0) if len(ran) else "—",
-            cell((ran["n_placebos"] >= 19).sum() / len(null)),
+            cell((ran["n_donors"] >= donor_floor).sum() / len(null)),
             cell(ran["std_effect"].mean()) if len(ran) else "—",
         ])
         every = group.groupby("delta")["std_effect"].mean()
@@ -633,11 +636,12 @@ def freetier_report(frame: pd.DataFrame, heading: str, note: str) -> list[str]:
                 "retries", "month with retries and road checks", "of 20,000"], budget), "",
         "### Audits", "",
         "`withheld`: the audit refused (treated corridor under the block floor, or no donor "
-        "left). `donors used`: mean and 10th percentile among audits that ran. `p reachable`: "
-        "share of all audits with at least 19 placebos, the fewest at which a placebo p can "
-        "reach 0.05. `size`: false-positive rate among audits that ran.", "",
+        "left). `donors used`: mean and 10th percentile among audits that ran. `at donor "
+        f"floor`: share of all audits that ran with at least {donor_floor} usable donors, the "
+        "published donor floor (docs/donor_floor.md); below it the audit withholds its "
+        "verdict. `size`: false-positive rate among audits that ran, at the floor or not.", "",
         *table(["design", "donors declared", "peak calls failed", "withheld", "why",
-                "donors used", "donors used, p10", "p reachable", "size"], audits), "",
+                "donors used", "donors used, p10", "at donor floor", "size"], audits), "",
         "### Power", "",
         "Share of all declared audits that detect the effect: a withheld audit counts as not "
         "detected. `MDE, every audit` is what a declared audit can promise; `MDE, audits run` "

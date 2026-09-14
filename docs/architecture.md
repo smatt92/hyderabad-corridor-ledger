@@ -568,7 +568,9 @@ flowchart TD
     POST -->|"yes"| GATE["drop donors: paired alternate, treated, under_works, incomplete pre, insufficient post"]
     GATE --> ANY{"any usable donor left?"}
     ANY -->|"no"| W3["withheld: no_controls"]
-    ANY -->|"yes"| FIT["fit on 12 pre blocks of pooled BTI"]
+    ANY -->|"yes"| FLOOR{"at least 19 usable donors?"}
+    FLOOR -->|"no"| W4["withheld: too_few_donors"]
+    FLOOR -->|"yes"| FIT["fit on 12 pre blocks of pooled BTI"]
     FIT --> WTS["simplex donor weights, demeaned"]
     WTS --> SYN["synthetic counterfactual"]
     SYN --> EFF["effect: treated minus synthetic, BTI pooled per period"]
@@ -596,6 +598,13 @@ Missingness is not random: congested corridors fail the completeness test
 more often. So the excluded corridors' missing rate and BTI are published
 beside the donors'.
 
+**The donor floor.** An audit left with fewer than 19 usable donors
+(`audit_min_donors`) is withheld as `too_few_donors`, and so is any sensitivity
+rerun below it. 19 is where a placebo p of 0.05 first exists, and in simulation
+the rank held its nominal 5% false-positive rate from there up
+([donor_floor.md](donor_floor.md)). Each audit row records the floor it was held to (`min_donors`,
+migration 0014, written and not applied).
+
 **The estimate.**
 - **Weights** are fitted on the demeaned block BTIs, and are non-negative and
   sum to one.
@@ -608,7 +617,9 @@ beside the donors'.
   divided by the corridor's own leave-one-block-out pre RMSPE.
 - **p and its floor.** p is the treated corridor's rank r over n + 1, and can
   never fall below 1 / (n + 1). With fewer than 19 placebos no effect can
-  reach 0.05, and the verdict says so rather than being withheld.
+  reach 0.05, so an audit with fewer than 19 usable donors is withheld. A
+  verdict can still rest on fewer placebos than donors, when a placebo is left
+  unranked, and then it says so.
 
 **Published with every verdict:**
 - p, with its rank and the placebo count;

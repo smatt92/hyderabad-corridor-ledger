@@ -426,6 +426,8 @@ export function sensitivityStatusText(status: string | null | undefined): string
       return "ok";
     case "no_controls":
       return "no donor qualifies";
+    case "too_few_donors":
+      return "fewer donors than the audit’s floor";
     case "too_few_blocks":
       return "too few common pre blocks to fit";
     default:
@@ -501,5 +503,15 @@ export function statusNotice(a: Audit, corridorName: string, floor: number, rows
           "The treated corridor’s own pair is never a donor: traffic diverting onto the paired alternate is a consequence of the intervention, so that corridor is contaminated, not a control. " +
           `Treated corridors are never donors either, and a donor needs at least ${floor} pooled peak-hour calls in every pre block (${a.pre_blocks} ${plural(a.pre_blocks, "block", "blocks")} of ${a.block_days} days, ${pre}).`,
       };
+    case "too_few_donors": {
+      const needed = a.min_donors ?? EM_DASH;
+      return {
+        kicker: "Audit withheld",
+        body:
+          `${a.n_donors} ${plural(a.n_donors, "corridor qualifies", "corridors qualify")} as ${plural(a.n_donors, "a donor", "donors")} for ${corridorName}, fewer than the ${needed} the audit needs. ` +
+          `With at most ${a.n_donors} placebo ${plural(a.n_donors, "run", "runs")} the smallest attainable p would be 1/${a.n_donors + 1} = ${(1 / (a.n_donors + 1)).toFixed(3)}, and no verdict is published below ${needed} usable donors. ` +
+          `A donor needs at least ${floor} pooled peak-hour calls in every pre block (${a.pre_blocks} ${plural(a.pre_blocks, "block", "blocks")} of ${a.block_days} days, ${pre}), and the treated corridor’s own pair and every treated corridor are never donors.`,
+      };
+    }
   }
 }

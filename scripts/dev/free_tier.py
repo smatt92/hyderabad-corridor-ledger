@@ -7,8 +7,9 @@ panel designs of four treated corridors plus donors:
   - calls in a 31-day month, retries and road checks included, by peak cadence,
     night slots, call failure rate and panel width;
   - the call failure rate at which the intervention audit breaks: the share of
-    audits withheld crosses 20%, or fewer than 80% of audits keep 19 usable
-    donors, the fewest at which a placebo p can reach 0.05;
+    audits withheld crosses 20%, or fewer than 80% of audits keep the donor
+    floor (Params.audit_min_donors, the fewest usable donors at which
+    docs/donor_floor.md found the placebo rank holding its nominal 5%);
   - the widest panel that fits the allowance and stays auditable, at each
     failure rate;
   - what cutting night slots costs the observed free-flow reference;
@@ -51,7 +52,7 @@ from scripts.dev.panel_model import scheduled_panel  # noqa: E402
 
 MONTHLY_ALLOWANCE, MONTH_DAYS = 20_000, 31
 ROAD_CHECKS_PER_MONTH = MONTH_DAYS / 7          # one road refetch a week per corridor
-TREATED_IDS, MIN_PLACEBOS = 4, 19
+TREATED_IDS, MIN_DONORS = 4, Params().audit_min_donors
 WITHHELD_LIMIT, AUDITABLE_SHARE = 0.20, 0.80
 CADENCES = {30: "B", 20: "M20", 15: "A"}
 # metrics.schedule has no 20-minute cadence; this adds one to this script's processes only.
@@ -60,7 +61,9 @@ NIGHT_SLOTS = (8, 4, 2)                         # 00:00-04:00 IST every 30, 60 o
 TRANSIENT = (0.0, 0.05)
 MISS = (0.005, 0.01, 0.015, 0.02, 0.025, 0.03, 0.035, 0.04, 0.05, 0.06, 0.07, 0.08, 0.10)
 MAX_DONORS = 29
-DONORS_SHOWN = (19, 21, 23, 25, 27, 29)
+# every other donor count from the floor up, and the widest; empty when no panel reaches it
+DONORS_SHOWN = tuple(sorted({*range(MIN_DONORS, MAX_DONORS + 1, 2), MAX_DONORS}
+                            - set(range(MIN_DONORS))))
 EFFECTIVE = pd.Timestamp("2026-07-01")
 OUT = ROOT / "docs" / "free_tier.md"
 RECORDS = ROOT / ".fixtures" / "free_tier_panels.csv"
@@ -134,7 +137,7 @@ def run_panel(task: tuple) -> dict:
 def sweep_tasks(replicates: int) -> list[tuple]:
     tasks = []
     for minutes in CADENCES:
-        n = MAX_DONORS + 1 if minutes == 30 else 1   # only 30 minutes fits 19 donors
+        n = MAX_DONORS + 1 if minutes == 30 else 1   # only 30 minutes fits the donor floor
         tasks += [(minutes, miss, r, n, f"free-tier|{minutes}|{r}")
                   for miss in MISS for r in range(replicates)]
     return tasks
@@ -201,15 +204,15 @@ def table(header: list[str], rows: list[list[str]]) -> list[str]:
 
 def summarise(frame: pd.DataFrame) -> pd.DataFrame:
     """Per cadence and failure parameter: failure shares, withheld rate, and for each donor
-    count the share of audits keeping 19 usable donors, and of audits that are both run and
-    able to reach p 0.05."""
+    count the share of audits keeping the donor floor, and of audits that are both run and
+    at the floor."""
     rows = []
     for (minutes, miss), g in frame.groupby(["minutes", "miss"]):
         row = {"minutes": minutes, "miss": miss, "peak_fail": g["peak_fail"].mean(),
                "other_fail": g["other_fail"].mean(), "withheld": 1 - g["treated_ok"].mean()}
-        for d in range(MIN_PLACEBOS, MAX_DONORS + 1):
+        for d in range(MIN_DONORS, MAX_DONORS + 1):
             if f"usable_{d}" in g and g[f"usable_{d}"].notna().all():
-                reach = g[f"usable_{d}"] >= MIN_PLACEBOS
+                reach = g[f"usable_{d}"] >= MIN_DONORS
                 row[f"reach_{d}"] = reach.mean()
                 row[f"auditable_{d}"] = (reach & g["treated_ok"]).mean()
         rows.append(row)
@@ -252,8 +255,8 @@ def budget_report() -> list[str]:
              "fails and is retried on a slot that then succeeds. Neither has been measured: "
              "`q` is shown at 0 and 5%. Widest panel = most corridor ids whose month fits "
              f"{MONTHLY_ALLOWANCE:,}; donors = ids − {TREATED_IDS} treated. A panel with fewer "
-             f"than {MIN_PLACEBOS} donors is ruled out: no audit of it can produce a p of 0.05, "
-             "whatever its budget.", ""]
+             f"than {MIN_DONORS} donors, the donor floor, is ruled out: the audit withholds its "
+             "verdict below the floor (docs/donor_floor.md), whatever the budget.", ""]
     rows = []
     for minutes in CADENCES:
         peak, _, _ = slots_per_day(minutes)
@@ -263,7 +266,7 @@ def budget_report() -> list[str]:
                 for failure in (0.0, 0.02, 0.04, 0.06, 0.08, 0.10):
                     ids = widest(minutes, night, failure, transient)
                     donors = ids - TREATED_IDS
-                    cells.append(f"{ids} ({donors})" + ("" if donors >= MIN_PLACEBOS else " ✗"))
+                    cells.append(f"{ids} ({donors})" + ("" if donors >= MIN_DONORS else " ✗"))
                 per = month_per_corridor(minutes, night, 0.0, transient)
                 rows.append([f"{minutes} min", str(night), str(peak + night), f"{transient:.0%}",
                              f"{per:,.0f}", *cells])
@@ -271,8 +274,9 @@ def budget_report() -> list[str]:
                     "calls a month per id at f 0", *[f"widest ids (donors) at f {f:.0%}"
                                                      for f in (0.0, 0.02, 0.04, 0.06, 0.08,
                                                                0.10)]], rows)
-    lines += ["", "✗: fewer than 19 donors, ruled out. Every 20- and 15-minute design is ruled "
-              "out at every failure rate: the allowance cannot hold 23 ids at those cadences.", ""]
+    lines += ["", f"✗: fewer than {MIN_DONORS} donors, ruled out. Every 20- and 15-minute design "
+              "is ruled out at every failure rate: the allowance cannot hold "
+              f"{MIN_DONORS + TREATED_IDS} ids at those cadences.", ""]
     return lines
 
 
@@ -280,9 +284,9 @@ def breaking_report(summary: pd.DataFrame) -> list[str]:
     lines = ["## 2. Where the audit breaks", "",
              "Withheld: the treated corridor misses the floor in a pre block or the post "
              "period. Its breaking point does not depend on the panel's width. Usable donors "
-             "depend on how many are declared. `auditable` = run and holding at least 19 "
-             "usable donors. Failure rates are the share of peak-hour calls failed, as the "
-             "collector would measure it.", ""]
+             f"depend on how many are declared. `auditable` = run and holding at least "
+             f"{MIN_DONORS} usable donors. Failure rates are the share of peak-hour calls "
+             "failed, as the collector would measure it.", ""]
     rows = []
     for minutes in CADENCES:
         s = summary[summary["minutes"] == minutes]
@@ -290,6 +294,9 @@ def breaking_report(summary: pd.DataFrame) -> list[str]:
         if minutes != 30:
             rows.append([f"{minutes} min", "—", withheld, "—", "—", "ruled out by budget"])
             continue
+        if not DONORS_SHOWN:
+            rows.append([f"{minutes} min", "—", withheld, "—", "—",
+                         f"ruled out by budget: no panel fits {MIN_DONORS} donors"])
         for d in DONORS_SHOWN:
             _, reach = crossing(s["peak_fail"], s[f"reach_{d}"], AUDITABLE_SHARE, rising=False)
             _, audit = crossing(s["peak_fail"], s[f"auditable_{d}"], AUDITABLE_SHARE,
@@ -297,7 +304,7 @@ def breaking_report(summary: pd.DataFrame) -> list[str]:
             rows.append([f"{minutes} min", f"{d + TREATED_IDS} ids ({d} donors)", withheld, reach,
                          audit, ""])
     lines += table(["peak cadence", "design", "withheld crosses 20%",
-                    "under 80% keep 19 donors", "under 80% auditable", ""], rows)
+                    f"under 80% keep {MIN_DONORS} donors", "under 80% auditable", ""], rows)
     s = summary[summary["minutes"] == 30].sort_values("peak_fail")
     lines += ["", "The curves at 30 minutes:", ""]
     lines += table(["peak calls failed", "withheld", *[f"auditable, {d} donors"
@@ -312,7 +319,7 @@ def widest_report(summary: pd.DataFrame) -> tuple[list[str], list[str]]:
     lines = ["## 3. The widest auditable panel that fits", "",
              f"At each failure rate, 30-minute peaks: the most ids whose month fits "
              f"{MONTHLY_ALLOWANCE:,} with that failure rate's retries, and whether that panel "
-             f"is auditable ({AUDITABLE_SHARE:.0%} of audits run with at least 19 usable "
+             f"is auditable ({AUDITABLE_SHARE:.0%} of audits run with at least {MIN_DONORS} usable "
              f"donors, and no more than {WITHHELD_LIMIT:.0%} withheld). Panels wider than "
              f"{MAX_DONORS + TREATED_IDS} ids are scored as {MAX_DONORS + TREATED_IDS}, which "
              "understates them.", ""]
@@ -325,7 +332,7 @@ def widest_report(summary: pd.DataFrame) -> tuple[list[str], list[str]]:
             for night in NIGHT_SLOTS:
                 ids = widest(30, night, r.peak_fail, transient)
                 donors = min(ids - TREATED_IDS, MAX_DONORS)
-                if ids - TREATED_IDS < MIN_PLACEBOS:
+                if ids - TREATED_IDS < MIN_DONORS:
                     cells.append(f"{ids} ✗")
                     continue
                 auditable = getattr(r, f"auditable_{donors}")

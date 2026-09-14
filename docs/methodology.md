@@ -85,7 +85,14 @@ what comparable untreated corridors did over the same days.
   corridor, its own pair excluded from its pool. The treated corridor's
   statistic is ranked among the placebos'. With n placebos, rank r gives
   p = r / (n + 1); ties count against the treated corridor, and no p can be
-  below 1 / (n + 1). With fewer than 19 placebos no effect can reach p ≤ 0.05.
+  below 1 / (n + 1). With fewer than 19 placebos no effect can reach p ≤ 0.05,
+  so an audit left with fewer than 19 usable donors is withheld
+  (`too_few_donors`). Where p first exists is not automatically where the rule
+  holds its size, so that was measured: on 800 no-effect panels at each of 19,
+  20, 23, 26, 29, 35, 40 and 50 donors, the rank read extreme on 2.4–5.8% of
+  them, every interval reaching 5% ([donor_floor.md](donor_floor.md)). The 10%
+  once read at 20 donors was 5 of 50 panels. These are panel_model's corridors,
+  more alike than real ones.
   The published p is always shown with its rank, the placebo count and that
   floor, and with how many audits in n + 1 would read extreme by chance with no
   effect at all: floor(0.05 × (n + 1)), one in 22 with 21 placebos. The rank
@@ -197,7 +204,7 @@ are unknown until data arrives.
 
 **Then donors.** Doubling from 20 to 40 donors helps only with a short pre
 period (0.30 to 0.20 at 6–9 blocks). With 10 donors no placebo p can reach
-0.05 at all. Tier B corridors lose so many donors and treated blocks to the
+0.05 at all, and below 19 the audit is withheld. Tier B corridors lose so many donors and treated blocks to the
 200-call floor that nothing was detectable (30–62% of audits withheld, 9–12
 usable donors from 20).
 

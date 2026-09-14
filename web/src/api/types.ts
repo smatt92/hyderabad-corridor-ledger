@@ -261,7 +261,7 @@ export interface InterventionsResponse extends Envelope {
   interventions: (Intervention & { audit_status: Maybe<string> })[];
 }
 
-export type AuditStatus = "ok" | "insufficient_pre" | "post_pending" | "post_partial" | "insufficient_post" | "no_controls";
+export type AuditStatus = "ok" | "insufficient_pre" | "post_pending" | "post_partial" | "insufficient_post" | "no_controls" | "too_few_donors";
 
 /**
  * A synthetic-control audit of one intervention on pooled buffer time index.
@@ -292,6 +292,8 @@ export interface Audit {
   n_post: number;
   /** Donors in the synthetic control after exclusions. */
   n_donors: number;
+  /** The fewest usable donors from which the audit publishes a verdict; below it the status is too_few_donors. */
+  min_donors?: Maybe<number>;
   /** Each BTI is pooled once over its whole period. treated_pre may be set before status is "ok". */
   treated_pre: Maybe<number>;
   treated_post: Maybe<number>;
@@ -381,7 +383,7 @@ export interface AuditSensitivity {
   variant: SensitivityVariant | string;
   block_floor: Maybe<number>;
   max_short_blocks: Maybe<number>;
-  status: "ok" | "no_controls" | "too_few_blocks" | string;
+  status: "ok" | "no_controls" | "too_few_donors" | "too_few_blocks" | string;
   n_donors: Maybe<number>;
   n_fit_blocks: Maybe<number>;
   effect: Maybe<number>;

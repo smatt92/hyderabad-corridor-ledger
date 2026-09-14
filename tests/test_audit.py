@@ -23,7 +23,8 @@ from metrics.params import Params
 EFFECTIVE = "2026-08-29T00:30:00+05:30"    # local day 2026-08-29
 DAY = pd.Timestamp("2026-08-29")
 # production floors, fewer resamples; six pre blocks keep the hand-built panels small
-PARAMS = Params(audit_pre_blocks=6, bootstrap_resamples=200)
+# audit_min_donors=1: the by-hand panels have three donors, below the published floor
+PARAMS = Params(audit_pre_blocks=6, bootstrap_resamples=200, audit_min_donors=1)
 SPAN = periods(DAY, PARAMS)
 PRE_BLOCKS = [SPAN["pre_start"] + pd.Timedelta(days=14 * k) for k in range(6)]
 POST_BLOCKS = [SPAN["post_start"] + pd.Timedelta(days=14 * k) for k in range(2)]
@@ -374,13 +375,28 @@ def test_statuses():
     assert alone["intervention_audit"]["status"].iloc[0] == "no_controls"
 
 
+def test_an_audit_below_the_donor_floor_is_withheld_and_names_the_floor():
+    # d1, d2 and d4 are usable: three donors against a floor of four
+    below = audit(by_hand_panel(), PAIRS, params=replace(PARAMS, audit_min_donors=4))
+    (row,) = below["intervention_audit"].to_dict("records")
+    assert (row["status"], row["n_donors"], row["min_donors"]) == ("too_few_donors", 3, 4)
+    assert np.isnan(row["effect"]) and below["audit_placebos"].empty
+    assert below["audit_donors"]["included"].sum() == 3     # every exclusion still published
+    # d5 alone holds 1.25x the call floor in every block, so strict_125 keeps one donor
+    wider = audit([*by_hand_panel(), *series("d5", D4_PRE, D4_POST, n=260)], PAIRS,
+                  params=replace(PARAMS, audit_min_donors=2))
+    assert wider["intervention_audit"]["status"].iloc[0] == "ok"
+    variants = wider["audit_sensitivity"].set_index("variant")
+    assert variants.loc["strict_125", ["status", "n_donors"]].tolist() == ["too_few_donors", 1]
+    assert variants.loc["relaxed_one_block", "status"] == "ok"
+
 def test_same_distribution_with_different_sample_counts_is_no_effect():
     """The Step 2 regression, now for both estimators. Every corridor draws from one
     distribution throughout; only the treated corridor's call density changes, from
     64 calls a day before the change to 16 after. Neither estimator may turn that
     into an effect. Checked over 25 replicate panels, since one panel is noisy."""
     rng = np.random.default_rng(20260913)
-    params = Params(audit_pre_blocks=6, bootstrap_resamples=100)
+    params = Params(audit_pre_blocks=6, bootstrap_resamples=100, audit_min_donors=1)
     pre_days = pd.date_range(SPAN["pre_start"], SPAN["pre_end"])
     post_days = pd.date_range(SPAN["post_start"], SPAN["post_end"])
 

@@ -7,7 +7,7 @@ recomputes them from raw under the new version.
 
 from dataclasses import dataclass
 
-METHOD_VERSION = "p02.8"
+METHOD_VERSION = "p02.9"
 LOCAL_TZ = "Asia/Kolkata"
 BASES = ("tomtom", "p5")
 
@@ -97,6 +97,11 @@ class Params:
     # than the treated fit had. True: the treated corridor joins every placebo's pool, as
     # in Abadie's in-space placebos, so every run fits on the same number of corridors.
     audit_placebo_includes_treated: bool = False
+    # Donor floor. An audit with fewer usable donors is withheld (too_few_donors), and so
+    # is a sensitivity variant. With n placebos the smallest p is 1/(n+1), so 19 is the
+    # fewest at which p can reach 0.05. docs/donor_floor.md found the rank's false-positive
+    # rate at its nominal 5% from 19 donors up (800 simulated panels per count).
+    audit_min_donors: int = 19
 
     def __post_init__(self) -> None:
         if self.p95_min_samples < self.central_min_samples:

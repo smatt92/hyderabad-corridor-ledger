@@ -1,6 +1,6 @@
 # What TomTom's free Routing allowance can support
 
-Generated 2026-09-14 07:17 UTC by `scripts/dev/free_tier.py`, 200 panels per cadence and failure rate, 1 min. TomTom's pricing page lists the Routing API at 20,000 free calls a month (read 2026-09-14). Every design audits one of 4 treated corridors (the Miyapur-Allwyn package, both directions) with 14-day blocks, 12 pre blocks and a 28-day post period. Panels are `scripts/dev/panel_model.py`'s, whose failure structure is an assumption; nobody has measured TomTom's failure rate from Hyderabad.
+Generated 2026-09-14 11:02 UTC by `scripts/dev/free_tier.py`, 200 panels per cadence and failure rate, 1 min. TomTom's pricing page lists the Routing API at 20,000 free calls a month (read 2026-09-14). Every design audits one of 4 treated corridors (the Miyapur-Allwyn package, both directions) with 14-day blocks, 12 pre blocks and a 28-day post period. Panels are `scripts/dev/panel_model.py`'s, whose failure structure is an assumption; nobody has measured TomTom's failure rate from Hyderabad.
 
 ## Verdict
 
@@ -11,7 +11,7 @@ At 30-minute peaks the treated corridor alone withholds more than 20% of audits 
 
 ## 1. Calls in a 31-day month
 
-Per corridor: every peak slot and night slot for 31 days, with retries, plus a weekly road refetch. `f` is the share of slots that still fail after all attempts, each of which spent three; `q` is the chance an attempt fails and is retried on a slot that then succeeds. Neither has been measured: `q` is shown at 0 and 5%. Widest panel = most corridor ids whose month fits 20,000; donors = ids − 4 treated. A panel with fewer than 19 donors is ruled out: no audit of it can produce a p of 0.05, whatever its budget.
+Per corridor: every peak slot and night slot for 31 days, with retries, plus a weekly road refetch. `f` is the share of slots that still fail after all attempts, each of which spent three; `q` is the chance an attempt fails and is retried on a slot that then succeeds. Neither has been measured: `q` is shown at 0 and 5%. Widest panel = most corridor ids whose month fits 20,000; donors = ids − 4 treated. A panel with fewer than 19 donors, the donor floor, is ruled out: the audit withholds its verdict below the floor (docs/donor_floor.md), whatever the budget.
 
 | peak cadence | night slots | calls a day | q | calls a month per id at f 0 | widest ids (donors) at f 0% | widest ids (donors) at f 2% | widest ids (donors) at f 4% | widest ids (donors) at f 6% | widest ids (donors) at f 8% | widest ids (donors) at f 10% |
 |---|---|---|---|---|---|---|---|---|---|---|

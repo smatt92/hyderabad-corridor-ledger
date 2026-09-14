@@ -104,8 +104,8 @@ VARIANTS = (
 AUDIT_COLUMNS = [
     "intervention_id", "corridor_id", "status", "effective_day", "settle_days", "pre_start",
     "pre_end", "settle_start", "settle_end", "post_start", "post_end", "block_days", "pre_blocks",
-    "post_blocks", "post_blocks_complete", "n_pre", "n_post", "n_donors", "treated_pre",
-    "treated_post", "synthetic_pre", "synthetic_post", "effect", "pre_rmspe",
+    "post_blocks", "post_blocks_complete", "n_pre", "n_post", "n_donors", "min_donors",
+    "treated_pre", "treated_post", "synthetic_pre", "synthetic_post", "effect", "pre_rmspe",
     "post_rmspe", "rmspe_ratio", "cv_pre_rmspe", "overfit_ratio", "pre_fit_overfit",
     "n_active_donors", "std_effect", "n_placebos", "placebo_rank", "placebo_p_value",
     "placebo_p_floor", "placebo_extreme", "placebo_verdict", "equal_control_pre",
@@ -515,7 +515,8 @@ def audit_one(calls: Calls, cells: pd.DataFrame, pairs: dict, intervention_id: s
         "settle_days": params.audit_settle_days, **span, "block_days": params.audit_block_days,
         "pre_blocks": params.audit_pre_blocks, "post_blocks": params.audit_post_blocks,
         "post_blocks_complete": int(sum(a.complete)), "n_pre": len(t_pre), "n_post": len(t_post),
-        "n_donors": 0, "n_placebos": 0, "placebo_extreme": False,
+        "n_donors": 0, "min_donors": params.audit_min_donors, "n_placebos": 0,
+        "placebo_extreme": False,
         "treated_pre": pooled_bti(t_pre, params), "alpha": params.bootstrap_alpha,
         "missing_rate": rate,
         "low_confidence": bool(np.isnan(rate) or rate > params.low_confidence_missing_rate),
@@ -589,6 +590,8 @@ def audit_one(calls: Calls, cells: pd.DataFrame, pairs: dict, intervention_id: s
         return finish("no_controls")
 
     audit["n_donors"] = len(candidates)
+    if len(candidates) < params.audit_min_donors:
+        return finish("too_few_donors")
     model, residuals, pre_synthetic, post_synthetic, _ = a.fit_pool(candidates, all_blocks)
     for c, w in zip(candidates, model.weights, strict=True):
         donors[c]["weight"] = round(float(w), 6)
@@ -640,6 +643,8 @@ def audit_one(calls: Calls, cells: pd.DataFrame, pairs: dict, intervention_id: s
                    "n_donors": len(pool), "n_fit_blocks": len(fit_blocks)}
             if not pool:
                 row["status"] = "no_controls"
+            elif len(pool) < params.audit_min_donors:
+                row["status"] = "too_few_donors"
             elif len(fit_blocks) < MIN_FIT_BLOCKS:
                 row["status"] = "too_few_blocks"
             else:

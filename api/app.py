@@ -54,7 +54,7 @@ PROFILE_POOLING = "all successful calls at each local hour across the window"
 AUDIT_FIELDS = [
     "status", "effective_day", "settle_days", "pre_start", "pre_end", "settle_start", "settle_end",
     "post_start", "post_end", "block_days", "pre_blocks", "post_blocks", "post_blocks_complete",
-    "n_pre", "n_post", "n_donors", "treated_pre", "treated_post", "synthetic_pre",
+    "n_pre", "n_post", "n_donors", "min_donors", "treated_pre", "treated_post", "synthetic_pre",
     "synthetic_post", "effect", "pre_rmspe", "post_rmspe", "rmspe_ratio",
     "cv_pre_rmspe", "overfit_ratio", "pre_fit_overfit", "n_active_donors", "std_effect",
     "n_placebos",

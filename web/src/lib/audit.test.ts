@@ -318,6 +318,7 @@ describe("sensitivity to the completeness threshold", () => {
     expect(variantText("strict_200")).toBe("strict_200");
     expect(sensitivityStatusText("no_controls")).toBe("no donor qualifies");
     expect(sensitivityStatusText("too_few_blocks")).toBe("too few common pre blocks to fit");
+    expect(sensitivityStatusText("too_few_donors")).toBe("fewer donors than the audit’s floor");
     expect(sensitivityStatusText(null)).toBe(EM_DASH);
   });
 });
@@ -333,7 +334,7 @@ describe("no interval", () => {
       sensitivityStatement({ ...audit, sensitivity_material: true }),
       sensitivityStatement({ ...audit, sensitivity_material: null }),
     ].flatMap((s) => [s.headline, s.detail]);
-    const notices = (["insufficient_pre", "insufficient_post", "post_pending", "post_partial", "no_controls"] as const).map(
+    const notices = (["insufficient_pre", "insufficient_post", "post_pending", "post_partial", "no_controls", "too_few_donors"] as const).map(
       (status) => statusNotice({ ...audit, status }, "X", 200, { pre: [], post: [] })?.body ?? "",
     );
     for (const text of [...statements, ...notices, ...auditPeriods(audit, 200).flat()]) {
@@ -401,5 +402,15 @@ describe("status notices", () => {
     const n = statusNotice({ ...audit, status: "no_controls", n_donors: 0 }, "Hitec City–Gachibowli", 200, rows)!;
     expect(n.body).toContain("The treated corridor’s own pair is never a donor");
     expect(n.body).toContain("at least 200 pooled peak-hour calls in every pre block (12 blocks of 14 days, 15 Sep 2025–1 Mar 2026)");
+  });
+
+  it("withholds an audit below the donor floor and names the floor from the payload", () => {
+    const n = statusNotice({ ...audit, status: "too_few_donors", n_donors: 17, min_donors: 19 }, "Hitec City–Gachibowli", 200, rows)!;
+    expect(n.kicker).toBe("Audit withheld");
+    expect(n.body).toContain("17 corridors qualify as donors for Hitec City–Gachibowli, fewer than the 19 the audit needs.");
+    expect(n.body).toContain("With at most 17 placebo runs the smallest attainable p would be 1/18 = 0.056, and no verdict is published below 19 usable donors.");
+    const one = statusNotice({ ...audit, status: "too_few_donors", n_donors: 1, min_donors: null }, "X", 200, rows)!;
+    expect(one.body).toContain(`1 corridor qualifies as a donor for X, fewer than the ${EM_DASH} the audit needs.`);
+    expect(one.body).toContain("With at most 1 placebo run the smallest attainable p would be 1/2 = 0.500");
   });
 });

@@ -1,6 +1,6 @@
 # Intervention audit: validity, power and minimum detectable effect
 
-Generated 2026-09-14 07:14 UTC by `scripts/dev/audit_power.py` at 9478109 (plus uncommitted changes), 0 min for the parts run this time. Panels per scenario: freetier 100, design 50, bootstrap 80, preblocks 50, stress 100, drift 100, freetier_lowfail 100.
+Generated 2026-09-14 11:02 UTC by `scripts/dev/audit_power.py` at 1596620 (plus uncommitted changes), 0 min for the parts run this time. Panels per scenario: design 50, bootstrap 80, preblocks 50, stress 100, drift 100, freetier 100, freetier_lowfail 100.
 
 Panels: `scripts/dev/panel_model.py`, the fixture generator's travel-time model on the collector's schedule, with a city-wide daily shock (sd 0.10) and per-corridor weekly drift (sd 0.08) on the excess over free flow. Those sizes are assumptions, not Hyderabad estimates. The treated corridor is drawn from the same model as its donors, so it is exchangeable with them. An effect of known size is injected into its pooled post-period BTI, which moves the estimate by exactly that much; the audit then runs unchanged. Settling 9 days throughout.
 
@@ -536,9 +536,9 @@ Per corridor a day: every peak slot, plus the night slots that feed the observed
 
 ### Audits
 
-`withheld`: the audit refused (treated corridor under the block floor, or no donor left). `donors used`: mean and 10th percentile among audits that ran. `p reachable`: share of all audits with at least 19 placebos, the fewest at which a placebo p can reach 0.05. `size`: false-positive rate among audits that ran.
+`withheld`: the audit refused (treated corridor under the block floor, or no donor left). `donors used`: mean and 10th percentile among audits that ran. `at donor floor`: share of all audits that ran with at least 19 usable donors, the published donor floor (docs/donor_floor.md); below it the audit withholds its verdict. `size`: false-positive rate among audits that ran, at the floor or not.
 
-| design | donors declared | peak calls failed | withheld | why | donors used | donors used, p10 | p reachable | size |
+| design | donors declared | peak calls failed | withheld | why | donors used | donors used, p10 | at donor floor | size |
 |---|---|---|---|---|---|---|---|---|
 | 34 ids @ 30 min | 30 | 12.0% | 0.44 | insufficient_pre 44% | 16.0 | 12 | 0.11 | 0.00 |
 | 30 ids @ 30 min | 26 | 12.3% | 0.48 | insufficient_pre 48% | 13.8 | 11 | 0.02 | 0.02 |
@@ -579,9 +579,9 @@ Per corridor a day: every peak slot, plus the night slots that feed the observed
 
 ### Audits
 
-`withheld`: the audit refused (treated corridor under the block floor, or no donor left). `donors used`: mean and 10th percentile among audits that ran. `p reachable`: share of all audits with at least 19 placebos, the fewest at which a placebo p can reach 0.05. `size`: false-positive rate among audits that ran.
+`withheld`: the audit refused (treated corridor under the block floor, or no donor left). `donors used`: mean and 10th percentile among audits that ran. `at donor floor`: share of all audits that ran with at least 19 usable donors, the published donor floor (docs/donor_floor.md); below it the audit withholds its verdict. `size`: false-positive rate among audits that ran, at the floor or not.
 
-| design | donors declared | peak calls failed | withheld | why | donors used | donors used, p10 | p reachable | size |
+| design | donors declared | peak calls failed | withheld | why | donors used | donors used, p10 | at donor floor | size |
 |---|---|---|---|---|---|---|---|---|
 | 34 ids @ 30 min | 30 | 3.8% | 0.01 | insufficient_pre 1% | 29.4 | 28 | 0.99 | 0.02 |
 | 30 ids @ 30 min | 26 | 3.9% | 0.02 | insufficient_pre 2% | 25.5 | 25 | 0.98 | 0.04 |
