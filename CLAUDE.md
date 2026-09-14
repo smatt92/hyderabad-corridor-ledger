@@ -85,6 +85,18 @@ about 12%, no design is auditable. The real rate is unmeasured, and probe mode
 exists to measure it. This figure belongs in the TomTom conversation beside the
 terms question.
 
+**If we buy Traffic Stats instead of collecting.** Sahil asked TomTom on
+2026-09-14 for a quote for about 14 corridors, both directions, two years of
+history plus ongoing access.
+- **Whether it attaches at all.** Does Traffic Stats deliver individual travel
+  times, or only percentiles pre-computed per time bin? With percentiles only,
+  BTI cannot be pooled and the 200-call floor cannot be checked, so the metrics
+  engine does not attach to the data and a quote is moot.
+- **A decision we would live with.** The hash chain would attest a file TomTom
+  delivered, not calls this project made. "Independent record" becomes
+  "independent analysis of purchased data", which is weaker. The README must
+  say so plainly from the first day purchased data is used, not quietly later.
+
 The project chose TomTom believing its terms permitted keeping the data. The
 sample log, the Parquet archive and the exports all store Results. Until
 Sahil settles this with TomTom, say so wherever retention or publication is
@@ -123,6 +135,10 @@ been chosen.
   `supabase/migrations/`, named `NNNN_description.sql`, applied with
   `supabase db push`. A migration is immutable once applied to the linked
   project, and freely editable before that.
+- 0014 was applied before 0013 on 2026-09-14. 0013 (`probe_calls`) is held
+  until the probe question is settled with TomTom. A plain `supabase db push`
+  refuses it as older than the remote's latest; applying it takes
+  `supabase db push --include-all`, and only on Sahil's word.
 - RLS is enabled in the migration that creates a table. Public read on
   `corridors`, `samples`, `failed_samples`, the collector's run, gap,
   archive and verification tables (0003), `interventions` and every derived
@@ -417,6 +433,9 @@ call fails, and nobody has measured it. `collector/probe.py` measures it.
   probe runs.
 - **Off by default.** It stays off until `config/probe.yaml` names corridor ids
   and a first and last IST day, at most 31 days apart.
+- **Held.** Migration 0013 stays unapplied until the probe question is settled
+  with TomTom, so a probe configured before then fails: its table does not
+  exist.
 - **Guards.**
   - It refuses to run while any corridor is active.
   - It is held to 20,000 / 31 calls a day with the 15% retry reserve.
@@ -606,7 +625,10 @@ Other definitions worth knowing before changing them:
   API and the frontend.
 - The donor floor is 19 usable donors (`audit_min_donors`). Below it the audit
   is withheld as `too_few_donors`, and so is each sensitivity rerun, and every
-  audit row records the floor it was held to (`min_donors`, 0014). In simulation
+  audit row records the floor it was held to (`min_donors`, 0014). Withheld, not
+  published as "not extreme": with fewer than 19 placebos no effect can reach
+  p = 0.05, so that verdict would state a null the design guaranteed, not one
+  observed. Sahil decided to keep it withheld. In simulation
   the rank held its nominal size from 19 up (`docs/donor_floor.md`), on
   panel_model's corridors, which are more alike than real ones: re-measure once
   real corridors exist. Putting the treated corridor into each placebo's pool

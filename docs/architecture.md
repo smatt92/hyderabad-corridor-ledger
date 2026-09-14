@@ -179,8 +179,8 @@ keeping a Result.
   of at most 31 days, and refused while any corridor is active. It runs as a
   step after `fetch.py` in the same job, with the same spacing, retries, quota
   stop and meter.
-- **Not live.** It needs migration 0013, which is written and not applied, and
-  Sahil decides whether it runs.
+- **Not live.** It needs migration 0013, held unapplied until the probe question
+  is settled with TomTom, and Sahil decides whether it runs.
 
 ## 3. Data model
 
@@ -294,7 +294,7 @@ erDiagram
   service role can neither update nor delete it: it is the evidence for a
   rerouting alarm.
 - **Probe calls.** `probe_calls` (0013) holds no travel time: status and
-  latency only. It is written and not applied.
+  latency only. It is held unapplied until TomTom answers the probe question.
 
 ### 3b. Derived tables and the read model
 
@@ -603,7 +603,7 @@ beside the donors'.
 rerun below it. 19 is where a placebo p of 0.05 first exists, and in simulation
 the rank held its nominal 5% false-positive rate from there up
 ([donor_floor.md](donor_floor.md)). Each audit row records the floor it was held to (`min_donors`,
-migration 0014, written and not applied).
+migration 0014, applied 14 September).
 
 **The estimate.**
 - **Weights** are fitted on the demeaned block BTIs, and are non-negative and
