@@ -1,6 +1,6 @@
 """Validity, power and minimum detectable effect of the intervention audit.
 
-    .venv/bin/python scripts/dev/audit_power.py [--part design|bootstrap|preblocks|all]
+    .venv/bin/python scripts/dev/audit_power.py [--part design|bootstrap|preblocks|freetier|all]
         [--replicates N] [--processes N] [--quick] [--report-only]
 
 Panels come from scripts/dev/panel_model.py. The treated corridor c00 is drawn
@@ -25,6 +25,10 @@ at 20 and 40 donors, with demeaned and levels weights and a 28-day post period.
 Bootstrap sweep: call-level resampling against whole units of 7 and 14 days,
 compared on interval width, bootstrap standard error against the true spread of
 the estimate, false-positive rate and power.
+Free-tier sweep: panels sized to TomTom's published free allowance of 20,000
+routing calls a month, at 15, 20 and 30-minute peak cadence, with the call
+budget each design spends and the share of audits withheld or unable to reach
+p 0.05, and power counted over every declared audit, withheld ones included.
 
 A rule is valid where its false-positive rate at delta 0 is at most about 0.05.
 MDE = smallest delta from which every larger delta is detected, with the right
@@ -51,7 +55,7 @@ from scipy import stats
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from metrics import pooled  # noqa: E402
+from metrics import pooled, schedule  # noqa: E402
 from metrics.audit import (  # noqa: E402
     Audit,
     Calls,
@@ -96,9 +100,23 @@ INTERVENTIONS = pd.DataFrame({
     "id": ["works"], "corridor_id": [TREATED],
     "effective_at": [(EFFECTIVE + pd.Timedelta(hours=1)).tz_localize(LOCAL_TZ).isoformat()],
 })
+# Free-tier designs (section 6): (peak cadence in minutes, corridor ids). Four ids are the
+# treated Miyapur-Allwyn package, so an audit of one declares ids - 4 donors: the other
+# three are treated, and a treated corridor's own alternate is among them.
+FREE_TIER_DESIGNS = ((30, 34), (30, 30), (20, 24), (15, 20))
+TREATED_IDS = 4
+MONTHLY_ALLOWANCE, LONGEST_MONTH = 20_000, 31
+FREE_TIER_DELTAS = (0.0, 0.10, 0.15, 0.20, 0.30, 0.45)
+# The same designs with every corridor's call failure rate fixed low, because a 30-minute
+# block has 16% slack on the floor and the model's failure rates are an assumption.
+LOW_MISS = 0.03
+CADENCE_TIER = {15: "A", 20: "M20", 30: "B"}
+# metrics.schedule has no 20-minute cadence; the sweep adds one to its own processes only.
+schedule.CADENCE_MINUTES.setdefault("M20", 20)
 OUT = ROOT / "docs" / "audit_power.md"
 RECORDS = {part: ROOT / ".fixtures" / f"audit_power_{part}.csv"
-           for part in ("design", "bootstrap", "preblocks", "stress", "drift")}
+           for part in ("design", "bootstrap", "preblocks", "stress", "drift", "freetier",
+                        "freetier_lowfail")}
 
 
 def design_grid(quick: bool) -> list[tuple]:
@@ -134,6 +152,11 @@ def stress_grid(quick: bool) -> list[tuple]:
     return [("A", 14, 6, 40, 2), ("A", 14, 12, 20, 2), ("A", 14, 12, 40, 2), ("A", 14, 18, 40, 2)]
 
 
+def freetier_grid(quick: bool) -> list[tuple]:
+    designs = FREE_TIER_DESIGNS[:1] if quick else FREE_TIER_DESIGNS
+    return [(CADENCE_TIER[minutes], 14, 12, ids - TREATED_IDS, 2) for minutes, ids in designs]
+
+
 PARTS = {  # grid, variants, deltas, bootstrap resamples, scheduled_panel arguments
     "design": (design_grid, CONFIGS, DESIGN_DELTAS, 0, {}),
     "bootstrap": (bootstrap_grid, BOOTSTRAPS, BOOTSTRAP_DELTAS, RESAMPLES, {}),
@@ -141,6 +164,11 @@ PARTS = {  # grid, variants, deltas, bootstrap resamples, scheduled_panel argume
     "stress": (stress_grid, STRESS_VARIANTS, (0.0, 0.10, 0.20), RESAMPLES, {"first": STRESS}),
     "drift": (stress_grid, STRESS_VARIANTS, (0.0, 0.10, 0.20), RESAMPLES,
               {"corridor_week_sd": DRIFT_WEEK_SD}),
+    "freetier": (freetier_grid, {"demeaned": {"audit_weights": "demeaned"}}, FREE_TIER_DELTAS,
+                 0, {}),
+    "freetier_lowfail": (freetier_grid, {"demeaned": {"audit_weights": "demeaned"}},
+                         FREE_TIER_DELTAS, 0,
+                         {"profiles": {i: {"miss": LOW_MISS} for i in range(64)}}),
 }
 
 
@@ -158,7 +186,10 @@ def simulate(scenario: tuple, replicate: int, panel: dict | None = None):
     rng = np.random.default_rng(zlib.crc32("|".join(map(str, (*scenario, replicate))).encode()))
     samples = scheduled_panel(donors + 1, span["pre_start"], days, tier, rng, **(panel or {}))
     calls, cells, corridors = audit_inputs(samples, tier, params)
-    return span, calls[pooled.is_peak(calls["requested_at"], params)], cells, corridors
+    at_peak = pooled.is_peak(samples["requested_at"], params).to_numpy()
+    ok = samples["ok"].to_numpy()
+    failures = {"peak_fail": 1 - ok[at_peak].mean(), "other_fail": 1 - ok[~at_peak].mean()}
+    return span, calls[pooled.is_peak(calls["requested_at"], params)], cells, corridors, failures
 
 
 def rank_p(treated: float, placebos) -> float:
@@ -214,7 +245,7 @@ def treated_estimate(peak: pd.DataFrame, cells: pd.DataFrame, params: Params,
 def run_audits(task: tuple) -> list[dict]:
     part, scenario, replicate = task
     _, variants, deltas, resamples, panel = PARTS[part]
-    span, peak, cells, corridors = simulate(scenario, replicate, panel)
+    span, peak, cells, corridors, failures = simulate(scenario, replicate, panel)
     injected = {d: inject_bti_effect(peak, TREATED, span["post_start"], span["post_end"], d)[0]
                 for d in deltas if d > 0}
     records = []
@@ -225,7 +256,7 @@ def run_audits(task: tuple) -> list[dict]:
         row = tables["intervention_audit"].iloc[0]
         base = dict(zip(SCENARIO, scenario, strict=True)) | {
             "variant": variant, "replicate": replicate, "status": row.status,
-            "n_donors": row.n_donors, "n_placebos": row.n_placebos,
+            "n_donors": row.n_donors, "n_placebos": row.n_placebos, **failures,
         }
         if row.status != "ok":
             records += [base | {"delta": d} for d in deltas]
@@ -542,6 +573,80 @@ def preblock_report(frame: pd.DataFrame) -> list[str]:
     return lines
 
 
+def slots_per_day(tier: str) -> tuple[int, int]:
+    """(peak slots, other slots) one corridor owes on a day of the current schedule."""
+    day = pd.Series(schedule.day_slots(tier, pd.Timestamp("2026-09-14")))
+    peak = int(pooled.is_peak(day, Params()).sum())
+    return peak, len(day) - peak
+
+
+def freetier_report(frame: pd.DataFrame, heading: str, note: str) -> list[str]:
+    # a design whose every audit was withheld has no estimate columns at all
+    wanted = ("effect", *(f"p_{rule}" for rule in RANKS))
+    frame = frame.reindex(columns=[*frame.columns, *(c for c in wanted if c not in frame.columns)])
+    frame = with_detections(frame)
+    replicates = int(frame["replicate"].max()) + 1
+    budget, audits, power = [], [], []
+    for (tier, donors), group in frame.groupby(["tier", "donors"], sort=False):
+        minutes, ids = schedule.CADENCE_MINUTES[tier], donors + TREATED_IDS
+        label = f"{ids} ids @ {minutes} min"
+        peak, night = slots_per_day(tier)
+        null = group[group["delta"] == 0]
+        ran = null[null["status"] == "ok"]
+        peak_fail, other_fail = null["peak_fail"].mean(), null["other_fail"].mean()
+        for night_slots in (night, 2):
+            first = ids * (peak + night_slots)
+            retried = ids * (peak * (1 + 2 * peak_fail) + night_slots * (1 + 2 * other_fail))
+            month = retried * LONGEST_MONTH + ids * LONGEST_MONTH / 7
+            budget.append([label, str(night_slots), str(first), f"{first * LONGEST_MONTH:,}",
+                           f"{round(month):,}", f"{month / MONTHLY_ALLOWANCE:.0%}"])
+        refused = null["status"].value_counts()
+        reasons = ", ".join(f"{status} {n / len(null):.0%}" for status, n in refused.items()
+                            if status != "ok")
+        audits.append([
+            label, str(donors), f"{peak_fail:.1%}", cell(1 - len(ran) / len(null)), reasons or "—",
+            cell(ran["n_donors"].mean(), 1) if len(ran) else "—",
+            cell(ran["n_donors"].quantile(0.1), 0) if len(ran) else "—",
+            cell((ran["n_placebos"] >= 19).sum() / len(null)),
+            cell(ran["std_effect"].mean()) if len(ran) else "—",
+        ])
+        every = group.groupby("delta")["std_effect"].mean()
+        run_only = group[group["status"] == "ok"].groupby("delta")["std_effect"].mean()
+        power.append([label, *[cell(every.get(d)) for d in FREE_TIER_DELTAS[1:]], mde(every),
+                      mde(run_only)])
+    return [
+        heading, "", note, "",
+        f"TomTom's pricing page lists the Routing API at {MONTHLY_ALLOWANCE:,} free calls a "
+        f"month (read 2026-09-14), {MONTHLY_ALLOWANCE // LONGEST_MONTH} a day in a "
+        f"{LONGEST_MONTH}-day month. Each design audits one of {TREATED_IDS} treated corridors "
+        f"against the rest less the {TREATED_IDS} treated ids as declared donors: 14-day "
+        f"blocks, 12 pre blocks (24 weeks), 28-day post period, standardised placebo rank, "
+        f"{replicates} panels each.", "",
+        "### Calls", "",
+        "Per corridor a day: every peak slot, plus the night slots that feed the observed "
+        "free-flow reference. The current schedule has 8 night slots; the brief's call counts "
+        "imply 2. `month` adds, at the panel model's failure rates, two retries for every "
+        "call that finally failed and a weekly road refetch per corridor. It leaves out "
+        "retries before a call that succeeded, so it is a lower bound; docs/free_tier.md "
+        "prices both.", "",
+        *table(["design", "night slots", "first attempts a day", f"{LONGEST_MONTH}-day month, no "
+                "retries", "month with retries and road checks", "of 20,000"], budget), "",
+        "### Audits", "",
+        "`withheld`: the audit refused (treated corridor under the block floor, or no donor "
+        "left). `donors used`: mean and 10th percentile among audits that ran. `p reachable`: "
+        "share of all audits with at least 19 placebos, the fewest at which a placebo p can "
+        "reach 0.05. `size`: false-positive rate among audits that ran.", "",
+        *table(["design", "donors declared", "peak calls failed", "withheld", "why",
+                "donors used", "donors used, p10", "p reachable", "size"], audits), "",
+        "### Power", "",
+        "Share of all declared audits that detect the effect: a withheld audit counts as not "
+        "detected. `MDE, every audit` is what a declared audit can promise; `MDE, audits run` "
+        "is the definition the earlier sections use.", "",
+        *table(["design", *[f"power {d:.2f}" for d in FREE_TIER_DELTAS[1:]], "MDE, every audit",
+                "MDE, audits run"], power), "",
+    ]
+
+
 def mean_of(frame: pd.DataFrame, column: str) -> float:
     return frame[column].mean() if column in frame and frame[column].notna().any() else np.nan
 
@@ -588,9 +693,10 @@ def report(frames: dict[str, pd.DataFrame], replicates: dict[str, int], minutes:
         "# Intervention audit: validity, power and minimum detectable effect",
         "",
         f"Generated {datetime.now(UTC):%Y-%m-%d %H:%M} UTC by `scripts/dev/audit_power.py` at "
-        f"{sha()} (plus uncommitted changes), {minutes:.0f} min. Design sweep "
-        f"{replicates.get('design', 0)} panels per scenario, bootstrap sweep "
-        f"{replicates.get('bootstrap', 0)}.",
+        f"{sha()} (plus uncommitted changes), {minutes:.0f} min for the parts run this time. "
+        "Panels per scenario: "
+        + ", ".join(f"{part} {int(frame['replicate'].max()) + 1}" for part, frame in frames.items())
+        + ".",
         "",
         "Panels: `scripts/dev/panel_model.py`, the fixture generator's travel-time model on the "
         "collector's schedule, with a city-wide daily shock (sd 0.10) and per-corridor weekly "
@@ -636,6 +742,18 @@ def report(frames: dict[str, pd.DataFrame], replicates: dict[str, int], minutes:
             "exchangeable panels, so only the treated corridor differs. A rule whose "
             "false-positive rate rises here is exact only when the treated corridor is typical "
             "of its donors, and interventions are not placed on typical roads.")
+    if "freetier" in frames:
+        lines += freetier_report(
+            frames["freetier"], "## 6. Panel designs that fit TomTom's free allowance",
+            "Call failure rates as panel_model draws them: most corridors fail up to 12% of "
+            "calls, 18% of corridors 16-38%, more at the peaks and on whole dark days.")
+    if "freetier_lowfail" in frames:
+        lines += freetier_report(
+            frames["freetier_lowfail"], "## 7. The same designs at a 3% failure rate",
+            f"Every corridor's failure rate fixed at {LOW_MISS:.0%} before the peak and "
+            "dark-day multipliers, everything else unchanged. Nobody knows TomTom's failure "
+            "rate from Hyderabad yet; this bounds how much of section 6 is the failure "
+            "assumption.")
     if "drift" in frames:
         lines += stress_report(
             frames["drift"], baselines, "## 5. Weekly drift 2.5 times larger",
@@ -659,7 +777,8 @@ def main() -> int:
     parts = {"both": ("design", "bootstrap"), "all": tuple(PARTS)}.get(args.part, (args.part,))
     replicates = {"design": args.replicates, "bootstrap": args.bootstrap_replicates,
                   "preblocks": args.replicates, "stress": args.bootstrap_replicates,
-                  "drift": args.bootstrap_replicates}
+                  "drift": args.bootstrap_replicates, "freetier": args.replicates,
+                  "freetier_lowfail": args.replicates}
     if args.quick:
         replicates = {part: 4 for part in replicates}
     started = time.time()

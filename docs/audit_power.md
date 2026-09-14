@@ -1,6 +1,6 @@
 # Intervention audit: validity, power and minimum detectable effect
 
-Generated 2026-09-13 18:00 UTC by `scripts/dev/audit_power.py` at cad3f07 (plus uncommitted changes), 0 min. Design sweep 50 panels per scenario, bootstrap sweep 80.
+Generated 2026-09-14 07:14 UTC by `scripts/dev/audit_power.py` at 9478109 (plus uncommitted changes), 0 min for the parts run this time. Panels per scenario: freetier 100, design 50, bootstrap 80, preblocks 50, stress 100, drift 100, freetier_lowfail 100.
 
 Panels: `scripts/dev/panel_model.py`, the fixture generator's travel-time model on the collector's schedule, with a city-wide daily shock (sd 0.10) and per-corridor weekly drift (sd 0.08) on the excess over free flow. Those sizes are assumptions, not Hyderabad estimates. The treated corridor is drawn from the same model as its donors, so it is exchangeable with them. An effect of known size is injected into its pooled post-period BTI, which moves the estimate by exactly that much; the audit then runs unchanged. Settling 9 days throughout.
 
@@ -512,6 +512,92 @@ The treated corridor is fixed as the most congested and most volatile corridor p
 | A | 14 | 12 (168 d) | 40 (40.0) | 28 | 0.01 | stressed | 99 | 0.02 | 0.03 | 0.12 | 0.07 | 0.03 | 0.07 | 0.96 | 0.21 | 0.68 | 0.91 | 0.80 |
 | A | 14 | 18 (252 d) | 40 (39.9) | 28 | 0.00 | exchangeable, pre-block sweep | 50 | 0.08 | 0.04 | 0.02 | 0.04 | 0.00 | — | — | 0.84 | 0.90 | 0.98 | 0.92 |
 | A | 14 | 18 (252 d) | 40 (39.9) | 28 | 0.00 | stressed | 100 | 0.03 | 0.05 | 0.09 | 0.04 | 0.02 | 0.01 | 1.00 | 0.64 | 0.85 | 0.97 | 0.89 |
+
+## 6. Panel designs that fit TomTom's free allowance
+
+Call failure rates as panel_model draws them: most corridors fail up to 12% of calls, 18% of corridors 16-38%, more at the peaks and on whole dark days.
+
+TomTom's pricing page lists the Routing API at 20,000 free calls a month (read 2026-09-14), 645 a day in a 31-day month. Each design audits one of 4 treated corridors against the rest less the 4 treated ids as declared donors: 14-day blocks, 12 pre blocks (24 weeks), 28-day post period, standardised placebo rank, 100 panels each.
+
+### Calls
+
+Per corridor a day: every peak slot, plus the night slots that feed the observed free-flow reference. The current schedule has 8 night slots; the brief's call counts imply 2. `month` adds, at the panel model's failure rates, two retries for every call that finally failed and a weekly road refetch per corridor. It leaves out retries before a call that succeeded, so it is a lower bound; docs/free_tier.md prices both.
+
+| design | night slots | first attempts a day | 31-day month, no retries | month with retries and road checks | of 20,000 |
+|---|---|---|---|---|---|
+| 34 ids @ 30 min | 8 | 850 | 26,350 | 31,553 | 158% |
+| 34 ids @ 30 min | 2 | 646 | 20,026 | 24,676 | 123% |
+| 30 ids @ 30 min | 8 | 750 | 23,250 | 27,954 | 140% |
+| 30 ids @ 30 min | 2 | 570 | 17,670 | 21,874 | 109% |
+| 24 ids @ 20 min | 8 | 816 | 25,296 | 30,610 | 153% |
+| 24 ids @ 20 min | 2 | 672 | 20,832 | 25,753 | 129% |
+| 20 ids @ 15 min | 8 | 840 | 26,040 | 31,809 | 159% |
+| 20 ids @ 15 min | 2 | 720 | 22,320 | 27,760 | 139% |
+
+### Audits
+
+`withheld`: the audit refused (treated corridor under the block floor, or no donor left). `donors used`: mean and 10th percentile among audits that ran. `p reachable`: share of all audits with at least 19 placebos, the fewest at which a placebo p can reach 0.05. `size`: false-positive rate among audits that ran.
+
+| design | donors declared | peak calls failed | withheld | why | donors used | donors used, p10 | p reachable | size |
+|---|---|---|---|---|---|---|---|---|
+| 34 ids @ 30 min | 30 | 12.0% | 0.44 | insufficient_pre 44% | 16.0 | 12 | 0.11 | 0.00 |
+| 30 ids @ 30 min | 26 | 12.3% | 0.48 | insufficient_pre 48% | 13.8 | 11 | 0.02 | 0.02 |
+| 24 ids @ 20 min | 20 | 12.1% | 0.07 | insufficient_pre 7% | 18.8 | 17 | 0.63 | 0.04 |
+| 20 ids @ 15 min | 16 | 12.4% | 0.00 | — | 16.0 | 16 | 0.00 | 0.00 |
+
+### Power
+
+Share of all declared audits that detect the effect: a withheld audit counts as not detected. `MDE, every audit` is what a declared audit can promise; `MDE, audits run` is the definition the earlier sections use.
+
+| design | power 0.10 | power 0.15 | power 0.20 | power 0.30 | power 0.45 | MDE, every audit | MDE, audits run |
+|---|---|---|---|---|---|---|---|
+| 34 ids @ 30 min | 0.05 | 0.06 | 0.09 | 0.11 | 0.11 | > 0.45 | > 0.45 |
+| 30 ids @ 30 min | 0.00 | 0.01 | 0.02 | 0.02 | 0.02 | > 0.45 | > 0.45 |
+| 24 ids @ 20 min | 0.26 | 0.43 | 0.51 | 0.59 | 0.62 | > 0.45 | > 0.45 |
+| 20 ids @ 15 min | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | > 0.45 | > 0.45 |
+
+## 7. The same designs at a 3% failure rate
+
+Every corridor's failure rate fixed at 3% before the peak and dark-day multipliers, everything else unchanged. Nobody knows TomTom's failure rate from Hyderabad yet; this bounds how much of section 6 is the failure assumption.
+
+TomTom's pricing page lists the Routing API at 20,000 free calls a month (read 2026-09-14), 645 a day in a 31-day month. Each design audits one of 4 treated corridors against the rest less the 4 treated ids as declared donors: 14-day blocks, 12 pre blocks (24 weeks), 28-day post period, standardised placebo rank, 100 panels each.
+
+### Calls
+
+Per corridor a day: every peak slot, plus the night slots that feed the observed free-flow reference. The current schedule has 8 night slots; the brief's call counts imply 2. `month` adds, at the panel model's failure rates, two retries for every call that finally failed and a weekly road refetch per corridor. It leaves out retries before a call that succeeded, so it is a lower bound; docs/free_tier.md prices both.
+
+| design | night slots | first attempts a day | 31-day month, no retries | month with retries and road checks | of 20,000 |
+|---|---|---|---|---|---|
+| 34 ids @ 30 min | 8 | 850 | 26,350 | 28,101 | 141% |
+| 34 ids @ 30 min | 2 | 646 | 20,026 | 21,604 | 108% |
+| 30 ids @ 30 min | 8 | 750 | 23,250 | 24,807 | 124% |
+| 30 ids @ 30 min | 2 | 570 | 17,670 | 19,072 | 95% |
+| 24 ids @ 20 min | 8 | 816 | 25,296 | 27,068 | 135% |
+| 24 ids @ 20 min | 2 | 672 | 20,832 | 22,479 | 112% |
+| 20 ids @ 15 min | 8 | 840 | 26,040 | 27,890 | 139% |
+| 20 ids @ 15 min | 2 | 720 | 22,320 | 24,068 | 120% |
+
+### Audits
+
+`withheld`: the audit refused (treated corridor under the block floor, or no donor left). `donors used`: mean and 10th percentile among audits that ran. `p reachable`: share of all audits with at least 19 placebos, the fewest at which a placebo p can reach 0.05. `size`: false-positive rate among audits that ran.
+
+| design | donors declared | peak calls failed | withheld | why | donors used | donors used, p10 | p reachable | size |
+|---|---|---|---|---|---|---|---|---|
+| 34 ids @ 30 min | 30 | 3.8% | 0.01 | insufficient_pre 1% | 29.4 | 28 | 0.99 | 0.02 |
+| 30 ids @ 30 min | 26 | 3.9% | 0.02 | insufficient_pre 2% | 25.5 | 25 | 0.98 | 0.04 |
+| 24 ids @ 20 min | 20 | 3.9% | 0.00 | — | 20.0 | 20 | 1.00 | 0.10 |
+| 20 ids @ 15 min | 16 | 3.9% | 0.00 | — | 16.0 | 16 | 0.00 | 0.00 |
+
+### Power
+
+Share of all declared audits that detect the effect: a withheld audit counts as not detected. `MDE, every audit` is what a declared audit can promise; `MDE, audits run` is the definition the earlier sections use.
+
+| design | power 0.10 | power 0.15 | power 0.20 | power 0.30 | power 0.45 | MDE, every audit | MDE, audits run |
+|---|---|---|---|---|---|---|---|
+| 34 ids @ 30 min | 0.27 | 0.48 | 0.69 | 0.87 | 0.96 | 0.30 | 0.30 |
+| 30 ids @ 30 min | 0.31 | 0.60 | 0.76 | 0.92 | 0.97 | 0.30 | 0.30 |
+| 24 ids @ 20 min | 0.39 | 0.58 | 0.77 | 0.95 | 0.99 | 0.30 | 0.30 |
+| 20 ids @ 15 min | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | > 0.45 | > 0.45 |
 
 ## 5. Weekly drift 2.5 times larger
 
