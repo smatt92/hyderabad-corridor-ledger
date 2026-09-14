@@ -88,10 +88,37 @@ terms question.
 **If we buy Traffic Stats instead of collecting.** Sahil asked TomTom on
 2026-09-14 for a quote for about 14 corridors, both directions, two years of
 history plus ongoing access.
-- **Whether it attaches at all.** Does Traffic Stats deliver individual travel
-  times, or only percentiles pre-computed per time bin? With percentiles only,
-  BTI cannot be pooled and the 200-call floor cannot be checked, so the metrics
-  engine does not attach to the data and a quote is moot.
+- **It attaches: CONFIRMED** (TomTom's Batch schema and Route Analysis pages,
+  read 2026-09-14; `docs/data-sources.md`). Batch gives 19 speed percentiles,
+  5th to 95th, per segment and hour, and Route Analysis gives route-level travel
+  time percentiles. So a p95 travel time and a free-flow reference are derivable.
+- **Quote for Route Analysis, not Batch.**
+  - Batch exposes no sample size, and the 200/30 floors, the shrinkage and the
+    missingness flag all need one.
+  - Batch is per segment, and a corridor p95 is not the sum of segment p95s.
+  - Batch hours are UTC, so every IST clock hour straddles two buckets.
+  - Route Analysis exposes per-segment counts, takes a time zone and can
+    restrict to vehicles that drove the whole route (`fullTraversal`).
+- **The inversion. Get it right.** Batch percentiles are of SPEED. On a segment
+  of length L:
+  - p95 travel time = L ÷ p5 speed;
+  - the free-flow reference (p5 travel time) = L ÷ p95 speed;
+  - mean travel time = L ÷ harmonic mean speed, not L ÷ arithmetic mean speed.
+  Read backwards, these compute the opposite of unreliability and still look
+  plausible.
+- **Supplier identity drifts.** TomTom's segment ids and geometries change with
+  annual map updates. Carry `osmIds` from the first request so that a corridor
+  stays the same road across years; design it in, do not discover it later.
+- **Empty intervals are omitted**, which matches the never-interpolate rule; an
+  omitted interval still counts as missing.
+- **Questions for TomTom** (amended 2026-09-14):
+  - Quote for Route Analysis, not Batch.
+  - How are segment and route identity maintained across annual map updates?
+  - With `fullTraversal`, are route travel-time percentiles computed only from
+    vehicles that drove the whole route, and is that vehicle count returned?
+    `averageSampleSize` is the total sample size divided by the number of
+    segments, not a traversal count.
+  - Does the licence permit publishing derived aggregate statistics?
 - **A decision we would live with.** The hash chain would attest a file TomTom
   delivered, not calls this project made. "Independent record" becomes
   "independent analysis of purchased data", which is weaker. The README must
@@ -120,7 +147,8 @@ Hyderabad is closed except two. Both were checked with sources, and neither is a
 guess; the sources and what they do not yet establish are in
 `docs/data-sources.md`.
 1. **A negotiated commercial licence.** TomTom sells Traffic Stats (historical
-   speeds, travel times and sample counts) through sales, and its Traffic Index
+   speeds, travel times and sample counts; Route Analysis is the product to
+   quote for) through sales, and its Traffic Index
    publishes Hyderabad figures. Whether a licence permits publishing is the
    question put to TomTom.
 2. **Institutional access** through a university with existing Telangana

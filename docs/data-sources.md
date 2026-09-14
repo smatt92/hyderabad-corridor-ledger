@@ -25,8 +25,48 @@ Sahil checked both with sources; neither is a guess. The sources re-checked here
 
 | Route | Evidence | Not yet established | Checked |
 |---|---|---|---|
-| A negotiated commercial licence | [TomTom Traffic Stats](https://www.tomtom.com/products/traffic-stats/) sells historical speeds, travel times and sample counts for road networks in over 70 countries, through TomTom MOVE, batch delivery or an API, by contacting sales. TomTom's [Traffic Index](https://www.tomtom.com/traffic-index/city/hyderabad/) publishes Hyderabad figures, so TomTom holds Hyderabad trip data. | Whether a licence permits publishing, and whether it delivers individual travel times or only percentiles per time bin. Both are put to TomTom (CLAUDE.md). | opened (product page); search (the Hyderabad index page did not render) |
+| A negotiated commercial licence | [TomTom Traffic Stats](https://www.tomtom.com/products/traffic-stats/) sells historical speeds, travel times and sample counts for road networks in over 70 countries, through TomTom MOVE, batch delivery or an API, by contacting sales. TomTom's [Traffic Index](https://www.tomtom.com/traffic-index/city/hyderabad/) publishes Hyderabad figures, so TomTom holds Hyderabad trip data. | Whether a licence permits publishing, and whether Route Analysis's route percentiles and sample size count only vehicles that drove the whole route (put to TomTom, CLAUDE.md). Whether the metrics engine attaches is now answered: yes ("TomTom Traffic Stats: what the documentation settles"). | opened (product page); search (the Hyderabad index page did not render) |
 | Institutional access through a university with existing Telangana Government data permissions | IIIT Hyderabad is a named Technology Partner of the Telangana Mobility AI Grand Challenge, with T-AIM and NASSCOM ([IIIT-H Mobility news](https://mobility.iiit.ac.in/news.php)). [TGDeX](https://tgdex.telangana.gov.in/), the state's data exchange built with IISc, links government datasets with research institutions, IIT Hyderabad and IIIT Hyderabad among them ([MediaNama, July 2025](https://www.medianama.com/2025/07/223-telangana-tgdex-india-first-state-led-ai-data-exchange/)). | Whether any such permission covers observed road travel times or speeds, and whether results could be published. | opened (IIIT-H news); search (the TGDeX portal did not render) |
+
+## TomTom Traffic Stats: what the documentation settles
+
+Read on 2026-09-14 from TomTom's [Batch data schema](https://docs.tomtom.com/traffic-stats/documentation/batch/data-schema)
+and [Route Analysis API](https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis)
+pages, both opened. They answer one of the two open questions on the commercial route.
+
+**CONFIRMED: the metrics engine attaches.** Batch gives `speedPercentiles`, "19 percentiles
+(5th–95th, increments of 5)", per segment and hour, with the segment's `length`. Route
+Analysis gives route-level `travelTimePercentiles` ("5th, 10th, … 90th, 95th (in
+seconds)") as well as `speedPercentiles`. A p95 travel time and a percentile-based
+free-flow reference are both derivable.
+
+**The inversion. Batch percentiles are of speed, not travel time.** On a segment of fixed
+length, travel time is length ÷ speed, which reverses the order:
+
+- p95 travel time = length ÷ **p5** speed;
+- the free-flow reference (a 5th-percentile travel time) = length ÷ **p95** speed;
+- mean travel time = length ÷ **harmonic** mean speed (`harmonicAverageSpeedMetersPerHour`),
+  not length ÷ the arithmetic mean speed (`averageSpeedMetersPerHour`), which gives a
+  shorter mean travel time than the vehicles took.
+
+Read the other way round, these compute the opposite of unreliability and still look
+plausible. This project's observed free-flow reference is the p5 of night-slot travel times
+(00:00–04:00 IST); a p95 speed over all hours is a different reference unless the request
+is restricted to those hours.
+
+| Finding | Source text | Consequence |
+|---|---|---|
+| Batch does not expose sample size | "the number of underlying observations (sample size) is not exposed as a field in the Traffic Stats Batch schema" | The 200 and 30 floors, the shrinkage and the missingness flag all need a count, so Batch cannot feed the metrics engine as built. |
+| Route Analysis exposes counts, but no count of full-route vehicles | `sampleSize`: "The sample size visible on the segment. If several measurements are received from the same vehicle on a single segment it is only counted once in the sample size count." `averageSampleSize`: "The total sample size divided by the amount of segments." | A count exists per segment. The route-level figure is an average over segments, not the number of vehicles that drove the whole route, so it does not map onto a 200-observation floor until TomTom says how to read it. |
+| Batch is per segment | records keyed by `dsegId`, each with `HourlyStats` | A corridor p95 is not the sum of its segments' p95s: summing assumes the slowest 5% of trips coincide on every segment. |
+| Route Analysis can restrict to full traversals | `fullTraversal`: "When you only want vehicles that traversed the full route taken into account, you need to use this parameter." `travelTimeStandardDeviation`: "Only for full traversal routes." Averages are "for the covered part of route". | Route-level statistics from vehicles that drove the whole corridor are obtainable. The page does not say whether route `travelTimePercentiles` use full traversals by default. |
+| Batch hours are UTC | `hour`: "Hour of day (0–23, UTC)" | IST is UTC+5:30, so every IST clock hour straddles two UTC buckets. The peak windows (06:30–10:30 and 16:30–21:00 IST), the 24-hour profile and the 24×7 rhythm matrix do not align to Batch output. Route Analysis takes `zoneId`: "In which time zone all times are given." |
+| Segment identity changes every year | "Road segment identifiers and geometries are subject to yearly changes as the road network undergoes updates… For longitudinal studies that span multiple years, it is important to account for potential changes in both identifiers and geometry resulting from annual map updates." | Corridor identity across years is threatened from the supplier's side, the problem the immutability guard solves for our own declarations. `osmIds` ("OpenStreetMap identifiers") is the mitigation, and has to be designed in, not discovered later. |
+| Empty intervals are omitted | "Empty intervals (no observed traffic) are omitted." | This matches the never-interpolate rule. An omitted interval still has to be counted as missing against the schedule, not skipped. |
+
+**So the product to quote for is Route Analysis, not Batch.** Route Analysis exposes counts,
+takes a time zone and can restrict to full traversals. Batch has no counts, UTC hours, and
+segment-level percentiles that cannot be combined into a corridor's.
 
 ## Catalogues
 
@@ -185,3 +225,5 @@ These are lower bounds, for four reasons:
 - DfT road traffic statistics are counts, not speeds. WebTRIS carries speeds.
 - NDW's CC0 licence was not confirmed on the pages checked.
 - Delhi's real-time bus positions need a requested key.
+- Route Analysis's sample size is per segment (`sampleSize`) or an average over segments
+  (`averageSampleSize`), not a count of vehicles that drove the whole route.
