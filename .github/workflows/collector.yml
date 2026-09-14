@@ -44,3 +44,13 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: uv run python fetch.py
+      # Probe mode: off until config/probe.yaml names corridors and dates, and refused
+      # while any corridor is active. It keeps each attempt's corridor, time, number,
+      # status and latency, never a response body. Same job, so the one-a-second spacing
+      # and the single-collector guarantee cover it too.
+      - name: Probe TomTom's call failure rate
+        env:
+          TOMTOM_API_KEY: ${{ secrets.TOMTOM_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: uv run python probe.py

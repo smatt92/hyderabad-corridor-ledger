@@ -87,3 +87,11 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           DAY: ${{ inputs.day }}
         run: uv run python gaps.py ${DAY:+"$DAY"}
+      # Measured call failure rates so far, beside docs/free_tier.md's breaking points.
+      # Prints that probe mode is off when config/probe.yaml names no corridors.
+      - name: Summarise probe mode
+        if: ${{ !cancelled() }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: uv run python probe.py report

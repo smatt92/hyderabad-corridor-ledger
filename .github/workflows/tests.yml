@@ -26,6 +26,8 @@ jobs:
       - run: uv run pytest
       - name: Corridor declarations validate and fit the daily budget
         run: uv run python config.py
+      - name: Probe configuration is valid, never overlaps collection, and fits the allowance
+        run: uv run python probe.py check
       - name: Measured corridor geometry is unchanged
         run: uv run python immutability.py
 

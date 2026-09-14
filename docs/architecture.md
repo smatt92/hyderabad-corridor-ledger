@@ -169,9 +169,18 @@ corridors: at most two a run, one attempt each, from the same budget.
 - A stored road is refetched weekly and compared. One that differs fails the
   run, and is never written over the stored road.
 
-**Not live yet.** Keeping TomTom's response headers (`tomtom_responses`) and
-the `quota_exhausted` run outcome need migration 0011. Corridor roads need
-0012. Both are written and not applied.
+**Probe mode.** Every free-tier sizing table turns on how often a peak-hour
+call fails, which nobody has measured. `collector/probe.py` measures it without
+keeping a Result.
+- **What it keeps.** One `probe_calls` row per attempt: corridor, time, attempt
+  number, HTTP status and latency. It closes each response once the headers
+  arrive, so the body is never read.
+- **When it runs.** Off until `config/probe.yaml` names corridors and a window
+  of at most 31 days, and refused while any corridor is active. It runs as a
+  step after `fetch.py` in the same job, with the same spacing, retries, quota
+  stop and meter.
+- **Not live.** It needs migration 0013, which is written and not applied, and
+  Sahil decides whether it runs.
 
 ## 3. Data model
 
@@ -192,6 +201,7 @@ erDiagram
     collector_runs ||--o{ tomtom_responses : "headers kept, 0011"
     collector_runs |o..o{ samples : "collector_run, no FK"
     corridors ||--o{ corridor_route_checks : "road checks, 0012"
+    corridors ||--o{ probe_calls : "probe attempts, 0013"
     corridors {
         text id PK
         text class "core, alternate or donor"
@@ -238,6 +248,13 @@ erDiagram
         text kind "initial or refetch"
         boolean matched "false is a rerouting alarm"
     }
+    probe_calls {
+        bigint id PK
+        text corridor_id FK
+        smallint attempt
+        smallint http_status "null when no response came"
+        integer latency_ms
+    }
     gap_reports {
         date day PK
         text corridor_id PK
@@ -276,8 +293,8 @@ erDiagram
   routed through. `corridor_route_checks` records every road call, and the
   service role can neither update nor delete it: it is the evidence for a
   rerouting alarm.
-- **Pending.** `tomtom_responses` (0011), the road columns and
-  `corridor_route_checks` (0012) exist only in migrations not yet applied.
+- **Probe calls.** `probe_calls` (0013) holds no travel time: status and
+  latency only. It is written and not applied.
 
 ### 3b. Derived tables and the read model
 

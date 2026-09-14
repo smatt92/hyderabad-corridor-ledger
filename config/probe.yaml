@@ -1,0 +1,18 @@
+# Probe mode (collector/probe.py). OFF while `corridors` is empty.
+#
+# Measures how often TomTom calls fail at the collector's real cadence, keeping
+# only corridor_id, requested_at, http_status, attempt and the latency to the
+# response headers (probe_calls, migration 0013). The response body is never
+# read, so no travel time, distance or geometry is stored.
+#
+# To start a probe, list corridor ids from config/corridors.yaml and the first
+# and last IST day, at most 31 days apart, then commit. Every call spends the
+# Routing allowance. A probe never runs while any corridor is active.
+#
+# Sahil decides whether a probe runs: clause 11.4 of TomTom's Terms is still
+# being put to TomTom (see CLAUDE.md).
+
+tier: B          # the schedule every probed corridor is called on; B is 30-minute peaks
+first_day: null
+last_day: null
+corridors: []

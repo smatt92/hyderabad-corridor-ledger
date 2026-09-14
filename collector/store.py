@@ -120,6 +120,11 @@ class Ledger:
             ("checked_at", f"lt.{iso(end)}"),
         ], order="id.asc"):
             by_run[row["collector_run"]] += row["attempts"]
+        # probe mode: one row per attempt, made outside any collector run
+        by_run[None] += len(self.db.select_all("probe_calls", [
+            ("select", "id"), ("requested_at", f"gte.{iso(start)}"),
+            ("requested_at", f"lt.{iso(end)}"),
+        ], order="id.asc"))
         for run in self.db.select_all("collector_runs", [
             ("select", "id,attempts"), ("started_at", f"gte.{iso(start)}"),
             ("started_at", f"lt.{iso(end)}"),
@@ -165,6 +170,32 @@ class Ledger:
             ("id", f"eq.{corridor_id}"),
         ])
         return rows[0]
+
+    def probed_since(self, start: datetime, corridor_ids: list[str]) -> set[str]:
+        """Probe mode: which of these corridors have an attempt at or after `start`."""
+        _, rows = self.db.request("GET", "probe_calls", [
+            ("select", "corridor_id"), ("corridor_id", f"in.({','.join(corridor_ids)})"),
+            ("requested_at", f"gte.{iso(start)}"),
+        ])
+        return {r["corridor_id"] for r in rows or []}
+
+    def probe_retries_and_refusals(self, start: datetime) -> list[dict]:
+        """Probe attempts since `start` that were a 429 or a retry: enough to tell a 429
+        that ended its slot from one that was retried."""
+        return self.db.select_all("probe_calls", [
+            ("select", "corridor_id,requested_at,attempt,http_status"),
+            ("requested_at", f"gte.{iso(start)}"), ("or", "(http_status.eq.429,attempt.gt.1)"),
+        ], order="id.asc")
+
+    def insert_probe_calls(self, rows: list[dict]) -> None:
+        if rows:
+            self.db.request("POST", "probe_calls", body=rows, prefer="return=minimal")
+
+    def probe_rows(self, start: datetime, end: datetime) -> list[dict]:
+        return self.db.select_all("probe_calls", [
+            ("select", "corridor_id,requested_at,attempt,http_status,latency_ms"),
+            ("requested_at", f"gte.{iso(start)}"), ("requested_at", f"lt.{iso(end)}"),
+        ], order="id.asc")
 
     def insert_route_check(self, row: dict) -> None:
         self.db.request("POST", "corridor_route_checks", body=row, prefer="return=minimal")

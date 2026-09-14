@@ -386,6 +386,38 @@ unauditable, however good the estimator. This decides seeding order.
 - The collector refuses to start if `samples` or `failed_samples` hold rows but
   no collector run was ever recorded.
 
+### Probe mode: the failure rate without a Result
+
+Every free-tier sizing table (`docs/free_tier.md`) turns on how often a peak-hour
+call fails, and nobody has measured it. `collector/probe.py` measures it.
+
+- **What it keeps.** `probe_calls` (0013) holds corridor_id, requested_at,
+  attempt, http_status (NULL when no response came) and latency_ms to the
+  response headers, and nothing else.
+- **The body is never read.** `probe.headers_only` closes each response once its
+  status line and headers arrive, so no travel time, distance or geometry reaches
+  the code. `collector/tests/test_probe.py` fails if a body is read.
+- **Why a status code is not a Result.** It is metadata about our own request,
+  not the travel-time data clause 11.4 covers. That is Sahil's reading, not legal
+  advice, and Sahil is putting the question to TomTom. Sahil decides whether a
+  probe runs.
+- **Off by default.** It stays off until `config/probe.yaml` names corridor ids
+  and a first and last IST day, at most 31 days apart.
+- **Guards.**
+  - It refuses to run while any corridor is active.
+  - It is held to 20,000 / 31 calls a day with the 15% retry reserve.
+  - It uses the collector's retry rules.
+  - A 429 that ended its slot stops it until 00:00 UTC.
+  - Every attempt counts in the attempts meter.
+- **Where it runs.** It is a step in `collector.yml`'s one job, so the
+  one-a-second spacing and the single-collector guarantee cover it.
+  `probe.py check` runs in `tests.yml`, and `probe.py report` in `daily.yml`'s
+  summary.
+- **The rate to read.** Compare peak slots without a 200 over peak slots
+  scheduled with the breaking points. A run GitHub dropped and a call TomTom
+  failed are the same missing call to the audit, so the report shows both
+  causes and their sum.
+
 ### Checks that fail loudly
 
 | Check | Where |
