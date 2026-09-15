@@ -220,11 +220,8 @@ City") and one date range ("Fortnight July"):
   6.89 km), the via points and the time sets. The map type is not known to have changed:
   R2 ran on OPEN_DSEG, the map in the unidentified payload above, and 9885126's map is not
   recorded.
-  - The clean test is the ORIGINAL 6.89 km route with only `fullTraversal` flipped off
-    (Sahil, 2026-09-15).
-  - TomTom's MOVE Portal guides include a page on cloning a report. Cloning job 9885126
-    and changing only that flag keeps everything else identical, and the clone's payload
-    comes from an identified job.
+  - The clean test is the clone test below: the ORIGINAL 6.89 km route with only
+    `fullTraversal` flipped (Sahil, 2026-09-15).
 - **The mechanism is not settled.** At R2's density, "almost nobody drives the whole
   route" is a weak reason for an exact zero in every time set, peaks included. TomTom's
   FAQ names another: a rarely travelled portion of a route, or vehicles skipping its final
@@ -233,6 +230,31 @@ City") and one date range ("Fortnight July"):
   hold it to the main road, would have few whole-route vehicles whatever its length. The
   per-segment road classes and sample sizes of the same route with full traversal off
   would show which.
+
+### The clone test: planned, not yet run
+
+Planned by Sahil on 2026-09-15 as the one remaining experiment that bears on the first
+report's zeros. No result is recorded yet.
+
+- **Method.** Clone MOVE Portal job 9885126 and change only `fullTraversal`, keeping the
+  route, its via points, the time sets, the date range, the map type and the time zone.
+  TomTom's MOVE Portal guides include a page on cloning a report. Record the clone's job
+  id and its payload.
+- **Direction: `true` to `false`.** Sahil reports that job 9885126 ran with
+  `fullTraversal: true`. The payload above cannot confirm it, because it is not identified
+  as that job's. Confirm the original's setting in the clone before running, and record
+  both values.
+- **Cost.** One of the trial's remaining reports, 18 as of the evening of 2026-09-15.
+
+What each outcome supports, and no more:
+
+| Clone, full traversal off | What follows | What does not follow |
+|---|---|---|
+| Returns data | Job 9885126's zeros were full traversal on that route: (a) is isolated. | Nothing about whole-route percentiles. The clone's percentiles come from the same undocumented population as R2's, and whole-route vehicles returned zero on this route, so this outcome neither identifies the population nor shows that whole-route percentiles are meaningful. |
+| Returns zero | Something other than full traversal zeroed that route. The leads become whether the route was built and matched at all (endpoints off the road network, or no routable path between them) and the settings the clone shares with the original. | Not a rarely travelled start or end segment. TomTom's FAQ warning is about full-traversal results; with full traversal off, a thinly travelled segment leaves the rest of the route covered, as R2's ten uncovered night segments did. |
+
+Either outcome gives a payload from an identified job, which settles the request shape the
+MOVE Portal generates.
 
 ### Job 9886035 (R2): route-level results
 

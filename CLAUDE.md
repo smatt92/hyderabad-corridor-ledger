@@ -276,10 +276,16 @@ none.
   - Full traversal with no via points is the only recorded explanation left. It
     is NOT ISOLATED: route, length, via points and time sets all changed
     alongside full traversal, and the map type is not known to have changed (R2
-    ran on OPEN_DSEG, the map in the unidentified payload). The clean test is
-    the ORIGINAL 6.89 km route with only `fullTraversal` flipped off. Cloning
-    job 9885126 in the MOVE Portal keeps everything else identical and gives a
-    payload from an identified job.
+    ran on OPEN_DSEG, the map in the unidentified payload).
+  - THE CLONE TEST, planned and not yet run (`docs/data-sources.md`). Clone job
+    9885126 and flip ONLY `fullTraversal`, from `true` (as Sahil reports;
+    confirm it in the clone) to `false`. Record the clone's job id and payload.
+    - Data: 9885126's zeros were full traversal on that route. That is all it
+      shows. It neither identifies the percentile population nor makes
+      whole-route percentiles meaningful.
+    - Zero: something else zeroed the route, and the lead is whether the route
+      was built and matched at all. Not a rarely travelled end segment, which
+      affects only full-traversal results.
   - At R2's density, "almost nobody drives it end to end" is a weak mechanism
     for an exact zero. A routed path that leaves the main road fits TomTom's FAQ
     warning better, and R2's did for a fifth of its length.
