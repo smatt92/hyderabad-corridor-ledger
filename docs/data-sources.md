@@ -1,7 +1,8 @@
 # Data sources: no open observed travel times for Hyderabad
 
 A decision record, 2026-09-14. Sahil did the research. Each claim below was checked
-against its source on 2026-09-14. The `checked` column says how: `opened` (the page itself),
+against its source on 2026-09-14, and each 2026-09-15 addition to the TomTom Traffic Stats
+section on that day. The `checked` column says how: `opened` (the page itself),
 `API` (GitHub's or the portal's own API), `search` (a search result's excerpt, page not
 opened) or `not re-checked` (the portal refused an automated fetch, so the entry is
 Sahil's check alone). Where a check differed from the research notes, the checked value is
@@ -25,14 +26,23 @@ Sahil checked both with sources; neither is a guess. The sources re-checked here
 
 | Route | Evidence | Not yet established | Checked |
 |---|---|---|---|
-| A negotiated commercial licence | [TomTom Traffic Stats](https://www.tomtom.com/products/traffic-stats/) sells historical speeds, travel times and sample counts for road networks in over 70 countries, through TomTom MOVE, batch delivery or an API, by contacting sales. TomTom's [Traffic Index](https://www.tomtom.com/traffic-index/city/hyderabad/) publishes Hyderabad figures, so TomTom holds Hyderabad trip data. | Whether a licence permits publishing, and whether Route Analysis's route percentiles and sample size count only vehicles that drove the whole route (put to TomTom, CLAUDE.md). Whether the metrics engine attaches is now answered: yes ("TomTom Traffic Stats: what the documentation settles"). | opened (product page); search (the Hyderabad index page did not render) |
+| A negotiated commercial licence | [TomTom Traffic Stats](https://www.tomtom.com/products/traffic-stats/) sells historical speeds, travel times and sample counts for road networks in over 70 countries, through TomTom MOVE, batch delivery or an API, by contacting sales. TomTom's [Traffic Index](https://www.tomtom.com/traffic-index/city/hyderabad/) publishes Hyderabad figures, so TomTom holds Hyderabad trip data. | Whether a licence permits publishing, how deep Hyderabad's coverage goes, and whether a count of vehicles that drove the whole route exists (put to TomTom, `docs/tomtom-questions.md`). Answered from the documentation: the metrics engine attaches, and with full traversal the route statistics come only from whole-route vehicles ("TomTom Traffic Stats: what the documentation settles"). | opened (product page); search (the Hyderabad index page did not render) |
 | Institutional access through a university with existing Telangana Government data permissions | IIIT Hyderabad is a named Technology Partner of the Telangana Mobility AI Grand Challenge, with T-AIM and NASSCOM ([IIIT-H Mobility news](https://mobility.iiit.ac.in/news.php)). [TGDeX](https://tgdex.telangana.gov.in/), the state's data exchange built with IISc, links government datasets with research institutions, IIT Hyderabad and IIIT Hyderabad among them ([MediaNama, July 2025](https://www.medianama.com/2025/07/223-telangana-tgdex-india-first-state-led-ai-data-exchange/)). | Whether any such permission covers observed road travel times or speeds, and whether results could be published. | opened (IIIT-H news); search (the TGDeX portal did not render) |
 
 ## TomTom Traffic Stats: what the documentation settles
 
 Read on 2026-09-14 from TomTom's [Batch data schema](https://docs.tomtom.com/traffic-stats/documentation/batch/data-schema)
 and [Route Analysis API](https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis)
-pages, both opened. They answer one of the two open questions on the commercial route.
+pages, both opened, and extended on 2026-09-15. That day Sahil put questions to TomTom's
+documentation assistant on developer.tomtom.com, and each answer was then checked against
+TomTom's pages. In the 2026-09-15 tables, `checked` says how:
+- `opened`: the page itself;
+- `search`: a search result's excerpt, because TomTom's MOVE Portal guides return 404 to a
+  direct fetch;
+- `assistant only`: no page was found that says it.
+
+Where an answer and a page differ, this record follows the page, and the differences are
+listed at the end of this section.
 
 **CONFIRMED: the metrics engine attaches.** Batch gives `speedPercentiles`, "19 percentiles
 (5th–95th, increments of 5)", per segment and hour, with the segment's `length`. Route
@@ -54,19 +64,162 @@ plausible. This project's observed free-flow reference is the p5 of night-slot t
 (00:00–04:00 IST); a p95 speed over all hours is a different reference unless the request
 is restricted to those hours.
 
+**TomTom's own indices are not this project's.** Route Analysis's `planningTimeIndex`
+divides the 95th-percentile travel time by the average travel time of the job's first time
+set, and `averageTravelTimeRatio` is also relative to that first time set ([Route
+Analysis](https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis)). This
+project's PTI and TTI divide by a free-flow reference. They share names and are different
+numbers, so TomTom's are never published as ours. Route Analysis averages are arithmetic
+unless a field says otherwise.
+
+### Read on 2026-09-14
+
 | Finding | Source text | Consequence |
 |---|---|---|
 | Batch does not expose sample size | "the number of underlying observations (sample size) is not exposed as a field in the Traffic Stats Batch schema" | The 200 and 30 floors, the shrinkage and the missingness flag all need a count, so Batch cannot feed the metrics engine as built. |
-| Route Analysis exposes counts, but no count of full-route vehicles | `sampleSize`: "The sample size visible on the segment. If several measurements are received from the same vehicle on a single segment it is only counted once in the sample size count." `averageSampleSize`: "The total sample size divided by the amount of segments." | A count exists per segment. The route-level figure is an average over segments, not the number of vehicles that drove the whole route, so it does not map onto a 200-observation floor until TomTom says how to read it. |
+| Route Analysis exposes counts, but no count of full-route vehicles | `sampleSize`: "The sample size visible on the segment. If several measurements are received from the same vehicle on a single segment it is only counted once in the sample size count." `averageSampleSize`: "The total sample size divided by the amount of segments." | A count exists per segment. The route-level figure is an average over segments, not the number of vehicles that drove the whole route, so it does not map onto a 200-observation floor. See "The sample floor" below. |
 | Batch is per segment | records keyed by `dsegId`, each with `HourlyStats` | A corridor p95 is not the sum of its segments' p95s: summing assumes the slowest 5% of trips coincide on every segment. |
-| Route Analysis can restrict to full traversals | `fullTraversal`: "When you only want vehicles that traversed the full route taken into account, you need to use this parameter." `travelTimeStandardDeviation`: "Only for full traversal routes." Averages are "for the covered part of route". | Route-level statistics from vehicles that drove the whole corridor are obtainable. The page does not say whether route `travelTimePercentiles` use full traversals by default. |
-| Batch hours are UTC | `hour`: "Hour of day (0–23, UTC)" | IST is UTC+5:30, so every IST clock hour straddles two UTC buckets. The peak windows (06:30–10:30 and 16:30–21:00 IST), the 24-hour profile and the 24×7 rhythm matrix do not align to Batch output. Route Analysis takes `zoneId`: "In which time zone all times are given." |
-| Segment identity changes every year | "Road segment identifiers and geometries are subject to yearly changes as the road network undergoes updates… For longitudinal studies that span multiple years, it is important to account for potential changes in both identifiers and geometry resulting from annual map updates." | Corridor identity across years is threatened from the supplier's side, the problem the immutability guard solves for our own declarations. `osmIds` ("OpenStreetMap identifiers") is the mitigation, and has to be designed in, not discovered later. |
+| Route Analysis can restrict to full traversals | `fullTraversal`: "When you only want vehicles that traversed the full route taken into account, you need to use this parameter." `travelTimeStandardDeviation`: "Only for full traversal routes." Averages are "for the covered part of route". | Route-level statistics from vehicles that drove the whole corridor are obtainable. This page does not say that route `travelTimePercentiles` then use only those vehicles; TomTom's FAQ does (below). |
+| Batch hours are UTC | `hour`: "Hour of day (0–23, UTC)" | Batch only. Route Analysis takes a time zone, so its hours are IST (below), and nothing in the design depends on Batch's hours. |
+| Segment identity changes every year | "Road segment identifiers and geometries are subject to yearly changes as the road network undergoes updates… For longitudinal studies that span multiple years, it is important to account for potential changes in both identifiers and geometry resulting from annual map updates." | Corridor identity across years is threatened from the supplier's side, the problem the immutability guard solves for our own declarations. It has to be designed in, not discovered later. `osmIds`, recorded here on 2026-09-14 as the mitigation, is not one: see "Corridor identity" below. |
 | Empty intervals are omitted | "Empty intervals (no observed traffic) are omitted." | This matches the never-interpolate rule. An omitted interval still has to be counted as missing against the schedule, not skipped. |
 
 **So the product to quote for is Route Analysis, not Batch.** Route Analysis exposes counts,
 takes a time zone and can restrict to full traversals. Batch has no counts, UTC hours, and
 segment-level percentiles that cannot be combined into a corridor's.
+
+### Confirmed on 2026-09-15, and it attaches
+
+| Finding | Consequence | Checked |
+|---|---|---|
+| **Full traversal.** With `fullTraversal: true`, route statistics are calculated only from trips by vehicles that drove the entire route; data from vehicles that drove part of it is excluded. The option can reduce the number of probe devices, and TomTom generally does not advise it for longer, more complex or door-to-door routes ([FAQ](https://docs.tomtom.com/traffic-stats/documentation/product-information/faq)). | A corridor's `travelTimePercentiles` describe whole-corridor trips, not a synthesis of segment percentiles. The warning is about thin counts, which is where the sample floor matters. | opened |
+| **Full traversal over older data.** Full archive support for `fullTraversal` covers only about the last two years, a moving window; older periods use limited data ([Route Analysis](https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis)). | Bought history older than about two years is weaker under full traversal. This bears on whether to buy history (question 2 in `docs/tomtom-questions.md`). | opened |
+| **Time zones.** Each Route Analysis route takes a `zoneId`, a tz database name ([Route Analysis](https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis)), and every Traffic Stats API uses the time zone given in the request ([FAQ](https://docs.tomtom.com/traffic-stats/documentation/product-information/faq)). | With `Asia/Kolkata`, date ranges and time sets are in IST. The peak windows (06:30–10:30 and 16:30–21:00), the 24-hour profile and the 24×7 rhythm matrix align as designed. | opened |
+| **Data lag: up to 72 hours.** Data takes up to 72 hours from arriving at TomTom to being available, so the most recent report is three days in the past ([Data archive process](https://developer.tomtom.com/move-portal/guides/traffic-stats/how-it-works/data-archive-process)). Newly received GPS data is added every day ([FAQ](https://docs.tomtom.com/traffic-stats/documentation/product-information/faq)). The assistant added that reports over the last three days may be incomplete or carry smaller samples. | Purchased figures could run about three days behind: close to current, not an archive only. Request windows end at least 72 hours back, because a hash chain would freeze an incomplete report. | search (72 hours); opened (daily additions); assistant only (incomplete recent reports) |
+| **Request-time threshold.** `averageSampleSizeThreshold` defaults to 0. If the average sample size of any one combination of route, date range and time set falls below it, no output is generated, the whole job is moved to REJECTED, and the report is not charged. Without it, output is generated however few samples there are ([Route Analysis](https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis)). | See "The sample floor" below. | opened |
+| **Manual acceptance.** With `acceptMode: MANUAL`, a job waits at NEED_CONFIRMATION with a sample details file giving, per route, date range and time set, the `averageSampleSize`, network length and covered network length. The job is then accepted or rejected ([Route Analysis](https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis)). | The counts can be read before a report is accepted, so a withheld value can still carry its count. Whether a manually rejected job is charged is not documented. | opened |
+| **Omitted data.** Batch omits intervals with no observed traffic ([Batch data schema](https://docs.tomtom.com/traffic-stats/documentation/batch/data-schema)). Route Analysis averages cover the covered part of the route, and each summary gives the route's `distance` and its `coveredDistance` ([Route Analysis](https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis)). The assistant added that the MOVE Portal offers a manual sample-size filter for map display. | Matches the never-interpolate rule. An omitted interval, or route distance without data, still counts as missing. | opened; assistant only (MOVE filter) |
+| **Limits.** Per job: routes of at most 200 km, at most 20 routes, 24 date ranges of at most 366 days each, 732 unique days across them, and 24 time sets ([Route Analysis](https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis)). At most 50 via points per route ([FAQ](https://docs.tomtom.com/traffic-stats/documentation/product-information/faq)). A job older than two years expires and its data is removed. No limit on segment count or on reports per contract period was found. | Route length does not bind at 4–14 km. About 28 directional corridors need at least two jobs, and the 24×7 rhythm matrix's 168 cells at least seven. A corridor's declared via points stay within 50. Results are downloaded and kept, because TomTom deletes them. | opened |
+| **Pricing.** The priced length is the total length of a route's segments, multiplied by the number of date ranges: a 20 km route over five date ranges counts as 100 km ([Definitions](https://developer.tomtom.com/move-portal/guides/traffic-stats/how-it-works/definitions)). Access is requested through a local partner or a TomTom account manager ([Introduction](https://docs.tomtom.com/traffic-stats/documentation/product-information/introduction)). | Every date range is paid again. A range is at most 366 days, so history from 2015 takes at least 12 ranges. If each 14-day audit block is its own range, one audit's twelve pre blocks and post period are 13. How ranges are counted belongs in the quote. | search (pricing); opened (access) |
+| **Probe sources.** `probeSource` is PASSENGER (the default), TELEMATICS (fleet management vehicles) or ALL ([Route Analysis](https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis)). Passenger data comes mainly from smartphones, portable navigation devices and some passenger-car makers; fleet data from some truck makers, taxi and delivery services and other fleet companies. Pedestrian data is filtered out of both ([Definitions](https://developer.tomtom.com/move-portal/guides/traffic-stats/how-it-works/definitions)). | The default leaves out taxi and delivery fleets. The source changes what a travel time describes, so it is chosen deliberately and recorded with every request. | opened (parameter); search (categories) |
+
+### Confirmed on 2026-09-15, and it constrains us
+
+| Finding | Consequence | Checked |
+|---|---|---|
+| **No full-traversal count.** No field returns the number of vehicles that drove the whole route. Route Analysis returns each segment's `sampleSize` and `normalizedSampleSize`, and the route's `averageSampleSize`, the total over segments divided by their number ([Route Analysis](https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis)). A segment's sample size is described as the number of GPS devices observed on it in the date range and time set ([MOVE Portal guides](https://developer.tomtom.com/move-portal/guides/traffic-stats/introduction); the exact page was not identified). | See "The sample floor" below. | opened; search (devices) |
+| **Segment ids change with the map.** Batch segment ids and geometries change with yearly map updates and are consistent within a 12-month period ([Batch data schema](https://docs.tomtom.com/traffic-stats/documentation/batch/data-schema)). For the last two years, a moving window, any quarterly map version can be chosen for any date range. Older data is tied to one map version per period: GENESIS 2016.12 for 2008 to January 2019, for example ([Available maps](https://docs.tomtom.com/traffic-stats/documentation/api/available-maps)). | Inside the two-year window a whole series can run on one map version, so segment ids hold across it. History further back crosses map versions, and ids change at each. | opened |
+| **GERS ids exist, but not for Route Analysis or India.** TomTom documents `gersIdMapping` only for Traffic Volume: an optional per-segment mapping to an Overture GERS feature, many-to-one, with start and end offsets along the feature, in GeoJSON output only, when enabled at the contract level ([Traffic Volume](https://docs.tomtom.com/traffic-stats/documentation/api/traffic-volume)). Traffic Volume runs on the Orbis map only and covers the United States, Australia, New Zealand, Belgium, the Netherlands, Norway, Sweden and the United Kingdom. No route-level aggregation is documented. | GERS for Hyderabad corridors is not available as documented. It has to be priced into a contract, not switched on later (question 4). | opened |
+| **When a GERS id changes.** A GERS id stays the same while a feature is unchanged, and typically through a minor geometry correction. When a road is realigned, split or merged, new ids are assigned with a transition mapping, and TomTom's Global Entity Matcher can update a customer's data automatically ([Understanding GERS IDs](https://docs.tomtom.com/global-entity-matcher/gers-ids)). | See "Corridor identity" below. An automatic update is exactly what this project must not accept. | opened |
+| **GERS is Overture's, and its history is public.** Overture describes GERS ids as stable across its releases, and GERS as "a potential standard". It publishes a GERS Registry of every id ever published, with the releases in which each was first seen, last seen and last changed, and a changelog per release marking every id added, removed, changed or unchanged, both as Parquet files in public S3 and Azure buckets ([GERS](https://docs.overturemaps.org/gers/), [Registry](https://docs.overturemaps.org/gers/registry/), [Changelog](https://docs.overturemaps.org/gers/changelog/)). The Overture Maps Foundation is a Joint Development Foundation project, an affiliate of the Linux Foundation ([overturemaps.org](https://overturemaps.org/)). TomTom's own transition mappings have no documented public location. | Anyone can check whether a corridor's GERS ids changed against Overture's public registry and changelog, without TomTom. Transitions made on TomTom's side cannot be checked that way. | opened |
+| **OSM ids are unsuitable.** Traffic Volume's `osmIdMapping` is many-to-many: a segment can map to several OSM ways, and one way can appear more than once with different offsets ([Traffic Volume](https://docs.tomtom.com/traffic-stats/documentation/api/traffic-volume)). | An OSM id inherits the ambiguity instead of resolving it. | opened |
+
+### Unresolved
+
+| Question | What is known | Checked |
+|---|---|---|
+| **Hyderabad's coverage depth** | The market coverage page lists India from 2015. Its note that coverage is limited to selected cities sits above the whole table, every market from Germany to the United States, so it does not say whether India or Hyderabad is limited ([Market coverage](https://docs.tomtom.com/traffic-stats/documentation/product-information/market-coverage)). TomTom refers coverage questions to support and to the 30-day MOVE Portal trial, but Sahil's check found the trial's data limited to the UK, California, Texas and Melbourne. TomTom's Traffic Index publishes Hyderabad figures, so TomTom holds Hyderabad data; how far back and how dense is not known. Question 2. | opened |
+| **Two-wheelers** | Nothing found confirms or excludes motorised two-wheelers from India probe data. Passenger data comes mainly from smartphones, so a rider using phone navigation may count as a passenger probe without being identified as a two-wheeler; that is a reading, not documentation. It decides whether the output is described as mixed-traffic or car travel time, and the methodology note says which, or that it is unknown. Question 5. | search (passenger sources); a reading, not documented |
+
+### The sample floor: two layers, neither an exact count
+
+Decided by Sahil on 2026-09-15:
+1. **Request time, the primary mechanism:** `averageSampleSizeThreshold`. A combination
+   below it produces no data at all, rather than data withheld after the fact.
+2. **Publish time, the fallback:** `min(sampleSize)` over the route's segments.
+
+What each layer measures:
+- **Neither is the specified floor.** The floor (200 for a p95, 30 for a median) counts
+  observations of the corridor, which under full traversal means whole-route trips. No
+  documented field gives that number (question 3).
+- **The threshold is on an average.** `min(sampleSize)` is never above
+  `averageSampleSize`, so the publish-time check is the stricter of the two.
+- **`min(sampleSize)` is a lower bound only under a condition.** With full traversal, the
+  FAQ says data from partial-route vehicles is excluded, for route statistics. If segment
+  counts are filtered the same way, each segment counts only whole-route vehicles, one not
+  observed on a segment lowers that segment's count, and `min(sampleSize)` is a lower
+  bound, loosest where observations are sparse. The documentation does not say whether
+  segment counts are filtered. If they include every vehicle observed on the segment,
+  vehicles that drove part of the corridor raise every count, and `min(sampleSize)` can
+  exceed the whole-route count and pass a corridor below the floor. On an urban corridor
+  that traffic joins and leaves at every junction that would be the expected case, though
+  it is unmeasured.
+- **Devices, not necessarily trips.** If a segment's sample size counts devices, a vehicle
+  that drives the corridor on many days counts once, and the count is below the number of
+  trips.
+- **The methodology note.** Where the fallback is used, it says the floor was applied
+  against a lower bound, not an exact count, and names the condition until TomTom confirms
+  it.
+
+The request-time layer is not strictly better than a publish-time floor:
+- One thin combination rejects the whole job, including routes and time sets that clear
+  the threshold. Jobs are grouped so that thin combinations, such as night time sets or
+  low-volume corridors, cannot sink the rest.
+- A rejected job returns no count, and this project publishes the count beside every
+  withheld value. Manual acceptance returns the counts before a job is accepted.
+
+### Corridor identity: GERS ids, and a change is a signal
+
+Decided by Sahil on 2026-09-15.
+
+- **Prefer GERS ids to TomTom's segment ids, and never use OSM ids.** Why:
+  - Segment ids change with map versions. GERS ids are meant to persist through them and
+    change only when the road itself changes.
+  - GERS ids are Overture's, and Overture publishes every id and every release's changes
+    openly. A corridor's identity can be checked without TomTom, and it survives a change
+    of provider.
+  - OSM mappings are many-to-many, so they inherit the ambiguity.
+- **A GERS id change is a signal, not a nuisance.** A realigned, split or merged road is
+  what corridor immutability exists to detect. It is raised as an alert. A corridor is
+  never remapped silently, and an automatic update of its ids, such as the Global Entity
+  Matcher offers, is never accepted.
+- **Not yet decided: what the alert leads to.** A realignment is a different road, retired
+  and superseded as a rerouting alarm is. A split or merge can also come from a new
+  junction on the same carriageway, where the road driven is unchanged. The test the
+  project already has for "the same road" is the stored road and its length, within 30 m
+  and 2%.
+- **Not yet available.** As documented, GERS is for Traffic Volume only and does not cover
+  India (question 4).
+
+### Lengths come from the payload
+
+Route Analysis gives each summary's route `distance`, and each segment's `distance`,
+`frc`, `speedLimit`, `streetName` and `shape`. Batch's road network gives each segment's
+`length`, with `frc`, `speedLimit`, `streetName`, `fow` and `bearing`. A corridor's length
+is taken from these, never computed from coordinates.
+
+Checked in the code on 2026-09-15:
+- Every corridor length is TomTom's `lengthInMeters`. `collector/tomtom.py` and
+  `collector/polyline.py` read it, `metrics/raw.py` and `metrics/readmodel.py` carry it,
+  and `web/` shows it as `length_meters`.
+- The only computation in metres from coordinates is in `collector/polyline.py`: the 5 m
+  simplification tolerance and the 30 m rerouting deviation between two TomTom roads. Both
+  are offsets, never a length.
+- `collector/registry.py`'s 300 m junction check is a box in degrees, not a distance.
+
+### Where the documentation assistant's answers differed from the pages
+
+Recorded 2026-09-15. In each case this record follows the page.
+
+- **Job rejection.** An average below `averageSampleSizeThreshold` in any one combination
+  rejects the whole job, not only that combination. A rejected report is not charged.
+- **Full traversal.** The answer left out that full archive support covers only about the
+  last two years.
+- **India.** The note limiting coverage to selected cities heads every market on the page,
+  so it does not establish that India is limited.
+- **GERS as a standard.** Overture calls GERS a potential standard, and the Overture Maps
+  Foundation is a Joint Development Foundation project affiliated with the Linux
+  Foundation. Overture's GERS registry and changelog are public; only TomTom's own
+  transition mappings have no documented location.
+- **GERS coverage.** Traffic Volume, the only product documented with GERS, does not cover
+  India and runs on the Orbis map only.
+- **Segment fields.** `fow` and `bearing` are Batch road network fields. Route Analysis
+  segments carry `distance`, `frc`, `speedLimit`, `streetName` and `shape`.
+- **Not found on any page.** That reports over the last three days are incomplete, and the
+  MOVE Portal's manual sample-size filter.
+- **Sahil's reasoning, not the assistant's.** `min(sampleSize)` as a lower bound on the
+  full-traversal count holds only if full traversal also filters segment counts ("The
+  sample floor").
 
 ## Catalogues
 

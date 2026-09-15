@@ -119,6 +119,17 @@ This could stop the project, so it is written here and not in a footnote.
   calls a month, and does not say when the count resets. The collector's
   budget was designed around 2,400 calls a day, which uses 20,000 in under
   nine days.
+- **If the data is bought instead.** A quote has been requested for TomTom's
+  historical travel times (Traffic Stats Route Analysis). TomTom documents up
+  to 72 hours from data arriving to it being available, so bought figures
+  would run about three days behind: close to current, not an archive only.
+  How far back Hyderabad's data goes is not yet known. If that history exists,
+  an audit's 24-week pre-period could come from it instead of being collected.
+  Whether a licence would let the figures be published is the same open
+  question. Nothing has been bought. From the first day bought data is used,
+  this README will say the record is an independent analysis of purchased
+  data, not of calls this project made. The questions are in
+  [docs/tomtom-questions.md](docs/tomtom-questions.md).
 - **Caveats.** These are public pages, which may not be this account's
   contract, and this is not legal advice. Until it is settled with TomTom, no
   licence has been chosen, and nothing in this repository describes the data
@@ -386,6 +397,10 @@ Ranges run from no failed calls to 12.5% failed.
 A permanent em dash in those places means the corridor was never sampled densely
 enough there. It is not a fault. The arithmetic is in
 [docs/free_tier.md](docs/free_tier.md), section 5.
+
+These timings are for collection. Bought data would follow its own: see "If
+the data is bought instead" under [Unresolved: TomTom's terms and
+allowance](#unresolved-tomtoms-terms-and-allowance).
 
 ### Data export
 

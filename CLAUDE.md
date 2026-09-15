@@ -97,39 +97,98 @@ terms question.
 
 **If we buy Traffic Stats instead of collecting.** Sahil asked TomTom on
 2026-09-14 for a quote for about 14 corridors, both directions, two years of
-history plus ongoing access.
+history plus ongoing access. What TomTom's documentation settles, checked page
+by page on 2026-09-15, is in `docs/data-sources.md` with its sources. An answer
+from TomTom's documentation assistant is not a fact until a page says it:
+several of its answers differed from the pages, left things out, or were found on
+none.
 - **It attaches: CONFIRMED** (TomTom's Batch schema and Route Analysis pages,
   read 2026-09-14; `docs/data-sources.md`). Batch gives 19 speed percentiles,
   5th to 95th, per segment and hour, and Route Analysis gives route-level travel
-  time percentiles. So a p95 travel time and a free-flow reference are derivable.
+  time percentiles. So a p95 travel time and a free-flow reference are
+  derivable.
 - **Quote for Route Analysis, not Batch.**
   - Batch exposes no sample size, and the 200/30 floors, the shrinkage and the
     missingness flag all need one.
   - Batch is per segment, and a corridor p95 is not the sum of segment p95s.
-  - Batch hours are UTC, so every IST clock hour straddles two buckets.
-  - Route Analysis exposes per-segment counts, takes a time zone and can
-    restrict to vehicles that drove the whole route (`fullTraversal`).
-- **The inversion. Get it right.** Batch percentiles are of SPEED. On a segment
-  of length L:
-  - p95 travel time = L ÷ p5 speed;
-  - the free-flow reference (p5 travel time) = L ÷ p95 speed;
-  - mean travel time = L ÷ harmonic mean speed, not L ÷ arithmetic mean speed.
-  Read backwards, these compute the opposite of unreliability and still look
-  plausible.
-- **Supplier identity drifts.** TomTom's segment ids and geometries change with
-  annual map updates. Carry `osmIds` from the first request so that a corridor
-  stays the same road across years; design it in, do not discover it later.
+  - Route Analysis takes `zoneId` per route. With `Asia/Kolkata` its date ranges
+    and time sets are IST, so the peak windows, the 24-hour profile and the
+    rhythm matrix align as designed.
+  - With `fullTraversal: true`, route statistics come only from vehicles that
+    drove the whole route (TomTom's FAQ). Full archive support covers about the
+    last two years; older data is limited.
+- **The two inversions. Get them right.** Both produce plausible wrong numbers.
+  - `speedPercentiles` are percentiles of SPEED. On a segment of length L, p95
+    travel time = L ÷ p5 SPEED, and the observed free-flow reference (p5 travel
+    time) = L ÷ p95 SPEED.
+  - Mean travel time = L ÷ HARMONIC mean speed. L ÷ arithmetic mean speed
+    understates travel time.
+  Read backwards, these compute the opposite of unreliability. A third trap sits
+  beside them: TomTom's `planningTimeIndex` divides by the first time set's
+  average travel time, not by a free-flow reference, so it is not our PTI.
+- **Data lag: up to 72 hours.** The most recent report is three days in the
+  past, so purchased figures could run three days behind, not only as an
+  archive. Request windows that end at least 72 hours back: the hash chain would
+  freeze an incomplete report.
+- **The sample floor has two layers, and neither is an exact count** (decided
+  2026-09-15). No documented field counts the vehicles that drove the whole
+  route.
+  - Request time, primary: `averageSampleSizeThreshold`. A route, date range and
+    time set whose average falls below it produces no output, and it rejects the
+    WHOLE job, uncharged. Group jobs so that a thin combination cannot sink the
+    rest. A rejected job returns no count; `acceptMode: MANUAL` shows the counts
+    before a job is accepted.
+  - Publish time, fallback: `min(sampleSize)` over the route's segments, never
+    above `averageSampleSize`. It is a lower bound on the whole-route count ONLY
+    IF full traversal also filters segment counts: the FAQ says partial-route
+    data is excluded from route statistics, and says nothing about segments. If
+    segment counts include partial traversals, it can exceed the whole-route
+    count and pass a corridor below the floor.
+  - Where the fallback is used, the methodology note says the floor was applied
+    against a lower bound, not an exact count, and names that condition until
+    TomTom confirms it.
+- **Corridor identity: GERS ids, not TomTom's segment ids, never OSM ids**
+  (decided 2026-09-15). The `osmIds` advice written here on 2026-09-14 was
+  wrong.
+  - Why GERS, for reproducibility and portability. TomTom's segment ids change
+    with map versions. GERS ids are Overture's, meant to persist across them,
+    and Overture publishes every id ever issued and every release's changes
+    openly. Anyone can check a corridor's identity without TomTom, and it
+    survives a change of provider. OSM mappings are many-to-many with offsets,
+    so they inherit the ambiguity.
+  - A GERS id change is a SIGNAL, not a nuisance. TomTom replaces ids when a
+    road is realigned, split or merged, which is what corridor immutability
+    exists to detect. Surface it as an alert. Never remap silently, and never
+    accept an automatic update of a corridor's ids (TomTom's Global Entity
+    Matcher offers one). Not yet decided: what the alert leads to, since a split
+    or merge can come from a new junction on an unchanged carriageway.
+  - Not available yet. TomTom documents GERS only for Traffic Volume, per
+    segment, enabled at the contract level, and Traffic Volume does not cover
+    India. It is a quote line item.
+  - Meanwhile, segment ids hold within a 12-month period, and the last two years
+    can run on one map version.
+- **Declare `probeSource`; never leave it to the default.** PASSENGER is the
+  default (smartphones, navigation devices, some car makers), TELEMATICS is
+  fleets (trucks, taxi and delivery services), and ALL combines them. Record it
+  with every request. Whether India's data includes two-wheelers is unresolved;
+  the methodology note says whether the output is mixed-traffic or car travel
+  time, or that it is unknown.
+- **Request design.** A job takes at most 20 routes, 24 date ranges of at most
+  366 days each, and 24 time sets, so about 28 directional corridors need two
+  jobs. The priced length is route length × the number of date ranges, so every
+  pooling window requested as its own date range is paid for again.
 - **Empty intervals are omitted**, which matches the never-interpolate rule; an
   omitted interval still counts as missing.
-- **Questions for TomTom** (amended 2026-09-14). The full set, with what the
-  documentation already settled and a tracking table, is `docs/tomtom-questions.md`:
-  - Quote for Route Analysis, not Batch.
-  - How are segment and route identity maintained across annual map updates?
-  - With `fullTraversal`, are route travel-time percentiles computed only from
-    vehicles that drove the whole route, and is that vehicle count returned?
-    `averageSampleSize` is the total sample size divided by the number of
-    segments, not a traversal count.
-  - Does the licence permit publishing derived aggregate statistics?
+- **Questions for TomTom** (rewritten 2026-09-15). Only what needs a person
+  remains, in this order; the full text and a tracking table are in
+  `docs/tomtom-questions.md`:
+  1. The quote, with publication rights under clauses 11.4 and 11.6.1 answered
+     in it.
+  2. Hyderabad coverage depth and probe density: buy history, or collect
+     forward.
+  3. A route-level full-traversal count.
+  4. GERS for Route Analysis, as a quote line item.
+  5. Two-wheelers in India probe data.
 - **A decision we would live with.** The hash chain would attest a file TomTom
   delivered, not calls this project made. "Independent record" becomes
   "independent analysis of purchased data", which is weaker. The README must
@@ -490,7 +549,12 @@ unauditable, however good the estimator. This decides seeding order.
   (`collector/gaps.py`) measures UTC months against the published figure: it
   fails at 80% of it, on any quota refusal, and when an IST day's attempts
   pass `CAPACITY_PER_DAY`, and warns when the month's rate carries past it.
-- `length_m` from the response is the only distance anywhere in the system.
+- `length_m` from the response is the only corridor length anywhere in the
+  system, and nothing computes a length from coordinates (checked 2026-09-15).
+  The one computation in metres from coordinates is in `collector/polyline.py`:
+  the 5 m simplification and the 30 m rerouting deviation, which compare two
+  TomTom roads and are offsets, never a length. Purchased data keeps the rule: a
+  route's length is its summary `distance`.
 - A response with route points, or over 4 KB gzipped, is recorded as a
   `geometry_leak` failure and fails the run.
 - The collector refuses to start if `samples` or `failed_samples` hold rows but
