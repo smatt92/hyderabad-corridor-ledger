@@ -26,7 +26,7 @@ Sahil checked both with sources; neither is a guess. The sources re-checked here
 
 | Route | Evidence | Not yet established | Checked |
 |---|---|---|---|
-| A negotiated commercial licence | [TomTom Traffic Stats](https://www.tomtom.com/products/traffic-stats/) sells historical speeds, travel times and sample counts for road networks in over 70 countries, through TomTom MOVE, batch delivery or an API, by contacting sales. TomTom's [Traffic Index](https://www.tomtom.com/traffic-index/city/hyderabad/) publishes Hyderabad figures, so TomTom holds Hyderabad trip data. | Whether a licence permits publishing, how deep Hyderabad's coverage goes, and whether a count of vehicles that drove the whole route exists (put to TomTom, `docs/tomtom-questions.md`). Answered from the documentation: the metrics engine attaches, and with full traversal the route statistics come only from whole-route vehicles ("TomTom Traffic Stats: what the documentation settles"). | opened (product page); search (the Hyderabad index page did not render) |
+| A negotiated commercial licence | [TomTom Traffic Stats](https://www.tomtom.com/products/traffic-stats/) sells historical speeds, travel times and sample counts for road networks in over 70 countries, through TomTom MOVE, batch delivery or an API, by contacting sales. TomTom's [Traffic Index](https://www.tomtom.com/traffic-index/city/hyderabad/) publishes Hyderabad figures, so TomTom holds Hyderabad trip data. | Whether a licence permits publishing, how full traversal behaves on urban corridors, how far back Hyderabad's data goes, and whether a count of vehicles that drove the whole route exists (put to TomTom, `docs/tomtom-questions.md`). Answered: the metrics engine attaches, with full traversal the route statistics come only from whole-route vehicles, and Hyderabad is covered, densely (job 9886035; "TomTom Traffic Stats: what the documentation settles"). | opened (product page); search (the Hyderabad index page did not render) |
 | Institutional access through a university with existing Telangana Government data permissions | IIIT Hyderabad is a named Technology Partner of the Telangana Mobility AI Grand Challenge, with T-AIM and NASSCOM ([IIIT-H Mobility news](https://mobility.iiit.ac.in/news.php)). [TGDeX](https://tgdex.telangana.gov.in/), the state's data exchange built with IISc, links government datasets with research institutions, IIT Hyderabad and IIIT Hyderabad among them ([MediaNama, July 2025](https://www.medianama.com/2025/07/223-telangana-tgdex-india-first-state-led-ai-data-exchange/)). | Whether any such permission covers observed road travel times or speeds, and whether results could be published. | opened (IIIT-H news); search (the TGDeX portal did not render) |
 
 ## TomTom Traffic Stats: what the documentation settles
@@ -73,6 +73,10 @@ Analysis](https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis
 project's PTI and TTI divide by a free-flow reference. They share names and are different
 numbers, so TomTom's are never published as ours. Route Analysis averages are arithmetic
 unless a field says otherwise.
+
+Job 9886035 confirmed both on real output: TomTom's indices divide by the first time set's
+average travel time, and its route `travelTimePercentiles` are the speed inversion already
+done ("Job 9886035 (R2)").
 
 ### Read on 2026-09-14
 
@@ -147,7 +151,7 @@ payload from a job we can identify confirms it (Sahil, 2026-09-15).
     cells, at 24 time sets a job, take at least seven jobs per corridor set: at least 14
     more.
   - Whether separate jobs over the same routes and dates are priced separately is part of
-    question 1.
+    question 2.
 - **AM and PM peak time sets are MON–FRI only; the night time set keeps all seven days.**
   The test used all seven days for its AM peak.
   - Why: weekend peaks on a commuter corridor are a different regime, so a seven-day peak
@@ -181,7 +185,7 @@ payload from a job we can identify confirms it (Sahil, 2026-09-15).
   only. The 24-hour profile pools every day, and the rhythm matrix keeps each weekday
   separate.
 
-### First report: zero in every time set, unresolved
+### First report: zero in every time set, and what job R2 settled
 
 The first Route Analysis job, 9885126, returned its sample details file, the counts a job
 gives before manual acceptance. Read on 2026-09-15, it covers one route ("KPHB to Hitec
@@ -202,61 +206,146 @@ City") and one date range ("Fortnight July"):
   `hitec-city-cyber-towers` candidates in `config/junctions.yaml`. Neither the endpoints
   nor those candidates are verified.
 
-**No coverage conclusion is recorded.** The candidate explanations:
-- **(a) Full traversal with an empty `via`.** Full traversal counts only vehicles that
-  drove TomTom's snapped path end to end, and on a 6.89 km urban route almost nobody may.
-  TomTom's FAQ warns that full traversal reduces the probe count on longer or complex
-  routes. (a) predicts few vehicles; zero in every time set, peaks included, is its
-  extreme.
-- **(b) Hyderabad coverage genuinely absent.**
-- **(c) The trial's data regions.** Sahil's earlier check found the 30-day MOVE Portal
-  trial's data limited to the UK, California, Texas and Melbourne. If this job ran under
-  the trial, that alone gives zero on any Hyderabad route. Sahil judges (c) the most
-  likely, since it is the one his earlier check predicts. It is not established.
+**What job 9886035 (R2, below) settled**, 2026-09-15:
+- **(b) Hyderabad coverage absent: DISPROVED.** R2 returned dense Hyderabad data for July
+  2026.
+- **(c) A trial-region restriction: DISPROVED**, provided R2 ran on the same account as
+  9885126. Sahil's earlier check, which found the trial's data limited to the UK,
+  California, Texas and Melbourne, does not hold for this account. The trial-region
+  control designed earlier is not needed, and is not to be run.
+- **(a) Full traversal with an empty `via`: the only recorded explanation left.** Sahil
+  records it as the cause. It is not isolated: R2 also differs in route, in length (21.01
+  km against 6.89 km), in having a via point, and in its time sets. The map need not
+  differ, since R2 ran on OPEN_DSEG, the map in the payload above. The same 6.89 km route
+  with only full traversal turned off, one of the diagnostics already set running,
+  isolates it.
+- **The mechanism is not settled.** At R2's density, "almost nobody drives the whole
+  route" is a weak reason for an exact zero in every time set, peaks included. TomTom's
+  FAQ names another: a rarely travelled portion of a route, or vehicles skipping its final
+  section. R2's routed path ran a fifth of its length on FRC 7 roads, TomTom's class for
+  destination roads. A routed path like that on 9885126's route, with no via points to
+  hold it to the main road, would have few whole-route vehicles whatever its length. The
+  per-segment road classes and sample sizes of the same route with full traversal off
+  would show which.
 
-The zero network length does not separate them. Road network length leaves out segments
-with no data
-([Definitions](https://developer.tomtom.com/move-portal/guides/traffic-stats/how-it-works/definitions),
-search excerpt), so it is zero whenever no data qualifies, whatever the reason.
+### Job 9886035 (R2): route-level results
 
-**The first diagnostics cannot separate (b) from (c).** Sahil set two running: the same
-route with full traversal off, and a single-road stretch of 1–2 km with full traversal
-off. A trial restriction and absent coverage both return zero on both. On their own they
-can show only whether Hyderabad data reaches the account.
+Read from the job's results file on 2026-09-15. The results files are not committed: they
+are TomTom Results (terms 11.4, CLAUDE.md).
 
-**The corrected diagnostic** (Sahil, 2026-09-15): run the same job shape on a route inside
-a known trial region.
-- **Where.** An urban route in Melbourne, Austin or Houston. A route from Austin to
-  Houston would exceed the 200 km route limit, and would not be the same shape.
-- **Same shape.** `fullTraversal: true`, an empty `via`, a route of similar length, and
-  the same date range and time sets. Use the same map type where the portal allows it.
-- **Local time.** Use the route's own time zone (`Australia/Melbourne`, or
-  `America/Chicago`), so the time sets fall at local peaks and local night.
-- **Record it.** Keep the control's job id and its payload. A payload from an identified
-  job can also settle the request shape.
+**The job.** A 21.01 km Hyderabad route of 375 segments with one via point,
+`fullTraversal: false`, `probeSource: ALL`, `zoneId: Asia/Kolkata`, date range 2026-07-15
+to 2026-07-30. The results name the map `India_ind2025.12.1800-23.125-0 OPEN_DSEG`, not
+Orbis. Every time set covers all seven days, and 08:00–14:00 is not the project's AM peak
+(06:30–10:30).
 
-Read the control together with the Hyderabad jobs:
+**The route summary** carries, per date range and time set: `distance`, `coveredDistance`,
+`averageSampleSize`, `harmonicAverageSpeed`, `averageTravelTime`, `medianTravelTime`,
+`averageTravelTimeRatio`, `planningTimeIndex`, `travelTimePercentiles` (19 values, 5th to
+95th in steps of 5) and `speedPercentiles` (19 values). Each segment carries `segmentId`,
+`newSegmentId`, `speedLimit`, `frc`, `streetName`, `distance` and `shape`, and per time
+set `sampleSize`, `normalizedSampleSize`, speed averages, median and standard deviation,
+`travelTimeStandardDeviation`, `averageTravelTime`, `medianTravelTime`, `travelTimeRatio`
+and `speedPercentiles`.
 
-| Trial-region control | Hyderabad | What it shows |
-|---|---|---|
-| Zero | Any | The job setup is wrong, and full traversal with an empty `via` on a route this long is part of that setup. The control says nothing about Hyderabad. |
-| Data | Data with full traversal off, on the same route | Hyderabad data reaches this account. The first zero was (a), full traversal with an empty `via`. |
-| Data | Zero, with full traversal off as well | Hyderabad returns nothing to this account even without full traversal: (b) or (c). The trial's recorded regions make (c) likely, but only TomTom can separate them (question 2). |
-| Data | Zero, with full traversal on only | Nothing is separated. A busier road can have whole-route vehicles where a Hyderabad road has none, so (a), (b) and (c) all remain. |
+**What the route statistics are.** Checked against the file, in all three time sets:
+- **Travel-time percentiles are inverted speed percentiles.** Each route
+  `travelTimePercentiles` value equals `coveredDistance` divided by the route speed
+  percentile at the mirrored rank (the 95th travel time from the 5th speed), within 11 s,
+  the rounding of the speeds. TomTom does the inversion; we need not. The p95 travel time
+  is the covered length at the 5th-percentile speed. With full traversal off, whose speeds
+  those percentiles are drawn from is not documented, so a percentile is not known to
+  describe any trip driven end to end (question 1).
+- **The mean.** `averageTravelTime` equals `coveredDistance` ÷ `harmonicAverageSpeed`, and
+  also the sum of the segments' mean travel times, within 3 s.
+- **The median.** `medianTravelTime` is the 50th-percentile value of
+  `travelTimePercentiles`.
+- **TomTom's indices.** `planningTimeIndex` is the time set's p95 travel time ÷ the FIRST
+  time set's `averageTravelTime`, and `averageTravelTimeRatio` is its `averageTravelTime`
+  ÷ the same base. Here the first time set is 00:00–04:00, so its ratio is 1.0. Reorder
+  the time sets and both change.
+- **The sample size.** `averageSampleSize` is the sum of segment `sampleSize` over all 375
+  segments, zeros included, ÷ 375.
+- **Not reproducible from segments.** Pooling the segments' own speed percentiles,
+  weighted by sample size, by distance or by both, does not reproduce the route speed
+  percentiles. The file does not show how TomTom builds the route distribution.
 
-This refines the table as Sahil sent it. A Hyderabad zero points to (c) only when it holds
-with full traversal off, and even then (b) predicts the same zero. The control settles the
-job setup; read with the Hyderabad jobs that have full traversal off, it settles (a); (b)
-against (c) stays with TomTom.
+**Results, flagged for verification: not findings** (Sahil, 2026-09-15). A p95 of 224
+minutes and a 55-minute night median on 21 km both look slow, and Sahil is checking them
+against his own experience of the road.
 
-**Nothing about Hyderabad coverage is concluded until the control runs.**
+| Time set (IST, all days) | Covered (km of 21.01) | `averageSampleSize` | Median | p95 | `planningTimeIndex` (TomTom's, ÷ the 00:00–04:00 average) |
+|---|---|---|---|---|---|
+| 00:00–04:00 | 20.64 | 4,017 | 55.0 min | 121.2 min | 1.97 |
+| 08:00–14:00 | 20.94 | 28,855 | 62.2 min | 190.0 min | 3.09 |
+| 16:30–21:00 | 20.94 | 19,321 | 70.8 min | 224.2 min | 3.65 |
+
+Sahil's candidate causes: a segment that occasionally stops dead, the route including
+something unintended, or genuine Hyderabad conditions. Leads in the file itself, for that
+check and not as findings:
+- **Construction.** Each value is the covered length at a speed percentile, not an
+  observed 21 km trip, so a slow tail of speeds from short passages would scale up to the
+  whole route.
+- **Road classes.** By distance the route is 19% FRC 2, 29% FRC 3, 33% FRC 4 and 20% FRC 7
+  (4.11 km). FRC 7 is TomTom's class for destination roads such as alleys and dead-end
+  streets. The first segment is FRC 7 (RBI Officer Quarters Road). Street names along the
+  route include Balkampet Road, Sanathnagar Industries Road, Bharat Nagar Colony Main Road
+  and Railway Goods Shed Road.
+- **Uneven counts.** Segment sample sizes run from 1 or 2 up to 156,220.
+  - The median segment holds 2,147 at night, 18,900 at 08:00–14:00 and 10,632 at
+    16:30–21:00; the 10th-percentile segment holds 29, 402 and 277.
+  - Ten segments (367 m) have no data at night, and two (65 m) have none in the other time
+    sets.
+
+**What it changes.**
+- **Coverage.** Hyderabad is covered on this account, for July 2026, and densely ("First
+  report", above).
+- **via.** A job with a via point returns data. Whether the via point held the route to
+  the road meant is read from the segments. A fifth of R2's length is FRC 7; if that is
+  not the road meant, one via point over 21 km did not pin it.
+- **The inversion warning.** It still holds for Batch and for any `speedPercentiles`
+  field. Route `travelTimePercentiles` need no inversion by us, because TomTom has already
+  done it (above).
+- **TomTom's indices.** Sahil's reading was that PTI and TTI would be TomTom's computation
+  if we buy; the file corrects it.
+  - `planningTimeIndex` and `averageTravelTimeRatio` are ratios to the average of the
+    job's first time set, not to a free-flow reference. They are not this project's PTI or
+    TTI, and are never published as them.
+  - PTI and TTI stay ours to derive, as BTI does, from the route percentiles and averages
+    against our own free-flow reference, such as a night time set's p5.
+- **The methodology note.** If we buy, all three headline metrics, BTI included, rest on
+  TomTom's computation. That computation is its route speed distribution, scaled to the
+  covered length, over a population that is undocumented with full traversal off. The note
+  says so, and says that TomTom's indices are not published as ours.
+- **Both free-flow bases.** Route Analysis carries no `noTrafficTravelTimeInSeconds`.
+  Bought data alone gives the observed p5 basis, not the `_tomtom` basis the ledger
+  publishes beside it. Not decided.
+- **The sample floors.** Sahil's position: if we buy rather than collect, the 200/30/20
+  floors, the `min(sampleSize)` fallback and the missing full-traversal count stop shaping
+  the design, and they keep binding for collection. The evidence supports that only in
+  part:
+  - The averages clear the floors about 97–144 times over, and the night p5 floor about
+    200 times: two orders of magnitude, not three.
+  - `averageSampleSize` averages device counts over every segment, and single segments
+    held 1 or 2. The `min(sampleSize)` fallback would have withheld every time set.
+  - With full traversal off, the population behind a route percentile is undocumented, so
+    these counts are not known to be the observations behind it.
+  - So sparsity is not the limit for data this dense, but the floors are not yet shown
+    irrelevant for the bought branch; that waits on question 1. For collection they bind
+    as before.
+- **THE CENTRAL PROBLEM** (Sahil, 2026-09-15). Full traversal is what makes a route-level
+  percentile meaningful, because only whole-route vehicles count, and on a 7 km urban
+  corridor it returned nothing. With it off, the route percentiles are the covered length
+  at speed percentiles over an undocumented population. The two are in direct tension, and
+  it is now the first question for TomTom. Whether the zero is inherent to corridors of
+  that scale, or came from how that route was defined, is not established.
 
 ### Confirmed on 2026-09-15, and it attaches
 
 | Finding | Consequence | Checked |
 |---|---|---|
 | **Full traversal.** With `fullTraversal: true`, route statistics are calculated only from trips by vehicles that drove the entire route; data from vehicles that drove part of it is excluded. The option can reduce the number of probe devices, and TomTom generally does not advise it for longer, more complex or door-to-door routes ([FAQ](https://docs.tomtom.com/traffic-stats/documentation/product-information/faq)). | A corridor's `travelTimePercentiles` describe whole-corridor trips, not a synthesis of segment percentiles. The warning is about thin counts, which is where the sample floor matters. | opened |
-| **Full traversal over older data.** Full archive support for `fullTraversal` covers only about the last two years, a moving window; older periods use limited data ([Route Analysis](https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis)). | Bought history older than about two years is weaker under full traversal. This bears on whether to buy history (question 2 in `docs/tomtom-questions.md`). | opened |
+| **Full traversal over older data.** Full archive support for `fullTraversal` covers only about the last two years, a moving window; older periods use limited data ([Route Analysis](https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis)). | Bought history older than about two years is weaker under full traversal. This bears on whether to buy history (question 3 in `docs/tomtom-questions.md`). | opened |
 | **Time zones.** Each Route Analysis route takes a `zoneId`, a tz database name ([Route Analysis](https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis)), and every Traffic Stats API uses the time zone given in the request ([FAQ](https://docs.tomtom.com/traffic-stats/documentation/product-information/faq)). | With `Asia/Kolkata`, date ranges and time sets are in IST. The peak windows (06:30–10:30 and 16:30–21:00), the 24-hour profile and the 24×7 rhythm matrix align as designed. | opened |
 | **Data lag: up to 72 hours.** Data takes up to 72 hours from arriving at TomTom to being available, so the most recent report is three days in the past ([Data archive process](https://developer.tomtom.com/move-portal/guides/traffic-stats/how-it-works/data-archive-process)). Newly received GPS data is added every day ([FAQ](https://docs.tomtom.com/traffic-stats/documentation/product-information/faq)). The assistant added that reports over the last three days may be incomplete or carry smaller samples. | Purchased figures could run about three days behind: close to current, not an archive only. Request windows end at least 72 hours back, because a hash chain would freeze an incomplete report. | search (72 hours); opened (daily additions); assistant only (incomplete recent reports) |
 | **Request-time threshold.** `averageSampleSizeThreshold` defaults to 0. If the average sample size of any one combination of route, date range and time set falls below it, no output is generated, the whole job is moved to REJECTED, and the report is not charged. Without it, output is generated however few samples there are ([Route Analysis](https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis)). | See "The sample floor" below. | opened |
@@ -272,7 +361,7 @@ against (c) stays with TomTom.
 |---|---|---|
 | **No full-traversal count.** No field returns the number of vehicles that drove the whole route. Route Analysis returns each segment's `sampleSize` and `normalizedSampleSize`, and the route's `averageSampleSize`, the total over segments divided by their number ([Route Analysis](https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis)). A segment's sample size is described as the number of GPS devices observed on it in the date range and time set ([MOVE Portal guides](https://developer.tomtom.com/move-portal/guides/traffic-stats/introduction); the exact page was not identified). | See "The sample floor" below. | opened; search (devices) |
 | **Segment ids change with the map.** Batch segment ids and geometries change with yearly map updates and are consistent within a 12-month period ([Batch data schema](https://docs.tomtom.com/traffic-stats/documentation/batch/data-schema)). For the last two years, a moving window, any quarterly map version can be chosen for any date range. Older data is tied to one map version per period: GENESIS 2016.12 for 2008 to January 2019, for example ([Available maps](https://docs.tomtom.com/traffic-stats/documentation/api/available-maps)). | Inside the two-year window a whole series can run on one map version, so segment ids hold across it. History further back crosses map versions, and ids change at each. | opened |
-| **GERS ids exist, but not for Route Analysis or India.** TomTom documents `gersIdMapping` only for Traffic Volume: an optional per-segment mapping to an Overture GERS feature, many-to-one, with start and end offsets along the feature, in GeoJSON output only, when enabled at the contract level ([Traffic Volume](https://docs.tomtom.com/traffic-stats/documentation/api/traffic-volume)). Traffic Volume runs on the Orbis map only and covers the United States, Australia, New Zealand, Belgium, the Netherlands, Norway, Sweden and the United Kingdom. No route-level aggregation is documented. | GERS for Hyderabad corridors is not available as documented. It has to be priced into a contract, not switched on later (question 4). | opened |
+| **GERS ids exist, but not for Route Analysis or India.** TomTom documents `gersIdMapping` only for Traffic Volume: an optional per-segment mapping to an Overture GERS feature, many-to-one, with start and end offsets along the feature, in GeoJSON output only, when enabled at the contract level ([Traffic Volume](https://docs.tomtom.com/traffic-stats/documentation/api/traffic-volume)). Traffic Volume runs on the Orbis map only and covers the United States, Australia, New Zealand, Belgium, the Netherlands, Norway, Sweden and the United Kingdom. No route-level aggregation is documented. | GERS for Hyderabad corridors is not available as documented. It has to be priced into a contract, not switched on later (question 5). | opened |
 | **When a GERS id changes.** A GERS id stays the same while a feature is unchanged, and typically through a minor geometry correction. When a road is realigned, split or merged, new ids are assigned with a transition mapping, and TomTom's Global Entity Matcher can update a customer's data automatically ([Understanding GERS IDs](https://docs.tomtom.com/global-entity-matcher/gers-ids)). | See "Corridor identity" below. An automatic update is exactly what this project must not accept. | opened |
 | **GERS is Overture's, and its history is public.** Overture describes GERS ids as stable across its releases, and GERS as "a potential standard". It publishes a GERS Registry of every id ever published, with the releases in which each was first seen, last seen and last changed, and a changelog per release marking every id added, removed, changed or unchanged, both as Parquet files in public S3 and Azure buckets ([GERS](https://docs.overturemaps.org/gers/), [Registry](https://docs.overturemaps.org/gers/registry/), [Changelog](https://docs.overturemaps.org/gers/changelog/)). The Overture Maps Foundation is a Joint Development Foundation project, an affiliate of the Linux Foundation ([overturemaps.org](https://overturemaps.org/)). TomTom's own transition mappings have no documented public location. | Anyone can check whether a corridor's GERS ids changed against Overture's public registry and changelog, without TomTom. Transitions made on TomTom's side cannot be checked that way. | opened |
 | **OSM ids are unsuitable.** Traffic Volume's `osmIdMapping` is many-to-many: a segment can map to several OSM ways, and one way can appear more than once with different offsets ([Traffic Volume](https://docs.tomtom.com/traffic-stats/documentation/api/traffic-volume)). | An OSM id inherits the ambiguity instead of resolving it. | opened |
@@ -281,10 +370,14 @@ against (c) stays with TomTom.
 
 | Question | What is known | Checked |
 |---|---|---|
-| **Hyderabad's coverage depth** | The market coverage page lists India from 2015. Its note that coverage is limited to selected cities sits above the whole table, every market from Germany to the United States, so it does not say whether India or Hyderabad is limited ([Market coverage](https://docs.tomtom.com/traffic-stats/documentation/product-information/market-coverage)). TomTom refers coverage questions to support and to the 30-day MOVE Portal trial, but Sahil's check found the trial's data limited to the UK, California, Texas and Melbourne. TomTom's Traffic Index publishes Hyderabad figures, so TomTom holds Hyderabad data; how far back and how dense is not known. Question 2. | opened |
-| **Two-wheelers** | Nothing found confirms or excludes motorised two-wheelers from India probe data. Passenger data comes mainly from smartphones, so a rider using phone navigation may count as a passenger probe without being identified as a two-wheeler; that is a reading, not documentation. It decides whether the output is described as mixed-traffic or car travel time, and the methodology note says which, or that it is unknown. Question 5. | search (passenger sources); a reading, not documented |
+| **Hyderabad's coverage depth** | Coverage exists: job 9886035 returned dense Hyderabad data for 15–30 July 2026 on this account ("Job 9886035 (R2)"). The market coverage page lists India from 2015; its note that coverage is limited to selected cities heads the whole table, so it names no city ([Market coverage](https://docs.tomtom.com/traffic-stats/documentation/product-information/market-coverage)). How far back Hyderabad data goes, and how dense whole-route counts are, is not known. Sahil's earlier check, which found the trial's data limited to the UK, California, Texas and Melbourne, does not hold for this account. Question 3. | opened; product (job 9886035) |
+| **Two-wheelers** | Nothing found confirms or excludes motorised two-wheelers from India probe data. Passenger data comes mainly from smartphones, so a rider using phone navigation may count as a passenger probe without being identified as a two-wheeler; that is a reading, not documentation. It decides whether the output is described as mixed-traffic or car travel time, and the methodology note says which, or that it is unknown. Question 6. | search (passenger sources); a reading, not documented |
 
 ### The sample floor: two layers, neither an exact count
+
+**Status after job 9886035.** For the bought branch the floors are not yet shown
+irrelevant; that waits on question 1 ("What it changes", under "Job 9886035 (R2)"). For
+collection they bind as before.
 
 Decided by Sahil on 2026-09-15:
 1. **Request time, the primary mechanism:** `averageSampleSizeThreshold`. A combination
@@ -294,7 +387,7 @@ Decided by Sahil on 2026-09-15:
 What each layer measures:
 - **Neither is the specified floor.** The floor (200 for a p95, 30 for a median) counts
   observations of the corridor, which under full traversal means whole-route trips. No
-  documented field gives that number (question 3).
+  documented field gives that number (question 4).
 - **The threshold is on an average.** `min(sampleSize)` is never above
   `averageSampleSize`, so the publish-time check is the stricter of the two.
 - **`min(sampleSize)` is a lower bound only under a condition.** With full traversal, the
@@ -342,7 +435,7 @@ Decided by Sahil on 2026-09-15.
   project already has for "the same road" is the stored road and its length, within 30 m
   and 2%.
 - **Not yet available.** As documented, GERS is for Traffic Volume only and does not cover
-  India (question 4).
+  India (question 5).
 
 ### Lengths come from the payload
 

@@ -123,9 +123,26 @@ none.
     time) = L ÷ p95 SPEED.
   - Mean travel time = L ÷ HARMONIC mean speed. L ÷ arithmetic mean speed
     understates travel time.
-  Read backwards, these compute the opposite of unreliability. A third trap sits
-  beside them: TomTom's `planningTimeIndex` divides by the first time set's
-  average travel time, not by a free-flow reference, so it is not our PTI.
+  Read backwards, these compute the opposite of unreliability. They hold for
+  Batch segment data and for any `speedPercentiles` field, Route Analysis's
+  included. Route Analysis's route `travelTimePercentiles` need NO inversion by
+  us, because TomTom has already done it: in job 9886035 each one equals
+  `coveredDistance` ÷ the speed percentile at the mirrored rank, and
+  `averageTravelTime` = `coveredDistance` ÷ `harmonicAverageSpeed`.
+- **TomTom's indices are not ours.** In job 9886035, `planningTimeIndex` = the
+  time set's p95 travel time ÷ the FIRST time set's average travel time, and
+  `averageTravelTimeRatio` = its average ÷ that same base. They change when time
+  sets are reordered, and divide by an average, not a free-flow reference, so
+  they are neither our PTI nor our TTI. Never publish them as ours.
+  - PTI and TTI stay ours to derive, like BTI, from the route percentiles and
+    averages against our own free-flow reference (a night time set's p5).
+  - If we buy, what is the vendor's computation is the distribution under all
+    three: TomTom's route speed percentiles, scaled to the covered length, over
+    a population undocumented with full traversal off. The methodology note says
+    so.
+  - Route Analysis carries no `noTrafficTravelTimeInSeconds`, so bought data
+    alone cannot give the `_tomtom` free-flow basis the ledger publishes beside
+    `_p5`. Not decided.
 - **Data lag: up to 72 hours.** The most recent report is three days in the
   past, so purchased figures could run three days behind, not only as an
   archive. Request windows that end at least 72 hours back: the hash chain would
@@ -133,6 +150,15 @@ none.
 - **The sample floor has two layers, and neither is an exact count** (decided
   2026-09-15). No documented field counts the vehicles that drove the whole
   route.
+  - Status after job 9886035. Sahil's position: if we buy, the floors
+    (200/30/20), the `min(sampleSize)` fallback and the missing full-traversal
+    count stop shaping the design; if we collect, they keep binding. The
+    evidence supports that only in part. The averages clear the floors about
+    97-144 times over (about 200 times at night): two orders of magnitude, not
+    three. But `averageSampleSize` averages device counts over all 375 segments,
+    single segments held 1 or 2, and with full traversal off the population
+    behind a route percentile is undocumented. Until question 1 is answered, the
+    evidence does not retire them for the bought branch.
   - Request time, primary: `averageSampleSizeThreshold`. A route, date range and
     time set whose average falls below it produces no output, and it rejects the
     WHOLE job, uncharged. Group jobs so that a thin combination cannot sink the
@@ -194,12 +220,19 @@ none.
   identify confirms it.
   - `routes[].via` is a request field, so declared via points pin a corridor in
     the request itself. The limit is the collector's: they fix the points, not
-    the road between them.
+    the road between them. Job 9886035 carried one via point and returned data,
+    yet a fifth of its 21 km (4.11 km) ran on FRC 7 roads, TomTom's class for
+    destination roads. If that is not the road meant, one via point did not pin
+    it.
   - The payload carried `probeSource` ALL, `fullTraversal`, `zoneId`, date-range
     `exclusions` and `excludedDaysOfWeek`, `acceptMode` MANUAL and
     `averageSampleSizeThreshold`.
   - Its map was `mapType: OPEN_DSEG`, version `2025.12.1800`, which the
-    documentation read does not list.
+    documentation read does not list. Job 9886035's results name its map
+    `India_ind2025.12.1800-23.125-0 OPEN_DSEG`, not Orbis. Those results also
+    echo `zoneId`, `probeSource` ALL, `fullTraversal` and the date ranges from
+    an identified job; `via`, `acceptMode` and the threshold are not echoed, so
+    the canonical request is still unconfirmed.
 - **Two corrections to the test request for production** (Sahil, 2026-09-15):
   - Set `averageSampleSizeThreshold`: 0 disables the request-time floor. The
     value is not yet chosen.
@@ -215,37 +248,51 @@ none.
     definition stands (Sahil, 2026-09-15).
   - It cannot be settled until that choice is made. Change nothing until then.
   - The weekend argument applies to collected peaks as well.
-- **First test report: zero, unresolved.** Job 9885126 returned zero average
-  sample size, network length and covered network length in all three time sets.
-  - The candidates (`docs/data-sources.md`): full traversal with an empty `via`,
-    absent Hyderabad coverage, or the trial's data regions. Sahil judges the
-    trial the likeliest; that is not established.
-  - The two Hyderabad diagnostics (full traversal off, on the same route and on
-    a 1-2 km stretch) cannot tell a trial restriction from absent coverage: both
-    return zero under either.
-  - The corrected control: the SAME JOB SHAPE on an urban route inside a known
-    trial region (Melbourne, Austin or Houston; Austin to Houston exceeds the
-    200 km route limit), in that route's own time zone. Record its job id and
-    payload.
-  - Control zero: the job setup is wrong. Control data, and Hyderabad data with
-    full traversal off: the first zero was full traversal with an empty `via`.
-    Control data, and Hyderabad zero even with full traversal off: the trial
-    restriction or absent coverage, which only TomTom can separate (question 2).
-    A Hyderabad zero with full traversal on separates nothing.
-  - NOTHING about Hyderabad coverage can be concluded until the control runs.
+- **Hyderabad is covered (job 9886035, "R2", 2026-09-15).** A 21.01 km Hyderabad
+  route with one via point, full traversal off, 15-30 July 2026, `Asia/Kolkata`,
+  map OPEN_DSEG (not Orbis), all seven days in each time set. It covered 20.64
+  km at 00:00-04:00 and 20.94 km at 08:00-14:00 and 16:30-21:00, with
+  `averageSampleSize` 4,017, 28,855 and 19,321.
+  - Job 9885126's zeros: absent coverage DISPROVED. A trial-region restriction
+    DISPROVED, provided both jobs ran on the same account. The Melbourne control
+    is not needed; do not run it.
+  - Full traversal with no via points is the only recorded explanation left, and
+    Sahil records it as the cause. It is NOT ISOLATED: the two jobs also differ
+    in route, length, via points and time sets. The same 6.89 km route with only
+    full traversal off isolates it.
+  - At R2's density, "almost nobody drives it end to end" is a weak mechanism
+    for an exact zero. A routed path that leaves the main road fits TomTom's FAQ
+    warning better, and R2's did for a fifth of its length.
+- **THE CENTRAL PROBLEM.** Full traversal is what makes a route-level percentile
+  meaningful, since only whole-route vehicles count, and on a 7 km urban
+  corridor it returned nothing. With it off, the route percentiles are the
+  covered length at speed percentiles drawn from an undocumented population. The
+  two are in direct tension, and it is the FIRST question for TomTom. Whether
+  the zero is inherent to corridors of that scale, or came from how that route
+  was defined, is not established.
+- **Flagged for verification, NOT findings.** Job 9886035's p95 of 224 minutes
+  (16:30-21:00) and 55-minute median (00:00-04:00) on 21 km look slow, and Sahil
+  is checking them against the road. Do not record or state them as Hyderabad
+  travel times until he confirms them.
+  - Leads from the file: each value is the covered length at a speed percentile,
+    not an observed trip; 20% of the route is FRC 7; segment counts run from 1
+    to 156,220.
 - **Empty intervals are omitted**, which matches the never-interpolate rule; an
   omitted interval still counts as missing.
-- **Questions for TomTom** (rewritten 2026-09-15). Only what needs a person
+- **Questions for TomTom** (reordered 2026-09-15). Only what needs a person
   remains, in this order; the full text and a tracking table are in
   `docs/tomtom-questions.md`:
-  1. The quote, with publication rights under clauses 11.4 and 11.6.1 answered
+  1. Full traversal on urban corridors: at what length and road type it returns
+     usable samples, how to get route percentiles for 4-14 km corridors, and
+     what route percentiles mean without it. AHEAD of the licence.
+  2. The quote, with publication rights under clauses 11.4 and 11.6.1 answered
      in it.
-  2. Hyderabad coverage depth, probe density, and whether trial accounts get
-     Hyderabad data at all: buy history, or collect forward.
-  3. A route-level full-traversal count.
-  4. Corridor identity for Route Analysis: GERS ids, and the undocumented map
-     type `OPEN_DSEG` the test used, as a quote line item.
-  5. Two-wheelers in India probe data.
+  3. How far back Hyderabad data goes, and whole-route density: buy history, or
+     collect forward.
+  4. A route-level full-traversal count.
+  5. Corridor identity for Route Analysis: GERS ids, and the undocumented map
+     type `OPEN_DSEG`, as a quote line item.
+  6. Two-wheelers in India probe data.
 - **A decision we would live with.** The hash chain would attest a file TomTom
   delivered, not calls this project made. "Independent record" becomes
   "independent analysis of purchased data", which is weaker. The README must
