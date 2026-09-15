@@ -51,8 +51,10 @@ listed at the end of this section.
 Analysis gives route-level `travelTimePercentiles` ("5th, 10th, … 90th, 95th (in
 seconds)") as well as `speedPercentiles`. A p95 travel time and a percentile-based
 free-flow reference are both derivable.
-Route Analysis's `travelTimePercentiles` turned out to be DERIVED from its speed
-percentiles, not observed travel times (job 9886035, "What the route statistics are").
+Route Analysis's route `travelTimePercentiles` turned out to be derived from its speed
+percentiles: each is the covered length at one route-wide speed percentile (job 9886035).
+Derivation is not the flaw. Whether they describe trips depends on whose speeds they come
+from, and with full traversal off that is undocumented ("What the route statistics are").
 
 **The inversion. Batch percentiles are of speed, not travel time.** On a segment of fixed
 length, travel time is length ÷ speed, which reverses the order:
@@ -277,20 +279,24 @@ set `sampleSize`, `normalizedSampleSize`, speed averages, median and standard de
 and `speedPercentiles`.
 
 **What the route statistics are.** Checked against the file, in all three time sets:
-- **Travel-time percentiles are DERIVED, not observed.** Each route
+- **Travel-time percentiles are derived from speed percentiles.** Each route
   `travelTimePercentiles` value equals `coveredDistance` divided by the route speed
   percentile at the mirrored rank (the 95th travel time from the 5th speed), within 11 s,
   the rounding of the speeds. TomTom does the inversion; we do not repeat it.
-  - The p95 of 224 minutes at 16:30–21:00 is the covered 20.94 km at one uniform speed,
-    the route's 5th-percentile speed of 5.6 km/h. It is not a trip anyone is known to have
-    taken.
-  - Nor is it every segment at its own 5th-percentile speed at once. At 16:30–21:00 a 12 m
-    segment with 34 samples has a 5th-percentile speed of 0, which would make that sum
-    unbounded.
-  - Whether a derived percentile describes trips depends on whose speeds it is drawn from.
-    Whole-route vehicles' route speeds would invert back into their trip times; speeds
-    from partial passages would not. With full traversal off, that population is not
-    documented (question 1).
+  - **The construction.** The p95 of 224 minutes at 16:30–21:00 is the whole covered 20.94
+    km at one route-wide speed, the route's 5th-percentile speed of 5.6 km/h.
+  - **Not every segment at once.** It is not each segment at its own 5th-percentile speed
+    simultaneously, which is arithmetically impossible here: at 16:30–21:00 a 12 m segment
+    with 34 samples has a 5th-percentile speed of 0, so that sum is unbounded.
+  - **Derivation is not the flaw; the population is.** If the speeds were whole-route
+    vehicles' own route speeds, inverting them would give those vehicles' trip times. With
+    full traversal off, whose speeds they are is undocumented (question 1), and that is
+    what leaves a 224-minute p95 without meaning as a trip time. Every statement in this
+    record that route percentiles are derived carries this condition.
+  - **Two readings withdrawn** (Sahil, 2026-09-15). "The 5th-percentile speed on every
+    segment at once" is arithmetically impossible, as above. "Derived, so not observed"
+    treated derivation itself as disqualifying, conflating the arithmetic with the
+    population.
 - **The mean.** `averageTravelTime` equals `coveredDistance` ÷ `harmonicAverageSpeed`, and
   also the sum of the segments' mean travel times, within 3 s.
 - **The median.** `medianTravelTime` is the 50th-percentile value of
@@ -309,8 +315,9 @@ and `speedPercentiles`.
 minutes and a 55-minute night median on 21 km both look slow, and Sahil is checking them
 against his own experience of the road.
 
-Every travel time in the table is derived (above): a median or p95 here is the covered
-length at a route speed percentile, not an observed trip.
+Every travel time in the table is derived (above): the covered length at one route-wide
+speed percentile. With full traversal off the population behind those speeds is
+undocumented, so no value is known to describe a trip anyone took.
 
 | Time set (IST, all days) | Covered (km of 21.01) | `averageSampleSize` | Median | p95 | `planningTimeIndex` (TomTom's, ÷ the 00:00–04:00 average) |
 |---|---|---|---|---|---|
@@ -321,9 +328,10 @@ length at a route speed percentile, not an observed trip.
 Sahil's candidate causes: a segment that occasionally stops dead, the route including
 something unintended, or genuine Hyderabad conditions. Leads in the file itself, for that
 check and not as findings:
-- **Construction.** Each value is the covered length at a speed percentile, not an
-  observed 21 km trip, so a slow tail of speeds from short passages would scale up to the
-  whole route.
+- **Construction.** Each value is the covered length at one route-wide speed percentile.
+  With full traversal off the population behind those speeds is undocumented; if it
+  includes short partial passages, a slow tail of their speeds would scale up to the whole
+  route.
 - **Road classes.** By distance the route is 19% FRC 2, 29% FRC 3, 33% FRC 4 and 20% FRC 7
   (4.11 km). FRC 7 is TomTom's class for destination roads such as alleys and dead-end
   streets. The first segment is FRC 7 (RBI Officer Quarters Road). Street names along the
@@ -350,8 +358,9 @@ check and not as findings:
     a corridor is not decided.
 - **The inversion warning.** It covers any speed-percentile field: Batch, and Route
   Analysis's route and segment `speedPercentiles`. Route `travelTimePercentiles` are that
-  inversion already done by TomTom, so they are derived, not observed, and are never
-  presented as observed trip times.
+  inversion already done by TomTom. They are not presented as observed trip times unless
+  TomTom documents that the speeds are whole-route vehicles' own; the derivation alone
+  would not rule them out.
 - **TomTom's indices.** Sahil's claim that TomTom computes two of our three headline
   metrics was wrong, and he withdrew it (2026-09-15): TomTom computes neither our PTI nor
   our TTI.
@@ -364,8 +373,9 @@ check and not as findings:
 - **The methodology note.** If we buy, all three headline metrics, BTI included, rest on
   TomTom's computation. That computation is its route speed distribution, scaled to the
   covered length, over a population that is undocumented with full traversal off. The note
-  says so, says that route travel-time percentiles are derived from speeds and not
-  observed, and says that TomTom's indices are not published as ours.
+  says so: route travel-time percentiles are derived from speed percentiles, whether they
+  describe trips depends on that population, and TomTom's indices are not published as
+  ours.
 - **Both free-flow bases: a consequence of buying, not decided.** Route Analysis carries
   no no-traffic travel time (`noTrafficTravelTimeInSeconds` comes from the Routing API),
   so bought data cannot supply the `_tomtom` basis.

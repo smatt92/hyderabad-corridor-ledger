@@ -106,8 +106,9 @@ none.
   read 2026-09-14; `docs/data-sources.md`). Batch gives 19 speed percentiles,
   5th to 95th, per segment and hour, and Route Analysis gives route-level travel
   time percentiles. So a p95 travel time and a free-flow reference are
-  derivable. Route Analysis's travel time percentiles are themselves DERIVED
-  from speed percentiles, not observed (below).
+  derivable. Route Analysis's travel time percentiles are themselves derived
+  from speed percentiles; whether they describe trips depends on whose speeds
+  (below).
 - **Quote for Route Analysis, not Batch.**
   - Batch exposes no sample size, and the 200/30 floors, the shrinkage and the
     missingness flag all need one.
@@ -127,22 +128,27 @@ none.
   - Mean travel time = L ÷ HARMONIC mean speed. L ÷ arithmetic mean speed
     understates travel time.
   Read backwards, these compute the opposite of unreliability.
-- **Route `travelTimePercentiles` are DERIVED, not observed.** TomTom does the
-  inversion itself: in job 9886035 each one equals `coveredDistance` ÷ the route
-  speed percentile at the mirrored rank, and `averageTravelTime` =
-  `coveredDistance` ÷ `harmonicAverageSpeed`. So we do not invert them, and we
-  never present them as observed trip times. Say so plainly wherever a Route
-  Analysis percentile appears.
-  - With full traversal off, R2's p95 of 224 minutes is its covered 20.94 km at
-    one uniform speed, the route's 5th-percentile speed. No vehicle is known to
-    have taken that long.
-  - Nor is it every segment at its own 5th-percentile speed at once: a segment
-    with 34 samples has a 5th-percentile speed of 0, which would make that sum
-    unbounded.
-  - Whether a derived percentile describes trips depends on whose speeds it
-    comes from. Whole-route vehicles' route speeds would invert back into their
-    trip times; speeds of partial passages do not. That population is
-    undocumented (question 1).
+- **Route `travelTimePercentiles` are DERIVED from speed percentiles.** TomTom
+  does the inversion itself: in job 9886035 each one equals `coveredDistance` ÷
+  the route speed percentile at the mirrored rank, and `averageTravelTime` =
+  `coveredDistance` ÷ `harmonicAverageSpeed`. We do not invert them again.
+  - THE CONSTRUCTION. R2's p95 of 224 minutes is the whole covered 20.94 km at
+    ONE route-wide speed, its 5th-percentile speed of 5.6 km/h. It is NOT every
+    segment at its own 5th-percentile speed at once, which is arithmetically
+    impossible: a 12 m segment with 34 samples has a 5th-percentile speed of 0,
+    so that sum is unbounded.
+  - DERIVATION IS NOT THE FLAW; THE POPULATION IS. If the speeds were
+    whole-route vehicles' own route speeds, inverting them would give their trip
+    times. With full traversal off, whose speeds they are is undocumented
+    (question 1), and that is what leaves a 224-minute p95 without meaning as a
+    trip time.
+  - So never present a route percentile as an observed trip time unless the
+    speeds are documented as whole-route vehicles', and never write "derived,
+    not observed" without that condition: a reader would conclude derivation
+    itself disqualifies, which is wrong.
+  - Both readings were Sahil's and are withdrawn (2026-09-15): "every segment at
+    once" was arithmetically impossible, and "derived, so not observed"
+    conflated the arithmetic with the population.
 - **TomTom's indices are not ours, and neither is usable as shipped.** In job
   9886035, `planningTimeIndex` = the time set's p95 travel time ÷ the FIRST time
   set's average travel time, and `averageTravelTimeRatio` = its average ÷ that
@@ -300,9 +306,9 @@ none.
   (16:30-21:00) and 55-minute median (00:00-04:00) on 21 km look slow, and Sahil
   is checking them against the road. Do not record or state them as Hyderabad
   travel times until he confirms them.
-  - Leads from the file: each value is the covered length at a speed percentile,
-    not an observed trip; 20% of the route is FRC 7; segment counts run from 1
-    to 156,220.
+  - Leads from the file: each value is the covered length at one route-wide
+    speed percentile, from speeds whose population is undocumented; 20% of the
+    route is FRC 7; segment counts run from 1 to 156,220.
 - **Empty intervals are omitted**, which matches the never-interpolate rule; an
   omitted interval still counts as missing.
 - **Questions for TomTom** (reordered 2026-09-15). Only what needs a person
