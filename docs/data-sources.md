@@ -39,7 +39,8 @@ TomTom's pages. In the 2026-09-15 tables, `checked` says how:
 - `opened`: the page itself;
 - `search`: a search result's excerpt, because TomTom's MOVE Portal guides return 404 to a
   direct fetch;
-- `assistant only`: no page was found that says it.
+- `assistant only`: no page was found that says it;
+- `product`: the request the MOVE Portal itself generated ("The request shape").
 
 Where an answer and a page differ, this record follows the page, and the differences are
 listed at the end of this section.
@@ -87,6 +88,77 @@ unless a field says otherwise.
 **So the product to quote for is Route Analysis, not Batch.** Route Analysis exposes counts,
 takes a time zone and can restrict to full traversals. Batch has no counts, UTC hours, and
 segment-level percentiles that cannot be combined into a corridor's.
+
+### The request shape: CONFIRMED from the product
+
+On 2026-09-15 the MOVE Portal returned the exact Route Analysis request payload for a test
+job Sahil set up there. It is the product's own request, not a reading of the
+documentation. The route and date-range names and the days list were elided (`...`) when
+Sahil passed it on; the days list held all seven days. The test's endpoints are not a
+declared or verified corridor, and its `via` list is empty, so its results measure
+whatever road the routing engine chose, not a pinned corridor.
+
+```text
+{"routes":[{"name":"...","start":{"latitude":17.47273,"longitude":78.41973},
+"via":[],"end":{"latitude":17.44875,"longitude":78.37918},
+"probeSource":"ALL","fullTraversal":true,"zoneId":"Asia/Kolkata"}],
+"dateRanges":[{"name":"...","from":"2026-07-15","to":"2026-07-31",
+"exclusions":[],"excludedDaysOfWeek":[]}],
+"timeSets":[{"name":"AM peak","timeGroups":[{"days":["MON",...],
+"times":["6:30-10:30"]}]}],
+"distanceUnit":"KILOMETERS","mapVersion":"2025.12.1800",
+"mapType":"OPEN_DSEG","acceptMode":"MANUAL",
+"averageSampleSizeThreshold":0,"tags":[],
+"configuration":{"dataProviderProfile":"v1"}}
+```
+
+| Field | What it confirms | Checked |
+|---|---|---|
+| `routes[].via` | A route field, empty in the test. Declared via points go here, so a corridor is pinned in the request itself, not by a workaround. The Route Analysis page agrees, and warns that without via points the routing engine may not return the road meant. The limit is the collector's: via points fix the points a route passes, not the road between them, so they must be dense enough that no other road fits. | product; opened |
+| `probeSource` | `ALL` is accepted. Sahil reports that the product also offers PASSENGER and FLEET. The API page names the fleet value TELEMATICS, and this payload shows neither, so the exact value to send for fleet-only data is not yet confirmed. | product (ALL); Sahil's report (PASSENGER, FLEET) |
+| `fullTraversal`, `zoneId` | `true` and `Asia/Kolkata` are accepted. | product |
+| `dateRanges[].exclusions`, `dateRanges[].excludedDaysOfWeek` | Both exist; empty in the test. | product |
+| `timeSets[].timeGroups` | `days` and `times`. The product writes `6:30-10:30`, without a leading zero. | product |
+| `acceptMode` | `MANUAL` is accepted. `AUTO` is the documented default. | product (MANUAL); opened (AUTO) |
+| `averageSampleSizeThreshold` | A request field, as documented; 0 in the test. | product |
+| `mapType`, `mapVersion` | `OPEN_DSEG` and `2025.12.1800`. The Available Maps and Route Analysis pages read on 2026-09-15 list only GENESIS and ORBIS, with versions such as 2025.12. What OPEN_DSEG is, and how its segment ids behave across versions, is not on those pages. | product; not in the documentation read |
+| `tags`, `configuration.dataProviderProfile` | Present, as `[]` and `v1`; neither is described on the pages read. | product |
+
+**Two corrections before production use.** Decided by Sahil on 2026-09-15.
+
+- **Set `averageSampleSizeThreshold`; never send 0.** It is the request-time sample floor,
+  and 0 disables it. Its value is not yet chosen.
+  - It is one value per job, and the floors differ by time set: 200 for a peak p95, 20 for
+    the night p5.
+  - So time sets with different floors go in separate jobs. A night time set held to a
+    peak floor could reject the whole job, and a peak time set held to the night floor
+    would let thin data through.
+- **AM and PM peak time sets are MON–FRI only; the night time set keeps all seven days.**
+  The test used all seven days for its AM peak.
+  - Why: weekend peaks on a commuter corridor are a different regime, so a seven-day peak
+    pool describes neither weekdays nor weekends.
+  - It does not simply flatter the corridor; which way it misleads depends on the
+    statistic. In an illustration with assumed lognormal weekday and weekend travel times
+    (2,000,000 weekday draws, two weekend draws for every five weekday ones), lighter
+    weekends lowered PTI from 2.44 to 2.34–2.42 and TTI from 1.67 to 1.51–1.65. They
+    raised BTI from 0.46 to 0.46–0.56, counting the gap between weekdays and weekends as
+    unreliability.
+  - It also depends on which days are lighter, which is unmeasured for Hyderabad.
+    `scripts/dev/panel_model.py` assumes Saturday is the heaviest day (1.13 of an average
+    day) and Sunday the lightest (0.72); that is an unsourced model assumption, not a
+    measurement.
+  - The restriction goes in the time groups' `days`, or in `excludedDaysOfWeek`.
+
+**Open, not decided:**
+- **The metrics engine disagrees.** As built, it pools peak-hour calls on all seven days:
+  `peak_minutes` in `metrics/params.py` has no day filter, and the ledger, the audit
+  blocks and the floors' timings all assume it. Purchased peaks on weekdays only would
+  define BTI and PTI differently from the collector's. Nothing was changed.
+- **Holidays.** By the same reasoning, weekday public holidays are a weekend-like regime,
+  and `exclusions` can drop them.
+- **Profile and rhythm matrix.** The weekday restriction was set for the peak time sets
+  only. The 24-hour profile pools every day, and the rhythm matrix keeps each weekday
+  separate.
 
 ### Confirmed on 2026-09-15, and it attaches
 

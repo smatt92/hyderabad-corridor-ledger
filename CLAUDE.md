@@ -168,15 +168,41 @@ none.
   - Meanwhile, segment ids hold within a 12-month period, and the last two years
     can run on one map version.
 - **Declare `probeSource`; never leave it to the default.** PASSENGER is the
-  default (smartphones, navigation devices, some car makers), TELEMATICS is
-  fleets (trucks, taxi and delivery services), and ALL combines them. Record it
-  with every request. Whether India's data includes two-wheelers is unresolved;
-  the methodology note says whether the output is mixed-traffic or car travel
-  time, or that it is unknown.
+  default (smartphones, navigation devices, some car makers), the fleet value
+  covers trucks, taxi and delivery services, and ALL combines them. The API page
+  names the fleet value TELEMATICS; Sahil reports the MOVE Portal offers FLEET,
+  not yet seen in a payload, so send the value a product payload shows. Record
+  it with every request. Whether India's data includes two-wheelers is
+  unresolved; the methodology note says whether the output is mixed-traffic or
+  car travel time, or that it is unknown.
 - **Request design.** A job takes at most 20 routes, 24 date ranges of at most
   366 days each, and 24 time sets, so about 28 directional corridors need two
   jobs. The priced length is route length × the number of date ranges, so every
   pooling window requested as its own date range is paid for again.
+- **Request shape: CONFIRMED from the product.** The MOVE Portal returned its
+  own Route Analysis request payload on 2026-09-15 (`docs/data-sources.md`, "The
+  request shape").
+  - `routes[].via` is a request field, so declared via points pin a corridor in
+    the request itself. The limit is the collector's: they fix the points, not
+    the road between them.
+  - The product accepted `probeSource` ALL, `fullTraversal`, `zoneId`,
+    date-range `exclusions` and `excludedDaysOfWeek`, `acceptMode` MANUAL and
+    `averageSampleSizeThreshold`.
+  - Its map was `mapType: OPEN_DSEG`, version `2025.12.1800`, which the
+    documentation read does not list.
+- **Two corrections to the test request for production** (Sahil, 2026-09-15):
+  - Set `averageSampleSizeThreshold`: 0 disables the request-time floor. The
+    value is not yet chosen. It is one value per job, so time sets with
+    different floors (200 for a peak p95, 20 for the night p5) go in separate
+    jobs.
+  - AM and PM peak time sets are MON-FRI only; the night time set keeps all
+    seven days. Weekend peaks are a different regime. Mixing them in does not
+    simply flatter a corridor: with lighter weekends it lowers TTI and PTI and
+    raises BTI.
+  - Open: the metrics engine as built pools peak calls on all seven days
+    (`peak_minutes` in `metrics/params.py`), so weekday-only purchased peaks
+    would define BTI and PTI differently. Whether the engine follows is not
+    decided.
 - **Empty intervals are omitted**, which matches the never-interpolate rule; an
   omitted interval still counts as missing.
 - **Questions for TomTom** (rewritten 2026-09-15). Only what needs a person
@@ -256,6 +282,12 @@ been chosen.
   the project's variables, so the whole deployment fails with it. The read API
   also refuses to start with it. It was confirmed absent on 2026-09-15.
 - Tokens are never written to files, `.env` included.
+- Traffic Stats URLs carry the API key in their query string. MOVE Portal job
+  status URLs embed it: a Traffic Stats key appeared in one on 2026-09-15 and is
+  being rotated. TomTom's Route Analysis page also puts `?key=` on the create,
+  status, accept and reject calls. Never paste such a URL anywhere, not in chat,
+  an issue, a commit, a log or a doc, and strip the query string before
+  recording one.
 - PostgREST needs `apikey` AND `Authorization`. With a legacy JWT key,
   `apikey` alone silently resolves to the `anon` role: a service call fails
   with 401 (`db-size.yml` did), or reads only what anon may read and looks as
