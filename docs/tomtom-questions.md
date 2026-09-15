@@ -10,7 +10,7 @@ message, in this order, and track each until it is answered.
 | # | Question | Sent | Answered | Answer, in one line |
 |---|---|---|---|---|
 | 1 | The quote, with publication rights (clauses 11.4 and 11.6.1) | | | |
-| 2 | Hyderabad coverage depth and probe density | | | |
+| 2 | Hyderabad coverage depth, probe density and trial access | | | |
 | 3 | A route-level full-traversal count | | | |
 | 4 | Corridor identity: GERS ids and the map type, as a quote line item | | | |
 | 5 | Two-wheelers in India probe data | | | |
@@ -73,7 +73,7 @@ how they would be counted for our analysis. It pools:
 
 And are separate jobs over the same routes and dates priced separately?
 
-### 2. Hyderabad coverage depth and probe density
+### 2. Hyderabad coverage depth, probe density and trial access
 
 How far back does Traffic Stats data for Hyderabad go? What sample sizes should we expect on
 Hyderabad arterials, per segment and as full-traversal trips per route, in each of these IST
@@ -93,6 +93,11 @@ flyover already exists, and does not need 24 weeks of collection.
 
 The 30-day MOVE Portal trial cannot answer this: Sahil's check found its data limited to the
 UK, California, Texas and Melbourne.
+
+**Trial access.** Is Hyderabad data available to 30-day MOVE Portal trial accounts, and to
+the API keys issued with them? A test Route Analysis job on a Hyderabad route (job
+9885126) returned zero average sample size and zero network length in every time set. We
+need to know whether that reflects the trial's regions or Hyderabad's coverage.
 
 ### 3. A route-level full-traversal count
 

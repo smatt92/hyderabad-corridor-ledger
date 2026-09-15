@@ -40,7 +40,8 @@ TomTom's pages. In the 2026-09-15 tables, `checked` says how:
 - `search`: a search result's excerpt, because TomTom's MOVE Portal guides return 404 to a
   direct fetch;
 - `assistant only`: no page was found that says it;
-- `product`: the request the MOVE Portal itself generated ("The request shape").
+- `product`: a payload the MOVE Portal itself generated, from a job not yet identified
+  ("The request shape").
 
 Where an answer and a page differ, this record follows the page, and the differences are
 listed at the end of this section.
@@ -89,14 +90,20 @@ unless a field says otherwise.
 takes a time zone and can restrict to full traversals. Batch has no counts, UTC hours, and
 segment-level percentiles that cannot be combined into a corridor's.
 
-### The request shape: CONFIRMED from the product
+### The request shape: a product payload, not yet canonical
 
-On 2026-09-15 the MOVE Portal returned the exact Route Analysis request payload for a test
-job Sahil set up there. It is the product's own request, not a reading of the
-documentation. The route and date-range names and the days list were elided (`...`) when
-Sahil passed it on; the days list held all seven days. The test's endpoints are not a
-declared or verified corridor, and its `via` list is empty, so its results measure
-whatever road the routing engine chose, not a pinned corridor.
+On 2026-09-15 the MOVE Portal returned a Route Analysis request payload, which Sahil
+passed on. It came from the product, not from a reading of the documentation. The route
+and date-range names and the days list were elided (`...`) when Sahil passed it on; the
+days list held all seven days. Its endpoints are not a declared or verified corridor, and
+its `via` list is empty, so a job built from it measures whatever road the routing engine
+chose, not a pinned corridor.
+
+**Not canonical.** The payload showed one time set, while the job that returned zeros
+("First report", below) had three, so they may not be the same request, and the job this
+payload belongs to is not identified. The fields below appear in a payload the product
+generated. The payload as a whole is not treated as the canonical request shape until a
+payload from a job we can identify confirms it (Sahil, 2026-09-15).
 
 ```text
 {"routes":[{"name":"...","start":{"latitude":17.47273,"longitude":78.41973},
@@ -112,7 +119,7 @@ whatever road the routing engine chose, not a pinned corridor.
 "configuration":{"dataProviderProfile":"v1"}}
 ```
 
-| Field | What it confirms | Checked |
+| Field | What it shows | Checked |
 |---|---|---|
 | `routes[].via` | A route field, empty in the test. Declared via points go here, so a corridor is pinned in the request itself, not by a workaround. The Route Analysis page agrees, and warns that without via points the routing engine may not return the road meant. The limit is the collector's: via points fix the points a route passes, not the road between them, so they must be dense enough that no other road fits. | product; opened |
 | `probeSource` | `ALL` is accepted. Sahil reports that the product also offers PASSENGER and FLEET. The API page names the fleet value TELEMATICS, and this payload shows neither, so the exact value to send for fleet-only data is not yet confirmed. | product (ALL); Sahil's report (PASSENGER, FLEET) |
@@ -134,10 +141,11 @@ whatever road the routing engine chose, not a pinned corridor.
   - So time sets are batched by floor, and peak and night time sets require separate jobs.
     A night time set held to the peak floor could reject the whole job, and a peak time
     set held to the night floor would let thin data through.
-  - That turns one job per corridor set into two. About 28 directional corridors, in sets
-    of at most 20 routes, need at least four jobs.
-  - Time sets that feed only a mean or median, such as the rhythm matrix's cells, would be
-    a third group at 30, if they are bought.
+  - That turns one job per corridor set into two. About 28 directional corridors, in two
+    sets of at most 20 routes, need at least four jobs.
+  - The rhythm matrix, if bought, is the third floor group, at 30. Its 168 weekday-hour
+    cells, at 24 time sets a job, take at least seven jobs per corridor set: at least 14
+    more.
   - Whether separate jobs over the same routes and dates are priced separately is part of
     question 1.
 - **AM and PM peak time sets are MON–FRI only; the night time set keeps all seven days.**
@@ -186,9 +194,10 @@ City") and one date range ("Fortnight July"):
 | Night baseline | 0.0 | 0.0 | 0.0 |
 
 - **The request, as reported.** Sahil reports that the job used `fullTraversal: true` and
-  an empty `via`, as in the payload above, on a route of 6.89 km.
-- **Maybe not the same request.** The payload as passed on showed one time set, and this
-  job has three.
+  an empty `via`, on a route of 6.89 km.
+- **Not known to be the payload above.** That payload showed one time set and this job has
+  three, so they may not be the same request. The payload is not treated as this job's
+  request, or as the canonical shape.
 - **Not a candidate corridor.** The route's endpoints are not the `kphb-circle` or
   `hitec-city-cyber-towers` candidates in `config/junctions.yaml`. Neither the endpoints
   nor those candidates are verified.
@@ -200,27 +209,47 @@ City") and one date range ("Fortnight July"):
   routes. (a) predicts few vehicles; zero in every time set, peaks included, is its
   extreme.
 - **(b) Hyderabad coverage genuinely absent.**
-- **(c) The account's data region.** Sahil's earlier check found the 30-day MOVE Portal
+- **(c) The trial's data regions.** Sahil's earlier check found the 30-day MOVE Portal
   trial's data limited to the UK, California, Texas and Melbourne. If this job ran under
-  the trial, that alone gives zero on any Hyderabad route. Whether it did is not recorded
-  here.
+  the trial, that alone gives zero on any Hyderabad route. Sahil judges (c) the most
+  likely, since it is the one his earlier check predicts. It is not established.
 
 The zero network length does not separate them. Road network length leaves out segments
 with no data
 ([Definitions](https://developer.tomtom.com/move-portal/guides/traffic-stats/how-it-works/definitions),
 search excerpt), so it is zero whenever no data qualifies, whatever the reason.
 
-**Diagnostics running** (Sahil, 2026-09-15):
-- the same route with full traversal off;
-- a single-road stretch of 1–2 km with full traversal off.
+**The first diagnostics cannot separate (b) from (c).** Sahil set two running: the same
+route with full traversal off, and a single-road stretch of 1–2 km with full traversal
+off. A trial restriction and absent coverage both return zero on both. On their own they
+can show only whether Hyderabad data reaches the account.
 
-What they can show:
-- **Data on either** shows Hyderabad data reaches this account.
-- **A count with full traversal off**, where it was zero with it on, points to (a).
-- **Zero on both** would not settle (b), because under (c) they return zero too.
-  - A job of the same shape on a route inside a trial region would separate a failure in
-    how the job is set up from a regional one.
-  - Only TomTom can separate the trial's regions from the product's coverage (question 2).
+**The corrected diagnostic** (Sahil, 2026-09-15): run the same job shape on a route inside
+a known trial region.
+- **Where.** An urban route in Melbourne, Austin or Houston. A route from Austin to
+  Houston would exceed the 200 km route limit, and would not be the same shape.
+- **Same shape.** `fullTraversal: true`, an empty `via`, a route of similar length, and
+  the same date range and time sets. Use the same map type where the portal allows it.
+- **Local time.** Use the route's own time zone (`Australia/Melbourne`, or
+  `America/Chicago`), so the time sets fall at local peaks and local night.
+- **Record it.** Keep the control's job id and its payload. A payload from an identified
+  job can also settle the request shape.
+
+Read the control together with the Hyderabad jobs:
+
+| Trial-region control | Hyderabad | What it shows |
+|---|---|---|
+| Zero | Any | The job setup is wrong, and full traversal with an empty `via` on a route this long is part of that setup. The control says nothing about Hyderabad. |
+| Data | Data with full traversal off, on the same route | Hyderabad data reaches this account. The first zero was (a), full traversal with an empty `via`. |
+| Data | Zero, with full traversal off as well | Hyderabad returns nothing to this account even without full traversal: (b) or (c). The trial's recorded regions make (c) likely, but only TomTom can separate them (question 2). |
+| Data | Zero, with full traversal on only | Nothing is separated. A busier road can have whole-route vehicles where a Hyderabad road has none, so (a), (b) and (c) all remain. |
+
+This refines the table as Sahil sent it. A Hyderabad zero points to (c) only when it holds
+with full traversal off, and even then (b) predicts the same zero. The control settles the
+job setup; read with the Hyderabad jobs that have full traversal off, it settles (a); (b)
+against (c) stays with TomTom.
+
+**Nothing about Hyderabad coverage is concluded until the control runs.**
 
 ### Confirmed on 2026-09-15, and it attaches
 
@@ -233,7 +262,7 @@ What they can show:
 | **Request-time threshold.** `averageSampleSizeThreshold` defaults to 0. If the average sample size of any one combination of route, date range and time set falls below it, no output is generated, the whole job is moved to REJECTED, and the report is not charged. Without it, output is generated however few samples there are ([Route Analysis](https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis)). | See "The sample floor" below. | opened |
 | **Manual acceptance.** With `acceptMode: MANUAL`, a job waits at NEED_CONFIRMATION with a sample details file giving, per route, date range and time set, the `averageSampleSize`, network length and covered network length. The job is then accepted or rejected ([Route Analysis](https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis)). | The counts can be read before a report is accepted, so a withheld value can still carry its count. Whether a manually rejected job is charged is not documented. | opened |
 | **Omitted data.** Batch omits intervals with no observed traffic ([Batch data schema](https://docs.tomtom.com/traffic-stats/documentation/batch/data-schema)). Route Analysis averages cover the covered part of the route, and each summary gives the route's `distance` and its `coveredDistance` ([Route Analysis](https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis)). The assistant added that the MOVE Portal offers a manual sample-size filter for map display. | Matches the never-interpolate rule. An omitted interval, or route distance without data, still counts as missing. | opened; assistant only (MOVE filter) |
-| **Limits.** Per job: routes of at most 200 km, at most 20 routes, 24 date ranges of at most 366 days each, 732 unique days across them, and 24 time sets ([Route Analysis](https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis)). At most 50 via points per route ([FAQ](https://docs.tomtom.com/traffic-stats/documentation/product-information/faq)). A job older than two years expires and its data is removed. No limit on segment count or on reports per contract period was found. | Route length does not bind at 4–14 km. About 28 directional corridors need at least two jobs per floor ("One threshold per job"), and the 24×7 rhythm matrix's 168 cells at least seven. A corridor's declared via points stay within 50. Results are downloaded and kept, because TomTom deletes them. | opened |
+| **Limits.** Per job: routes of at most 200 km, at most 20 routes, 24 date ranges of at most 366 days each, 732 unique days across them, and 24 time sets ([Route Analysis](https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis)). At most 50 via points per route ([FAQ](https://docs.tomtom.com/traffic-stats/documentation/product-information/faq)). A job older than two years expires and its data is removed. No limit on segment count or on reports per contract period was found. | Route length does not bind at 4–14 km. About 28 directional corridors need at least two jobs per floor ("One threshold per job"), and the 24×7 rhythm matrix's 168 cells at least seven per corridor set. A corridor's declared via points stay within 50. Results are downloaded and kept, because TomTom deletes them. | opened |
 | **Pricing.** The priced length is the total length of a route's segments, multiplied by the number of date ranges: a 20 km route over five date ranges counts as 100 km ([Definitions](https://developer.tomtom.com/move-portal/guides/traffic-stats/how-it-works/definitions)). Access is requested through a local partner or a TomTom account manager ([Introduction](https://docs.tomtom.com/traffic-stats/documentation/product-information/introduction)). | Every date range is paid again. A range is at most 366 days, so history from 2015 takes at least 12 ranges. If each 14-day audit block is its own range, one audit's twelve pre blocks and post period are 13. How ranges are counted belongs in the quote. | search (pricing); opened (access) |
 | **Probe sources.** `probeSource` is PASSENGER (the default), TELEMATICS (fleet management vehicles) or ALL ([Route Analysis](https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis)). Passenger data comes mainly from smartphones, portable navigation devices and some passenger-car makers; fleet data from some truck makers, taxi and delivery services and other fleet companies. Pedestrian data is filtered out of both ([Definitions](https://developer.tomtom.com/move-portal/guides/traffic-stats/how-it-works/definitions)). | The default leaves out taxi and delivery fleets. The source changes what a travel time describes, so it is chosen deliberately and recorded with every request. | opened (parameter); search (categories) |
 

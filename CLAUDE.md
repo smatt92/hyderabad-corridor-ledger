@@ -180,20 +180,23 @@ none.
   number of date ranges, so every pooling window requested as its own date range
   is paid for again.
   - ONE THRESHOLD PER JOB. `averageSampleSizeThreshold` is one value per job,
-    and the floors differ by time set: 200 for a p95, 30 for a mean or median,
+    and there are THREE floors, not two: 200 for a p95, 30 for a mean or median,
     20 for the night p5. So peak and night time sets require SEPARATE JOBS,
     which turns one job per corridor set into two.
-  - About 28 directional corridors, in sets of at most 20 routes, need at least
-    four jobs. Time sets that feed only a median, such as the rhythm matrix's
-    cells, would be a third group at 30 if bought.
-- **Request shape: CONFIRMED from the product.** The MOVE Portal returned its
-  own Route Analysis request payload on 2026-09-15 (`docs/data-sources.md`, "The
-  request shape").
+  - About 28 directional corridors, in two sets of at most 20 routes, need at
+    least four jobs. The rhythm matrix, if bought, is the third floor group at
+    30, and its 168 cells, at 24 time sets a job, add at least 14 more jobs.
+- **Request shape: a product payload, NOT YET CANONICAL.** The MOVE Portal
+  generated a Route Analysis request payload on 2026-09-15
+  (`docs/data-sources.md`, "The request shape"). It showed one time set, while
+  the job that returned zeros had three, so they may not be the same request. Do
+  not treat that JSON as the canonical shape until a payload from a job we can
+  identify confirms it.
   - `routes[].via` is a request field, so declared via points pin a corridor in
     the request itself. The limit is the collector's: they fix the points, not
     the road between them.
-  - The product accepted `probeSource` ALL, `fullTraversal`, `zoneId`,
-    date-range `exclusions` and `excludedDaysOfWeek`, `acceptMode` MANUAL and
+  - The payload carried `probeSource` ALL, `fullTraversal`, `zoneId`, date-range
+    `exclusions` and `excludedDaysOfWeek`, `acceptMode` MANUAL and
     `averageSampleSizeThreshold`.
   - Its map was `mapType: OPEN_DSEG`, version `2025.12.1800`, which the
     documentation read does not list.
@@ -215,11 +218,21 @@ none.
 - **First test report: zero, unresolved.** Job 9885126 returned zero average
   sample size, network length and covered network length in all three time sets.
   - The candidates (`docs/data-sources.md`): full traversal with an empty `via`,
-    absent Hyderabad coverage, or the account's data region if the job ran under
-    the trial.
-  - Record or state no coverage conclusion until the diagnostics report: the
-    same route with full traversal off, and a 1-2 km single-road stretch with it
-    off.
+    absent Hyderabad coverage, or the trial's data regions. Sahil judges the
+    trial the likeliest; that is not established.
+  - The two Hyderabad diagnostics (full traversal off, on the same route and on
+    a 1-2 km stretch) cannot tell a trial restriction from absent coverage: both
+    return zero under either.
+  - The corrected control: the SAME JOB SHAPE on an urban route inside a known
+    trial region (Melbourne, Austin or Houston; Austin to Houston exceeds the
+    200 km route limit), in that route's own time zone. Record its job id and
+    payload.
+  - Control zero: the job setup is wrong. Control data, and Hyderabad data with
+    full traversal off: the first zero was full traversal with an empty `via`.
+    Control data, and Hyderabad zero even with full traversal off: the trial
+    restriction or absent coverage, which only TomTom can separate (question 2).
+    A Hyderabad zero with full traversal on separates nothing.
+  - NOTHING about Hyderabad coverage can be concluded until the control runs.
 - **Empty intervals are omitted**, which matches the never-interpolate rule; an
   omitted interval still counts as missing.
 - **Questions for TomTom** (rewritten 2026-09-15). Only what needs a person
@@ -227,8 +240,8 @@ none.
   `docs/tomtom-questions.md`:
   1. The quote, with publication rights under clauses 11.4 and 11.6.1 answered
      in it.
-  2. Hyderabad coverage depth and probe density: buy history, or collect
-     forward.
+  2. Hyderabad coverage depth, probe density, and whether trial accounts get
+     Hyderabad data at all: buy history, or collect forward.
   3. A route-level full-traversal count.
   4. Corridor identity for Route Analysis: GERS ids, and the undocumented map
      type `OPEN_DSEG` the test used, as a quote line item.
