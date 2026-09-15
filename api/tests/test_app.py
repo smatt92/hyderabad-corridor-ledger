@@ -175,7 +175,7 @@ PATHS = [
 @pytest.mark.parametrize("path", PATHS)
 def test_every_response_carries_as_of_and_missingness_rate(client, path):
     body = client.get(path).json()
-    assert "as_of" in body and "missingness_rate" in body
+    assert {"as_of", "missingness_rate", "missingness_note", "collection"} <= body.keys()
 
 
 def test_read_path_never_touches_samples(client, store):
@@ -432,3 +432,81 @@ def test_a_stored_road_is_served_simplified_and_the_full_polyline_is_never_read(
 def test_postgrest_selects_only_the_columns_asked_for():
     assert postgrest_params([], [], 1, columns=("id", "code"))[0] == ("select", "id,code")
     assert postgrest_params([], [], 1)[0] == ("select", "*")
+
+
+# The three states a view must tell apart: nothing collected, collected, unreachable.
+WALKED_AT = "2026-09-14T23:58:29+00:00"
+DATA_PATHS = ["/api/corridors", "/api/network/state", "/api/network/heatmap",
+              "/api/interventions", "/api/verify", "/api/health"]
+
+
+def empty_walk(wid, table):
+    """A walk of an empty chain, as the database records it: no head at all."""
+    return {"id": wid, "table_name": table, "verified_at": WALKED_AT, "ok": True,
+            "rows_checked": 0, "first_seq": None, "head_seq": None, "head_row_hash": None,
+            "breaks": 0, "first_break_seq": None, "first_break_problem": None}
+
+
+def nothing_collected(walks):
+    draft = corridor("placeholder-01", "HC-01", None, "donor") | {"active": False}
+    return {"corridors": [draft], "chain_verifications": walks}
+
+
+@pytest.fixture
+def serve():
+    def use(t):
+        api.app.dependency_overrides[api.get_store] = lambda: MemoryStore(t)
+        return TestClient(api.app, follow_redirects=False)
+    yield use
+    api.app.dependency_overrides.clear()
+
+
+@pytest.mark.parametrize("path", DATA_PATHS)
+def test_zero_samples_reads_as_not_started_on_every_endpoint(serve, path):
+    walks = [empty_walk(9, "samples"), empty_walk(10, "failed_samples")]
+    client = serve(nothing_collected(walks))
+    response = client.get(path)
+    body = response.json()
+    assert response.status_code == 200
+    assert body["collection"] == {"status": "not_started",
+                                  "basis": "latest walk of the samples chain", "as_of": WALKED_AT}
+    assert body["missingness_rate"] is None
+    assert body["missingness_note"] == "collection_not_started"
+
+
+def test_samples_without_published_metrics_are_collecting_and_not_yet_computed(serve):
+    client = serve(nothing_collected([walk(3, "samples", WALKED_AT, 12)]))
+    body = client.get("/api/corridors").json()
+    assert body["collection"]["status"] == "collecting"
+    assert body["missingness_note"] == "not_yet_computed"
+
+
+def test_no_walk_and_no_metrics_is_unknown_rather_than_not_started(serve):
+    body = serve(nothing_collected([])).get("/api/verify").json()
+    assert body["status"] == "never_verified"
+    assert body["collection"] == {"status": "unknown",
+                                  "basis": "no chain walk and no published metrics", "as_of": None}
+    assert body["missingness_note"] == "collection_unknown"
+
+
+def test_published_metrics_carry_their_rate_and_no_note(client):
+    body = client.get("/api/corridors").json()
+    assert body["collection"] == {"status": "collecting", "basis": "published metrics",
+                                  "as_of": COMPUTED}
+    assert body["missingness_rate"] == 0.1 and body["missingness_note"] is None
+    assert all(c["missingness_note"] is None for c in body["corridors"])
+
+
+def test_an_unreachable_database_never_reads_as_not_started(client, store, monkeypatch):
+    def fail(*_args, **_kwargs):
+        raise StoreError("connection refused")
+
+    monkeypatch.setattr(store, "select", fail)
+    for path in ("/api/corridors", "/api/verify", "/api/network/state"):
+        response = client.get(path)
+        body = response.json()
+        assert response.status_code == 502, path
+        assert body["collection"] is None and body["missingness_note"] == "not_applicable"
+    health = client.get("/api/health")
+    assert health.status_code == 503
+    assert health.json()["collection"] is None and health.json()["database"] == "unreachable"

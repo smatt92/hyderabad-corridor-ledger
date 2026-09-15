@@ -5,6 +5,7 @@ import { SeriesView } from "../analyst/series";
 import { RhythmMatrix, type RhythmStyle } from "../encodings/RhythmMatrix";
 import { WALL } from "../lib/color";
 import { addDays, fmtCoverage, fmtHour, fmtIst, fmtNum, fmtSigned, fmtWeekday, isStale } from "../lib/format";
+import { WALL_NOT_STARTED } from "../lib/collection";
 import { Scheduler, msUntilIstHour } from "../lib/scheduler";
 import { WallBars } from "./WallBars";
 
@@ -132,7 +133,10 @@ export function WallApp() {
   const degraded = !health.ok || dataError !== null;
   const network = data?.network;
   const sample = Boolean(data?.corridors.sample || network?.sample);
-  const stale = data ? isStale(data.corridors.as_of, new Date()) : false;
+  const collectionStatus = data?.corridors.collection?.status;
+  const notStarted = collectionStatus === "not_started" || collectionStatus === "unknown";
+  // STALE means publication stopped; a ledger that never published is not stale.
+  const stale = data && !notStarted ? isStale(data.corridors.as_of, new Date()) : false;
   const clock = network?.status === "ok" && network.day ? `${fmtHour(network.hour ?? 0)}  ${fmtWeekday(network.day).toUpperCase()}` : "--:--";
 
   return (
@@ -153,14 +157,14 @@ export function WallApp() {
               <>
                 <div style={{ color: WALL.faint, letterSpacing: ".08em" }}>HYDERABAD CORRIDOR LEDGER</div>
                 <div style={{ color: degraded ? WALL.amber : WALL.faint, letterSpacing: ".08em", animation: degraded ? "ledger-wall-pulse 2s ease-in-out infinite" : "none" }}>
-                  {degraded ? "▲ DEGRADED" : stale ? "◌ STALE DATA" : "● LINK OK"}
+                  {degraded ? "▲ DEGRADED" : notStarted ? "○ NOT STARTED" : stale ? "◌ STALE DATA" : "● LINK OK"}
                 </div>
               </>
             )}
           </div>
 
           <div style={{ flex: "none", display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "26px 64px 24px" }}>
-            <div style={{ fontSize: "48px", letterSpacing: "-.01em", fontWeight: 500 }}>{TITLES[panel]}</div>
+            <div style={{ fontSize: "48px", letterSpacing: "-.01em", fontWeight: 500 }}>{notStarted ? "Collection" : TITLES[panel]}</div>
             <div style={{ fontFamily: MONO, fontSize: "48px", color: WALL.dim, fontVariantNumeric: "tabular-nums", letterSpacing: "-.02em" }}>{clock}</div>
           </div>
 
@@ -173,7 +177,9 @@ export function WallApp() {
           ) : null}
 
           <div style={{ flex: "1 1 auto", padding: "0 64px", minHeight: 0, opacity: degraded ? 0.45 : 1 }}>
-            {data ? (
+            {data && notStarted ? (
+              <NotStartedWall unknown={collectionStatus === "unknown"} asOf={data.corridors.collection?.as_of ?? null} />
+            ) : data ? (
               <Panel panel={panel} data={data} />
             ) : (
               <div style={{ height: "100%", display: "flex", alignItems: "center", fontFamily: MONO, fontSize: "96px", color: dataError ? WALL.amber : WALL.faint }}>
@@ -191,6 +197,19 @@ export function WallApp() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Before anything is measured: the reason, in the wall's register, never an empty panel. */
+function NotStartedWall({ unknown, asOf }: { unknown: boolean; asOf: string | null }) {
+  return (
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", justifyContent: "center", gap: "30px" }}>
+      <div style={{ fontFamily: MONO, fontSize: "120px", lineHeight: 1, letterSpacing: "-.03em" }}>{unknown ? WALL_NOT_STARTED.unknown : WALL_NOT_STARTED.headline}</div>
+      {WALL_NOT_STARTED.lines.map((line) => (
+        <div key={line} style={{ fontFamily: MONO, fontSize: "56px", color: WALL.dim }}>{line}</div>
+      ))}
+      <div style={{ fontFamily: MONO, fontSize: "44px", color: WALL.faint }}>{asOf ? `SAMPLE LOG CHECKED ${fmtIst(asOf).toUpperCase()}` : "NO CHECK OF THE SAMPLE LOG RECORDED"}</div>
     </div>
   );
 }

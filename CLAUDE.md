@@ -801,7 +801,14 @@ Pairs sharing endpoints is enforced by `collector/config.py` and the
   test asserts `samples` is never queried.
 - It needs only `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`, and refuses to
   start if `SUPABASE_SERVICE_KEY` is present.
-- Every response, errors included, carries `as_of` and `missingness_rate`.
+- Every response, errors included, carries `as_of`, `missingness_rate`,
+  `missingness_note` and `collection`.
+  - `missingness_note` says why a null rate is null: `collection_not_started`,
+    `collection_unknown`, `not_yet_computed`, or `not_applicable` (an error, or a
+    database that could not be read).
+  - `collection` says whether collection has started: from published metrics, or
+    else from the latest walk of the samples chain, never from `samples`. It is
+    null on errors, so an unreachable database never reads as not started.
 - Tail statistics (p95, BTI, PTI) come only from the pooled tables:
   `corridor_stats` (the ledger), `profile_hourly`, `pair_advantage_hourly`
   and `intervention_audit`, each with its window and count. Hourly
@@ -888,6 +895,16 @@ Pairs sharing endpoints is enforced by `collector/config.py` and the
 - Staleness and low confidence are rendered, never hidden. Metrics older than
   30 hours show as STALE, low-confidence cells are hatched and dimmed, and an
   unreachable API shows a degraded notice rather than an empty page.
+- Every view tells three states apart (`web/src/lib/collection.ts`), and zero
+  rows and a broken connection never look the same:
+  - Zero samples: the not-started page. It says what the ledger measures, keeps
+    the positioning line, says that collection has not started and why (the
+    data-licensing question with TomTom), says when numbers will appear, and
+    links `docs/data-sources.md`. No tabs, no scrubber.
+  - Reachable, partial data: the normal views, with counts and visible gaps.
+  - API or database unreachable: the degraded state.
+  The SAMPLE DATA banner stays for local fixture runs only; fixture data never
+  reaches a Vercel deployment.
 - The time scrubber moves in whole hours because `metrics_daily` is hourly.
   Nothing is shown at a resolution the pipeline does not publish.
 

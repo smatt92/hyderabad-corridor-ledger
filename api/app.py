@@ -2,8 +2,10 @@
 
 It selects precomputed rows and shapes them into JSON. It never reads
 samples, never computes a metric, and holds only the publishable key. Every
-response carries as_of and missingness_rate, including errors, where both
-are null. The frontend renders staleness and low confidence from them.
+response carries as_of, missingness_rate, missingness_note and collection,
+errors included. missingness_note says why a null rate is null, and collection
+says whether collection has started, so zero rows, a database that cannot be
+read and a value not computed yet never look alike.
 """
 
 from datetime import date, timedelta
@@ -82,6 +84,13 @@ VERIFICATION_FIELDS = [
     "first_break_seq", "first_break_problem",
 ]
 
+# Why a null missingness_rate is null, so a reader never has to guess between "no data
+# yet" and "not computed here".
+NOT_STARTED = "collection_not_started"
+COLLECTION_UNKNOWN = "collection_unknown"
+NOT_YET_COMPUTED = "not_yet_computed"
+NOT_APPLICABLE = "not_applicable"
+
 app = FastAPI(
     title="Hyderabad Corridor Ledger read API",
     docs_url="/api/docs", openapi_url="/api/openapi.json", redoc_url=None,
@@ -101,8 +110,11 @@ StoreDep = Annotated[Store, Depends(get_store)]
 
 
 def respond(store: Store | None, body: dict, as_of: Any, missingness_rate: Any,
-            status: int = 200, cache: str = CACHE, headers: dict | None = None) -> JSONResponse:
-    payload = {"as_of": as_of, "missingness_rate": missingness_rate, **body}
+            status: int = 200, cache: str = CACHE, headers: dict | None = None,
+            state: dict | None = None) -> JSONResponse:
+    payload = {"as_of": as_of, "missingness_rate": missingness_rate,
+               "missingness_note": missingness_note(missingness_rate, state),
+               "collection": state, **body}
     if store is not None and store.sample:
         payload["sample"] = True
     return JSONResponse(payload, status_code=status,
@@ -141,6 +153,33 @@ def floors(ds: Row | None) -> dict | None:
     """The floors the published numbers were held to, as recorded by the pipeline that
     computed them."""
     return ds and {k: ds.get(k) for k in FLOOR_FIELDS}
+
+
+def collection(store: Store, ds: Row | None) -> dict:
+    """Whether collection has started, from rows the API may read: published metrics, or
+    else the latest walk of the samples chain. samples itself is never read. The walk runs
+    nightly, so "not_started" holds as of that walk."""
+    if ds is not None:
+        return {"status": "collecting", "basis": "published metrics",
+                "as_of": ds.get("computed_at")}
+    latest = one(store.select("chain_verifications", [("table_name", "eq", "samples")],
+                              [("id", "desc")], limit=1))
+    if latest is None:
+        return {"status": "unknown", "basis": "no chain walk and no published metrics",
+                "as_of": None}
+    return {"status": "collecting" if latest.get("head_seq") else "not_started",
+            "basis": "latest walk of the samples chain", "as_of": latest.get("verified_at")}
+
+
+def missingness_note(rate: Any, state: dict | None) -> str | None:
+    """Why missingness_rate is null; None when it is not. With no collection state the
+    response read nothing (an error), so the rate does not apply."""
+    if rate is not None:
+        return None
+    if state is None:
+        return NOT_APPLICABLE
+    return {"not_started": NOT_STARTED, "unknown": COLLECTION_UNKNOWN}.get(state["status"],
+                                                                         NOT_YET_COMPUTED)
 
 
 # What the API reads from corridors. Never route_polyline, the full stored road: only its
@@ -185,6 +224,7 @@ def corridor_view(row: Row, stats: Row | None) -> dict:
         "length_meters": stats.get("length_meters"),
         "free_flow": {"tomtom_s": stats.get("ff_tomtom_s"), "p5_s": stats.get("ff_p5_s")},
         "missingness_rate": stats.get("missing_rate"),
+        "missingness_note": None if stats.get("missing_rate") is not None else NOT_YET_COMPUTED,
         "low_confidence": stats.get("low_confidence"),
         "ledger": ledger or None,
         # The road TomTom routes through the corridor's declared points, fetched once when
@@ -219,7 +259,8 @@ def corridors(store: StoreDep):
             for r in rows
         ],
     }
-    return respond(store, body, ds and ds["computed_at"], ds and ds["missing_rate"])
+    return respond(store, body, ds and ds["computed_at"], ds and ds["missing_rate"],
+                   state=collection(store, ds))
 
 
 @router.get("/corridors/{corridor_id}/series")
@@ -234,7 +275,8 @@ def series(
     stats = one(store.select("corridor_stats", [("corridor_id", "eq", corridor_id)], limit=1))
     if stats is None:
         return respond(store, {"corridor_id": corridor_id, "granularity": granularity,
-                               "status": "no_data", "series": None}, None, None)
+                               "status": "no_data", "series": None}, None, None,
+                       state=collection(store, dataset(store)))
     start = from_ or date.fromisoformat(stats["window_start"])
     end = to or date.fromisoformat(stats["window_end"])
     if end < start:
@@ -253,7 +295,8 @@ def series(
     )
     body = {"corridor_id": corridor_id, "granularity": granularity,
             "from": start.isoformat(), "to": end.isoformat(), "series": columnar(rows, keys)}
-    return respond(store, body, stats["computed_at"], stats["missing_rate"])
+    return respond(store, body, stats["computed_at"], stats["missing_rate"],
+                   state=collection(store, dataset(store)))
 
 
 @router.get("/corridors/{corridor_id}/profile")
@@ -262,14 +305,16 @@ def profile(store: StoreDep, corridor_id: Annotated[str, Path(pattern=CORRIDOR_I
     stats = one(store.select("corridor_stats", [("corridor_id", "eq", corridor_id)], limit=1))
     rows = store.select("profile_hourly", [("corridor_id", "eq", corridor_id)], [("hour", "asc")])
     first = one(rows)
+    ds = dataset(store)
     body = {
         "corridor_id": corridor_id,
         "window": first and {"start": first["window_start"], "end": first["window_end"]},
         "pooling": PROFILE_POOLING,
-        "floors": floors(dataset(store)),
+        "floors": floors(ds),
         "profile": columnar(rows, PROFILE_COLUMNS),
     }
-    return respond(store, body, stats and stats["computed_at"], stats and stats["missing_rate"])
+    return respond(store, body, stats and stats["computed_at"], stats and stats["missing_rate"],
+                   state=collection(store, ds))
 
 
 def heatmap_body(rows: list[Row]) -> dict:
@@ -295,8 +340,10 @@ def heatmap(store: StoreDep, corridor_id: Annotated[str, Path(pattern=CORRIDOR_I
     stats = one(store.select("corridor_stats", [("corridor_id", "eq", corridor_id)], limit=1))
     rows = store.select("heatmap_weekly", [("scope", "eq", "corridor"),
                                            ("corridor_id", "eq", corridor_id)])
-    body = {"corridor_id": corridor_id} | heatmap_body(rows) | {"floors": floors(dataset(store))}
-    return respond(store, body, stats and stats["computed_at"], stats and stats["missing_rate"])
+    ds = dataset(store)
+    body = {"corridor_id": corridor_id} | heatmap_body(rows) | {"floors": floors(ds)}
+    return respond(store, body, stats and stats["computed_at"], stats and stats["missing_rate"],
+                   state=collection(store, ds))
 
 
 @router.get("/network/heatmap")
@@ -304,7 +351,8 @@ def network_heatmap(store: StoreDep):
     ds = dataset(store)
     rows = store.select("heatmap_weekly", [("scope", "eq", "network")])
     return respond(store, {"scope": "network"} | heatmap_body(rows) | {"floors": floors(ds)},
-                   ds and ds["computed_at"], ds and ds["missing_rate"])
+                   ds and ds["computed_at"], ds and ds["missing_rate"],
+                   state=collection(store, ds))
 
 
 @router.get("/pairs/{pair_id}/compare")
@@ -338,11 +386,13 @@ def compare(
                              limit=1))
     pooled = one(store.select("profile_hourly", [("corridor_id", "eq", members["primary"]["id"])],
                               limit=1))
+    ds = dataset(store)
     body = {"pair_id": pair_id, "hour": hour,
             "window": pooled and {"start": pooled["window_start"], "end": pooled["window_end"]},
-            "floors": floors(dataset(store)), "primary": primary, "alternate": alternate,
+            "floors": floors(ds), "primary": primary, "alternate": alternate,
             "advantage": advantage}
-    return respond(store, body, stats and stats["computed_at"], primary["missingness_rate"])
+    return respond(store, body, stats and stats["computed_at"], primary["missingness_rate"],
+                   state=collection(store, ds))
 
 
 @router.get("/network/state")
@@ -360,7 +410,8 @@ def network_state(
     row = one(store.select("network_hourly", filters, [("day", "desc"), ("hour", "desc")],
                            limit=1))
     if row is None:
-        return respond(store, {"status": "no_data", "value": None}, None, None)
+        return respond(store, {"status": "no_data", "value": None}, None, None,
+                       state=collection(store, dataset(store)))
     body = {
         "status": "ok", "day": row["day"], "hour": row["hour"],
         "value": row["pct_vs_normal"], "unit": "percent vs normal for this hour",
@@ -368,7 +419,8 @@ def network_state(
         "low_confidence": row["low_confidence"],
         "tti": {"tomtom_p50": row["tti_tomtom_p50"], "p5_p50": row["tti_p5_p50"]},
     }
-    return respond(store, body, row["computed_at"], row["missing_rate"])
+    return respond(store, body, row["computed_at"], row["missing_rate"],
+                   state=collection(store, dataset(store)))
 
 
 @router.get("/interventions")
@@ -381,7 +433,8 @@ def interventions(store: StoreDep):
         | {"audit_status": (audits.get(r["id"]) or {}).get("status")}
         for r in rows
     ]}
-    return respond(store, body, ds and ds["computed_at"], ds and ds["missing_rate"])
+    return respond(store, body, ds and ds["computed_at"], ds and ds["missing_rate"],
+                   state=collection(store, ds))
 
 
 @router.get("/interventions/{intervention_id}/audit")
@@ -399,11 +452,12 @@ def audit(store: StoreDep, intervention_id: Annotated[str, Path(pattern=INTERVEN
     blocks = store.select("audit_blocks", by_intervention, [("block", "asc")])
     variants = store.select("audit_sensitivity", by_intervention)
     variants.sort(key=lambda v: VARIANT_ORDER.index(v["variant"]))
+    ds = dataset(store)
     body = {
         "intervention": {k: iv[k] for k in ("id", "corridor_id", "effective_at", "description")},
         "corridor": {"id": corridor["id"], "code": corridor.get("code"), "name": corridor["name"]},
         "metric": "bti",
-        "floors": floors(dataset(store)),
+        "floors": floors(ds),
         "audit": row and {k: row.get(k) for k in AUDIT_FIELDS},
         # every donor considered, with its weight or the reason it was excluded
         "donors": [{k: d.get(k) for k in DONOR_FIELDS} | {"code": codes.get(d["corridor_id"])}
@@ -414,7 +468,8 @@ def audit(store: StoreDep, intervention_id: Annotated[str, Path(pattern=INTERVEN
         # the estimate under stricter and looser donor completeness thresholds
         "sensitivity": [{k: v.get(k) for k in SENSITIVITY_FIELDS} for v in variants],
     }
-    return respond(store, body, row and row["computed_at"], row and row["missing_rate"])
+    return respond(store, body, row and row["computed_at"], row and row["missing_rate"],
+                   state=collection(store, ds))
 
 
 @router.get("/verify")
@@ -440,7 +495,7 @@ def verify(store: StoreDep):
                      "or the archive; an empty list of breaks means intact",
     }
     return respond(store, body, latest["samples"] and latest["samples"]["verified_at"],
-                   ds and ds["missing_rate"])
+                   ds and ds["missing_rate"], state=collection(store, ds))
 
 
 def export(store: Store, fmt: str, public_base: str) -> JSONResponse:
@@ -455,7 +510,8 @@ def export(store: Store, fmt: str, public_base: str) -> JSONResponse:
         "X-Ledger-Missingness-Rate": str(row["missing_rate"]),
         "X-Ledger-SHA256": row["sha256"],
     }
-    return respond(store, body, row["computed_at"], row["missing_rate"], 307, CACHE, headers)
+    return respond(store, body, row["computed_at"], row["missing_rate"], 307, CACHE, headers,
+                   state=collection(store, dataset(store)))
 
 
 def public_base() -> str:
@@ -479,13 +535,14 @@ def health(store: StoreDep):
     """For wall mode. Never cached, so an outage shows up as one."""
     try:
         ds = dataset(store)
+        state = collection(store, ds)
     except StoreError:
         return respond(store, {"status": "degraded", "api": "up", "database": "unreachable"},
                        None, None, 503, NO_STORE)
     body = {"status": "ok", "api": "up", "database": "reachable",
             "data": "present" if ds else "none"}
     return respond(store, body, ds and ds["computed_at"], ds and ds["missing_rate"],
-                   cache=NO_STORE)
+                   cache=NO_STORE, state=state)
 
 
 app.include_router(router)

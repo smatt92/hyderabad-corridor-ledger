@@ -2,9 +2,30 @@
 
 export type Maybe<T> = T | null;
 
+/**
+ * Why a null missingness_rate is null: nothing collected yet, no way to tell
+ * whether collection has started, collected but not computed yet, or not
+ * applicable to this response (an error, or a database that could not be read).
+ */
+export type MissingnessNote = "collection_not_started" | "collection_unknown" | "not_yet_computed" | "not_applicable";
+
+/**
+ * Whether collection has started, from published metrics or else the latest walk
+ * of the samples chain. The walk runs nightly, so not_started holds as of as_of.
+ */
+export interface Collection {
+  status: "not_started" | "collecting" | "unknown";
+  basis: string;
+  as_of: Maybe<string>;
+}
+
 export interface Envelope {
   as_of: Maybe<string>;
   missingness_rate: Maybe<number>;
+  /** Why missingness_rate is null; null when it is not. */
+  missingness_note?: Maybe<MissingnessNote>;
+  /** Whether collection has started. Null on errors, where nothing was read. */
+  collection?: Maybe<Collection>;
   /** Present only when the API serves local fixture data. */
   sample?: true;
   status?: string;

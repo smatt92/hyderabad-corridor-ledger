@@ -2,6 +2,7 @@ import { useMemo, useState } from "preact/hooks";
 import { useAllSeries, useApi, useWidth } from "../api/hooks";
 import type { CorridorsResponse, InterventionsResponse, NetworkStateResponse, VerifyResponse } from "../api/types";
 import { FAINT, INK, MID, MONO, PAPER, RUST, SOFT, TEXT } from "../lib/color";
+import { POSITIONING, COLLECTING_UNPUBLISHED, collectionAsOf, siteState } from "../lib/collection";
 import { NO_INTERVAL_REASON } from "../lib/floors";
 import { daysBetween, fmtCoverage, fmtDay, fmtHour, fmtIst, fmtWeekday, isStale } from "../lib/format";
 import { Audit } from "./Audit";
@@ -10,6 +11,7 @@ import { Compare } from "./Compare";
 import { Notice } from "./common";
 import { Ledger } from "./Ledger";
 import { MapView } from "./MapView";
+import { NotStarted } from "./NotStarted";
 import { Pulse } from "./Pulse";
 import { Rhythm } from "./Rhythm";
 import { SeriesView } from "./series";
@@ -33,6 +35,9 @@ export function AnalystApp() {
   const [now] = useState(() => new Date());
 
   const data = corridorsRes?.ok ? corridorsRes.data : null;
+  const state = siteState(corridorsRes);
+  // Nothing collected, or nothing that says so: no tabs, no scrubber, the reason instead.
+  const quiet = state === "not_started" || state === "unknown";
   const network = networkRes?.ok ? networkRes.data : null;
   const corridors = useMemo(() => data?.corridors ?? [], [data]);
   const ids = useMemo(() => corridors.map((c) => c.id), [corridors]);
@@ -61,6 +66,7 @@ export function AnalystApp() {
 
   let freshness: preact.ComponentChildren = "loading published indices…";
   if (corridorsRes && !corridorsRes.ok) freshness = <span style={{ color: RUST }}>read API unreachable · nothing shown rather than something stale</span>;
+  else if (quiet) freshness = <span>{state === "unknown" ? "collection status unknown" : "collection not started"} · {collectionAsOf(data?.collection)}</span>;
   else if (data) {
     freshness = (
       <span>
@@ -90,7 +96,7 @@ export function AnalystApp() {
               </div>
               <h1 style={{ margin: "6px 0 8px", fontSize: "30px", lineHeight: 1.02, letterSpacing: "-.025em", fontWeight: 700 }}>Hyderabad Corridor Ledger</h1>
               <p style={{ margin: 0, fontSize: "14px", lineHeight: 1.45, color: TEXT, maxWidth: "52ch", textWrap: "pretty" }}>
-                Google tells you the fastest route right now. We tell you the most reliable route at 8:40 on a Tuesday.
+                {POSITIONING}
               </p>
             </div>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "8px" }}>
@@ -104,6 +110,7 @@ export function AnalystApp() {
             </div>
           </div>
 
+          {quiet ? null : (
           <div style={{ maxWidth: "1440px", margin: "0 auto", padding: "0 22px 12px", display: "flex", gap: "2px", flexWrap: "wrap" }}>
             {TABS.map(([key, label]) => {
               const active = view === key;
@@ -114,6 +121,7 @@ export function AnalystApp() {
               );
             })}
           </div>
+          )}
 
           {day ? (
             <div style={{ maxWidth: "1440px", margin: "0 auto", padding: "12px 22px 14px", borderTop: `1px solid ${FAINT}`, display: "flex", flexWrap: "wrap", gap: "20px", alignItems: "center" }}>
@@ -154,9 +162,11 @@ export function AnalystApp() {
               Retry
             </button>
           </Notice>
+        ) : quiet ? (
+          <NotStarted collection={data?.collection} />
         ) : !day ? (
-          <Notice kicker="Empty ledger" title="No measurements published yet" tone="ink">
-            The collector has not published any samples, so there is nothing to show. The ledger fills after the first metrics run.
+          <Notice kicker="Collecting" title="Nothing published yet" tone="ink">
+            {COLLECTING_UNPUBLISHED}
           </Notice>
         ) : (
           <>
@@ -181,7 +191,7 @@ export function AnalystApp() {
 
         <div style={{ marginTop: "60px", paddingTop: "16px", borderTop: `1px solid ${INK}`, display: "flex", flexWrap: "wrap", gap: "24px", justifyContent: "space-between", fontSize: "11px", color: MID, lineHeight: 1.55 }}>
           <div style={{ maxWidth: "62ch" }}>
-            Method: probe travel times from TomTom calculateRoute (summary only) at each corridor’s scheduled slots, aggregated to hourly cells. Indices are computed against two free-flow references, both published: TomTom’s no-traffic time and the observed 5th percentile of night-slot calls (00:00–04:00 IST) over a trailing 28 days. A 95th percentile, and BTI and PTI with it, is never computed on an hourly cell of two to four calls: it is computed on calls pooled over a stated window and published only above a sample floor, as a point value beside the number of calls it pools. {NO_INTERVAL_REASON} Corridor length is the payload’s measured length_meters and is shown as an em dash when absent. Missing samples are never interpolated.
+            {quiet ? "Method, once collection starts: " : "Method: "}probe travel times from TomTom calculateRoute (summary only) at each corridor’s scheduled slots, aggregated to hourly cells. Indices are computed against two free-flow references, both published: TomTom’s no-traffic time and the observed 5th percentile of night-slot calls (00:00–04:00 IST) over a trailing 28 days. A 95th percentile, and BTI and PTI with it, is never computed on an hourly cell of two to four calls: it is computed on calls pooled over a stated window and published only above a sample floor, as a point value beside the number of calls it pools. {NO_INTERVAL_REASON} Corridor length is the payload’s measured length_meters and is shown as an em dash when absent. Missing samples are never interpolated.
           </div>
           <div style={{ ...mono, display: "flex", flexDirection: "column", gap: "4px", alignItems: "flex-end" }}>
             <span>
