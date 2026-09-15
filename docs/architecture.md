@@ -5,7 +5,7 @@ How the Hyderabad Corridor Ledger fits together, as built on 14 September
 DEPLOYED**. Right now:
 - the database holds zero real samples;
 - every corridor is a draft placeholder;
-- nothing is deployed.
+- the read API and dashboard are deployed on Vercel, reading that empty database.
 
 Every diagram is Mermaid, rendered by GitHub. Each is followed by what it
 shows and what it leaves out. The working rules behind all of this are in
@@ -38,7 +38,7 @@ flowchart LR
         DB[("Postgres")]
         BKT[("public buckets")]
     end
-    subgraph VC["Vercel: NOT DEPLOYED. The service key never crosses into it"]
+    subgraph VC["Vercel: deployed, empty database. The service key never crosses into it"]
         API["read API, publishable key"]
         WEB["dashboard bundle"]
     end
@@ -67,8 +67,7 @@ flowchart LR
 - **Vercel.** Everything to the right of Supabase is meant for Vercel. The
   read API gets only the publishable key, and refuses to start if it finds the
   service key in its environment. The dashboard bundle holds no key but the
-  browser tile key. Neither is served yet: the Vercel project's first builds
-  failed, and the tile key has not been created.
+  browser tile key. Both are deployed; the tile key has not been created.
 
 **Tiles.** Browsers pull map tiles straight from TomTom. Nothing in this
 system proxies or meters them, and TomTom's Terms do not allow a proxy that
@@ -762,7 +761,7 @@ flowchart LR
 ```mermaid
 flowchart LR
     P03["P-03 design: delivered"]
-    P04["P-04 API and dashboard: NOT DEPLOYED"]
+    P04["P-04 API and dashboard: deployed, no data"]
     P05["P-05 System View design: NOT DELIVERED"]
     P06["P-06 System View: NOT BUILT"]
     P03 -->|"gate: design corrected"| P04
@@ -772,7 +771,7 @@ flowchart LR
 
 **The data path.**
 - **P-00** left GitHub (signed history, rulesets, secret scanning) and
-  Supabase in place. Its Vercel project exists; its first builds failed.
+  Supabase in place, and its Vercel half is deployed.
 - **P-01**, the collector, is built and scheduled, and measures nothing until
   a verified corridor is active.
 - **P-02** is built and tested on synthetic panels. The earlier P-02 brief
@@ -784,9 +783,9 @@ flowchart LR
 - **P-03**, the dashboard design, was delivered and then corrected: waypoints
   were removed from the Maps handoff, and alternates now come only from
   `pair_id`.
-- **P-04** is built and tested against fixtures, and is not deployed.
-- **P-06**, the System View, is gated on P-04 being deployed and on the P-05
-  design being delivered. Neither has happened.
+- **P-04** is built, tested against fixtures, and deployed on the empty database.
+- **P-06**, the System View, is gated on P-04 being deployed, which it now is,
+  and on the P-05 design being delivered, which has not happened.
 
 In later build prompts the same work carried letters:
 - A: via points

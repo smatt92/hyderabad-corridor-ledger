@@ -23,13 +23,24 @@ function forbidPackages(): Plugin {
   };
 }
 
-export default defineConfig(({ command }) => {
-  if (command === "build" && process.env.TOMTOM_API_KEY) {
-    throw new Error(
-      "TOMTOM_API_KEY is set in the frontend build environment. The collector's key must never " +
-        "reach a browser; tiles use the separate, domain-restricted TOMTOM_TILE_KEY.",
-    );
+/**
+ * Keys that must never be in the build environment. Vercel gives a project's variables to
+ * every service it builds, so failing this build also keeps them away from the read API.
+ */
+const FORBIDDEN_BUILD_ENV: Record<string, string> = {
+  TOMTOM_API_KEY: "The collector's key must never reach a browser; tiles use the separate, domain-restricted TOMTOM_TILE_KEY.",
+  SUPABASE_SERVICE_KEY: "The service key lives only in GitHub Actions; the read API needs only SUPABASE_PUBLISHABLE_KEY.",
+};
+
+/** Throws if a forbidden key is set, so a deployment that would carry it fails at the build. */
+export function refuseForbiddenEnv(env: Record<string, string | undefined>): void {
+  for (const [name, why] of Object.entries(FORBIDDEN_BUILD_ENV)) {
+    if (env[name]) throw new Error(`${name} is set in the build environment. ${why}`);
   }
+}
+
+export default defineConfig(({ command }) => {
+  if (command === "build") refuseForbiddenEnv(process.env);
   return {
     plugins: [forbidPackages()],
     oxc: { jsx: { runtime: "automatic", importSource: "preact" } },

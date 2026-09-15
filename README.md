@@ -10,7 +10,7 @@ whether a flyover actually changed that. Google tells you the fastest route
 right now. This ledger is meant to tell you the most reliable route at 8:40 on
 a Tuesday, from months of measurements rather than one.
 
-**The database holds zero real samples, and the site is not deployed.**
+**The database holds zero real samples. The deployed site reads that empty database.**
 Everything described below has run only on synthetic data.
 
 ## What it cannot do
@@ -137,7 +137,7 @@ As of 14 September 2026.
 | Collector | Scheduled every 5 minutes across the collection windows in GitHub Actions. It exits at once while no corridor is active. |
 | Hash chains | Both chains walked once, on 13 September. One Rekor anchor, covering two empty chains. |
 | Metrics engine | Built and tested on synthetic panels. Every derived table is empty. The nightly job has not run yet. |
-| Read API and dashboard | Built and tested against fixture data. **Not deployed**: a Vercel project exists (14 September), but its first builds failed, so nothing is served. No browser tile key. |
+| Read API and dashboard | Deployed on Vercel since 14 September, reading the empty database, with deployment protection off. Built and tested against fixture data. No browser tile key. |
 | Intervention audit (P-07) | Estimator and view built. No audit is possible until a corridor has 205 days of data. |
 | System View (P-05 design, P-06 build) | **Not built.** The design has not been delivered. |
 | Junction register | 16 candidates. None verified on satellite imagery. |
@@ -151,8 +151,8 @@ Waiting on Sahil:
 
 ## Using the dashboard
 
-> **This section describes a site that is not deployed.** The Vercel project's
-> first builds failed, and the database holds zero real samples. Everything
+> **This section describes a site with no data yet.** The deployment reads an
+> empty database and says why nothing is measured. Everything
 > below was checked against synthetic fixture data, which the dashboard marks
 > with a SAMPLE DATA banner. No screenshots are included. Remove this note when
 > the first real deploy lands.

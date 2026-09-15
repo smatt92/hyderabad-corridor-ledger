@@ -52,10 +52,18 @@ logic cannot be attributed, the dataset it produced cannot be trusted either.
 - Supabase: project `hyderabad-corridor-ledger`, ref `duejdeswzjepliqfkjyf`,
   region `ap-south-1` (Mumbai), org `sutytlpyraimbvdqdicf`.
 - Vercel: project `hyderabad-corridor-ledger` (team `sahilmatt-6245s-projects`),
-  created 2026-09-14 and deployed from Sahil's Vercel CLI. Its first three
-  production builds failed, so nothing is served. Its only environment
-  variables are `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`. `vercel.json`
-  has `git.deploymentEnabled: false` and `web/` and `api/` as its only services.
+  created 2026-09-14 and deployed from Sahil's Vercel CLI. Production is live
+  and reads the real, empty database. `vercel.json` has
+  `git.deploymentEnabled: false` and `web/` and `api/` as its only services.
+  - **Deployment protection: off**, decided by Sahil on 2026-09-15. Leaving the
+    site public is safe only because the not-started page explains the empty
+    database, so that page must be deployed before the site is shared.
+  - **Environment variables:** `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`, on
+    Production only as of 2026-09-15. They belong on Preview as well, or a
+    preview deployment's API cannot reach the database. Never add them to
+    Development: `vercel env pull` writes Development variables into
+    `.env.local`, and no key is ever written to a file. Adding Preview needs the
+    values, so Sahil does it in the Vercel dashboard.
 - GitHub: `smatt92/hyderabad-corridor-ledger`, public, with secret scanning
   and push protection on.
 
@@ -184,6 +192,10 @@ been chosen.
   holds it: not a Vercel env var, not a client bundle, not a committed file.
 - If a step appears to need the service key on Vercel, stop and tell Sahil:
   something is running in the wrong place.
+- The service key cannot reach Vercel unnoticed. The web build fails if
+  `SUPABASE_SERVICE_KEY` is in its environment, and Vercel gives every service
+  the project's variables, so the whole deployment fails with it. The read API
+  also refuses to start with it. It was confirmed absent on 2026-09-15.
 - Tokens are never written to files, `.env` included.
 - PostgREST needs `apikey` AND `Authorization`. With a legacy JWT key,
   `apikey` alone silently resolves to the `anon` role: a service call fails
@@ -743,7 +755,7 @@ Other definitions worth knowing before changing them:
 ## Read API and frontend (P-04)
 
 Vercel is to host the frontend (`web/`) and the read API (`api/`) and
-nothing else. The project exists and serves nothing yet. The collector, chain verification, archive, metrics and exports run in
+nothing else. Production is live on the empty database. The collector, chain verification, archive, metrics and exports run in
 GitHub Actions.
 
 ### Route construction: hard rule
@@ -865,7 +877,9 @@ Pairs sharing endpoints is enforced by `collector/config.py` and the
   - The map shows "© TomTom". Terms 17.3 asks for TomTom's Copyright API,
     which is not implemented.
 - The browser uses `TOMTOM_TILE_KEY`, a separate key restricted to the
-  deployed origin. The build fails if `TOMTOM_API_KEY` is in its environment.
+  deployed origin. The build fails if `TOMTOM_API_KEY` or `SUPABASE_SERVICE_KEY` is in its
+  environment (`refuseForbiddenEnv` in `web/vite.config.ts`, tested in
+  `web/src/lib/buildenv.test.ts`).
   TomTom documents its key whitelist as relying on CORS, and a plain `<img>`
   request is not a CORS request, so whether the restriction holds for tiles is
   unverified: once the key exists, request a tile from an origin not on the

@@ -1,5 +1,13 @@
-# Vercel hosts the frontend (web/) and the read API (api/) only. The collector,
-# metrics pipeline, migrations and every fixture stay out of the upload.
+# Vercel builds two services from this repository, the frontend (web/) and the read
+# API (api/), and nothing else. Everything below stays out of the upload: the
+# collector and its configuration, the metrics pipeline, its tests and scripts,
+# migrations, docs, CI workflows, fixtures and installs. Root files such as
+# vercel.json and README.md are still uploaded. tests/test_deploy_config.py fails
+# if a file a service is built from is removed.
+/collector/
+/config/
+/docs/
+/.github/
 .venv
 **/.venv
 node_modules
