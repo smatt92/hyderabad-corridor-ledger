@@ -49,10 +49,12 @@ own job 9886035, the rest from the documentation.
 - **Coverage.** Hyderabad data exists on our account, and densely. Job 9886035 covered
   15-30 July 2026, with average sample sizes of 4,017 to 28,855.
 - **Route statistics, as returned.** In job 9886035, route `travelTimePercentiles` equal
-  `coveredDistance` divided by the speed percentile at the mirrored rank, and
-  `averageTravelTime` equals `coveredDistance` divided by `harmonicAverageSpeed`.
+  `coveredDistance` divided by the speed percentile at the mirrored rank, so they are
+  derived from speeds, not observed travel times. `averageTravelTime` equals
+  `coveredDistance` divided by `harmonicAverageSpeed`.
 - **TomTom's indices.** `planningTimeIndex` and `averageTravelTimeRatio` are ratios to the
-  average travel time of a job's first time set.
+  average travel time of a job's first time set, so reordering time sets changes them.
+  Neither is a free-flow index.
 
 ## To ask
 

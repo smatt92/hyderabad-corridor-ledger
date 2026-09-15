@@ -106,7 +106,8 @@ none.
   read 2026-09-14; `docs/data-sources.md`). Batch gives 19 speed percentiles,
   5th to 95th, per segment and hour, and Route Analysis gives route-level travel
   time percentiles. So a p95 travel time and a free-flow reference are
-  derivable.
+  derivable. Route Analysis's travel time percentiles are themselves DERIVED
+  from speed percentiles, not observed (below).
 - **Quote for Route Analysis, not Batch.**
   - Batch exposes no sample size, and the 200/30 floors, the shrinkage and the
     missingness flag all need one.
@@ -117,32 +118,52 @@ none.
   - With `fullTraversal: true`, route statistics come only from vehicles that
     drove the whole route (TomTom's FAQ). Full archive support covers about the
     last two years; older data is limited.
-- **The two inversions. Get them right.** Both produce plausible wrong numbers.
+- **The two inversions. Get them right.** Both produce plausible wrong numbers,
+  and they cover ANY speed-percentile field: Batch segment data, and Route
+  Analysis's route and segment `speedPercentiles`.
   - `speedPercentiles` are percentiles of SPEED. On a segment of length L, p95
     travel time = L ÷ p5 SPEED, and the observed free-flow reference (p5 travel
     time) = L ÷ p95 SPEED.
   - Mean travel time = L ÷ HARMONIC mean speed. L ÷ arithmetic mean speed
     understates travel time.
-  Read backwards, these compute the opposite of unreliability. They hold for
-  Batch segment data and for any `speedPercentiles` field, Route Analysis's
-  included. Route Analysis's route `travelTimePercentiles` need NO inversion by
-  us, because TomTom has already done it: in job 9886035 each one equals
-  `coveredDistance` ÷ the speed percentile at the mirrored rank, and
-  `averageTravelTime` = `coveredDistance` ÷ `harmonicAverageSpeed`.
-- **TomTom's indices are not ours.** In job 9886035, `planningTimeIndex` = the
-  time set's p95 travel time ÷ the FIRST time set's average travel time, and
-  `averageTravelTimeRatio` = its average ÷ that same base. They change when time
-  sets are reordered, and divide by an average, not a free-flow reference, so
-  they are neither our PTI nor our TTI. Never publish them as ours.
-  - PTI and TTI stay ours to derive, like BTI, from the route percentiles and
-    averages against our own free-flow reference (a night time set's p5).
+  Read backwards, these compute the opposite of unreliability.
+- **Route `travelTimePercentiles` are DERIVED, not observed.** TomTom does the
+  inversion itself: in job 9886035 each one equals `coveredDistance` ÷ the route
+  speed percentile at the mirrored rank, and `averageTravelTime` =
+  `coveredDistance` ÷ `harmonicAverageSpeed`. So we do not invert them, and we
+  never present them as observed trip times. Say so plainly wherever a Route
+  Analysis percentile appears.
+  - With full traversal off, R2's p95 of 224 minutes is its covered 20.94 km at
+    one uniform speed, the route's 5th-percentile speed. No vehicle is known to
+    have taken that long.
+  - Nor is it every segment at its own 5th-percentile speed at once: a segment
+    with 34 samples has a 5th-percentile speed of 0, which would make that sum
+    unbounded.
+  - Whether a derived percentile describes trips depends on whose speeds it
+    comes from. Whole-route vehicles' route speeds would invert back into their
+    trip times; speeds of partial passages do not. That population is
+    undocumented (question 1).
+- **TomTom's indices are not ours, and neither is usable as shipped.** In job
+  9886035, `planningTimeIndex` = the time set's p95 travel time ÷ the FIRST time
+  set's average travel time, and `averageTravelTimeRatio` = its average ÷ that
+  same base. Reordering time sets changes both. A planning time index in the
+  standard sense divides by a free-flow travel time; this one does not.
+  - TomTom computes NEITHER our PTI nor our TTI. The claim that it computes two
+    of our three headline metrics was wrong (withdrawn by Sahil, 2026-09-15).
+    PTI, TTI and BTI all stay ours to derive from the route percentiles and
+    averages.
   - If we buy, what is the vendor's computation is the distribution under all
     three: TomTom's route speed percentiles, scaled to the covered length, over
     a population undocumented with full traversal off. The methodology note says
     so.
-  - Route Analysis carries no `noTrafficTravelTimeInSeconds`, so bought data
-    alone cannot give the `_tomtom` free-flow basis the ledger publishes beside
-    `_p5`. Not decided.
+  - CONSEQUENCE OF BUYING, not decided: Route Analysis carries no no-traffic
+    travel time, so bought data cannot supply the `_tomtom` free-flow basis, and
+    the two-basis design collapses to a night reference alone. That reference
+    would itself be derived: a night time set's p5 travel time is the covered
+    length ÷ its 95th-percentile speed, not the observed p5 of calls. Keeping a
+    second basis would need Routing API calls for
+    `noTrafficTravelTimeInSeconds`, which store Results under the same licensing
+    question.
 - **Data lag: up to 72 hours.** The most recent report is three days in the
   past, so purchased figures could run three days behind, not only as an
   archive. Request windows that end at least 72 hours back: the hash chain would
@@ -150,15 +171,11 @@ none.
 - **The sample floor has two layers, and neither is an exact count** (decided
   2026-09-15). No documented field counts the vehicles that drove the whole
   route.
-  - Status after job 9886035. Sahil's position: if we buy, the floors
-    (200/30/20), the `min(sampleSize)` fallback and the missing full-traversal
-    count stop shaping the design; if we collect, they keep binding. The
-    evidence supports that only in part. The averages clear the floors about
-    97-144 times over (about 200 times at night): two orders of magnitude, not
-    three. But `averageSampleSize` averages device counts over all 375 segments,
-    single segments held 1 or 2, and with full traversal off the population
-    behind a route percentile is undocumented. Until question 1 is answered, the
-    evidence does not retire them for the bought branch.
+  - NOT RETIRED for the buy branch (Sahil, 2026-09-15). The busiest time set's
+    average is 144 times the 200 floor: two orders of magnitude, not three. The
+    averages hide segments at 1-2 samples, so `min(sampleSize)` would have
+    withheld every time set, and with full traversal off the population behind a
+    route percentile is undocumented. The floors bind whether we buy or collect.
   - Request time, primary: `averageSampleSizeThreshold`. A route, date range and
     time set whose average falls below it produces no output, and it rejects the
     WHOLE job, uncharged. Group jobs so that a thin combination cannot sink the
@@ -256,10 +273,13 @@ none.
   - Job 9885126's zeros: absent coverage DISPROVED. A trial-region restriction
     DISPROVED, provided both jobs ran on the same account. The Melbourne control
     is not needed; do not run it.
-  - Full traversal with no via points is the only recorded explanation left, and
-    Sahil records it as the cause. It is NOT ISOLATED: the two jobs also differ
-    in route, length, via points and time sets. The same 6.89 km route with only
-    full traversal off isolates it.
+  - Full traversal with no via points is the only recorded explanation left. It
+    is NOT ISOLATED: route, length, via points and time sets all changed
+    alongside full traversal, and the map type is not known to have changed (R2
+    ran on OPEN_DSEG, the map in the unidentified payload). The clean test is
+    the ORIGINAL 6.89 km route with only `fullTraversal` flipped off. Cloning
+    job 9885126 in the MOVE Portal keeps everything else identical and gives a
+    payload from an identified job.
   - At R2's density, "almost nobody drives it end to end" is a weak mechanism
     for an exact zero. A routed path that leaves the main road fits TomTom's FAQ
     warning better, and R2's did for a fifth of its length.
@@ -525,7 +545,15 @@ optional `origin_junction` and `destination_junction`.
   stored road is fetched with `traffic=false` so that refetches are comparable.
   The daily alarm warns when yesterday's samples measured a length more than 2%
   from the stored road's. Place via_points densely enough that no other road
-  fits between them.
+  fits between them. Evidence (job 9886035, 2026-09-15): a 21 km route with one
+  via point ran 4.11 km on FRC 7 roads, TomTom's class for alleys and dead-end
+  streets, colony roads among them. One via point did not pin that corridor.
+  Declare enough via points to hold the intended road; Route Analysis takes at
+  most 50 per route.
+- Road class is a quality check worth running on every declared corridor: the
+  share of its route on each FRC. Route Analysis segments carry `frc`; the
+  stored road (0012) is points only, with no road class. No pass or fail
+  threshold is decided.
 - Road calls come after the due slots in a run, at most two a run, one attempt
   each, retried hourly on failure, and they spend the same daily budget.
 - `verified` (default false) means a person has confirmed every coordinate on

@@ -51,6 +51,8 @@ listed at the end of this section.
 Analysis gives route-level `travelTimePercentiles` ("5th, 10th, … 90th, 95th (in
 seconds)") as well as `speedPercentiles`. A p95 travel time and a percentile-based
 free-flow reference are both derivable.
+Route Analysis's `travelTimePercentiles` turned out to be DERIVED from its speed
+percentiles, not observed travel times (job 9886035, "What the route statistics are").
 
 **The inversion. Batch percentiles are of speed, not travel time.** On a segment of fixed
 length, travel time is length ÷ speed, which reverses the order:
@@ -213,12 +215,16 @@ City") and one date range ("Fortnight July"):
   9885126. Sahil's earlier check, which found the trial's data limited to the UK,
   California, Texas and Melbourne, does not hold for this account. The trial-region
   control designed earlier is not needed, and is not to be run.
-- **(a) Full traversal with an empty `via`: the only recorded explanation left.** Sahil
-  records it as the cause. It is not isolated: R2 also differs in route, in length (21.01
-  km against 6.89 km), in having a via point, and in its time sets. The map need not
-  differ, since R2 ran on OPEN_DSEG, the map in the payload above. The same 6.89 km route
-  with only full traversal turned off, one of the diagnostics already set running,
-  isolates it.
+- **(a) Full traversal with an empty `via`: the only recorded explanation left, and not
+  isolated.** Besides full traversal, R2 changed the route, the length (21.01 km against
+  6.89 km), the via points and the time sets. The map type is not known to have changed:
+  R2 ran on OPEN_DSEG, the map in the unidentified payload above, and 9885126's map is not
+  recorded.
+  - The clean test is the ORIGINAL 6.89 km route with only `fullTraversal` flipped off
+    (Sahil, 2026-09-15).
+  - TomTom's MOVE Portal guides include a page on cloning a report. Cloning job 9885126
+    and changing only that flag keeps everything else identical, and the clone's payload
+    comes from an identified job.
 - **The mechanism is not settled.** At R2's density, "almost nobody drives the whole
   route" is a weak reason for an exact zero in every time set, peaks included. TomTom's
   FAQ names another: a rarely travelled portion of a route, or vehicles skipping its final
@@ -249,13 +255,20 @@ set `sampleSize`, `normalizedSampleSize`, speed averages, median and standard de
 and `speedPercentiles`.
 
 **What the route statistics are.** Checked against the file, in all three time sets:
-- **Travel-time percentiles are inverted speed percentiles.** Each route
+- **Travel-time percentiles are DERIVED, not observed.** Each route
   `travelTimePercentiles` value equals `coveredDistance` divided by the route speed
   percentile at the mirrored rank (the 95th travel time from the 5th speed), within 11 s,
-  the rounding of the speeds. TomTom does the inversion; we need not. The p95 travel time
-  is the covered length at the 5th-percentile speed. With full traversal off, whose speeds
-  those percentiles are drawn from is not documented, so a percentile is not known to
-  describe any trip driven end to end (question 1).
+  the rounding of the speeds. TomTom does the inversion; we do not repeat it.
+  - The p95 of 224 minutes at 16:30–21:00 is the covered 20.94 km at one uniform speed,
+    the route's 5th-percentile speed of 5.6 km/h. It is not a trip anyone is known to have
+    taken.
+  - Nor is it every segment at its own 5th-percentile speed at once. At 16:30–21:00 a 12 m
+    segment with 34 samples has a 5th-percentile speed of 0, which would make that sum
+    unbounded.
+  - Whether a derived percentile describes trips depends on whose speeds it is drawn from.
+    Whole-route vehicles' route speeds would invert back into their trip times; speeds
+    from partial passages would not. With full traversal off, that population is not
+    documented (question 1).
 - **The mean.** `averageTravelTime` equals `coveredDistance` ÷ `harmonicAverageSpeed`, and
   also the sum of the segments' mean travel times, within 3 s.
 - **The median.** `medianTravelTime` is the 50th-percentile value of
@@ -273,6 +286,9 @@ and `speedPercentiles`.
 **Results, flagged for verification: not findings** (Sahil, 2026-09-15). A p95 of 224
 minutes and a 55-minute night median on 21 km both look slow, and Sahil is checking them
 against his own experience of the road.
+
+Every travel time in the table is derived (above): a median or p95 here is the covered
+length at a route speed percentile, not an observed trip.
 
 | Time set (IST, all days) | Covered (km of 21.01) | `averageSampleSize` | Median | p95 | `planningTimeIndex` (TomTom's, ÷ the 00:00–04:00 average) |
 |---|---|---|---|---|---|
@@ -300,39 +316,54 @@ check and not as findings:
 **What it changes.**
 - **Coverage.** Hyderabad is covered on this account, for July 2026, and densely ("First
   report", above).
-- **via.** A job with a via point returns data. Whether the via point held the route to
-  the road meant is read from the segments. A fifth of R2's length is FRC 7; if that is
-  not the road meant, one via point over 21 km did not pin it.
-- **The inversion warning.** It still holds for Batch and for any `speedPercentiles`
-  field. Route `travelTimePercentiles` need no inversion by us, because TomTom has already
-  done it (above).
-- **TomTom's indices.** Sahil's reading was that PTI and TTI would be TomTom's computation
-  if we buy; the file corrects it.
-  - `planningTimeIndex` and `averageTravelTimeRatio` are ratios to the average of the
-    job's first time set, not to a free-flow reference. They are not this project's PTI or
-    TTI, and are never published as them.
-  - PTI and TTI stay ours to derive, as BTI does, from the route percentiles and averages
-    against our own free-flow reference, such as a night time set's p5.
+- **via, and corridor quality.** A job with a via point returns data, but R2's one via
+  point did not pin the corridor (Sahil, 2026-09-15). 4.11 km of its 21 km is FRC 7,
+  TomTom's class for destination roads such as alleys and dead-end streets, including
+  colony roads.
+  - A corridor declares enough via points to hold its intended road, within Route
+    Analysis's limit of 50 per route.
+  - The road-class distribution along a corridor's route is a quality check worth running
+    on every declared corridor. Route Analysis segments carry `frc`; the collector's
+    stored road (0012) is points only, with no road class. What share of which class fails
+    a corridor is not decided.
+- **The inversion warning.** It covers any speed-percentile field: Batch, and Route
+  Analysis's route and segment `speedPercentiles`. Route `travelTimePercentiles` are that
+  inversion already done by TomTom, so they are derived, not observed, and are never
+  presented as observed trip times.
+- **TomTom's indices.** Sahil's claim that TomTom computes two of our three headline
+  metrics was wrong, and he withdrew it (2026-09-15): TomTom computes neither our PTI nor
+  our TTI.
+  - `planningTimeIndex` divides the p95 by the average of the job's FIRST time set, so
+    reordering time sets changes it. It is not a planning time index in the standard
+    sense, which divides by a free-flow travel time. `averageTravelTimeRatio` has the same
+    base.
+  - Neither is usable as shipped, and neither is published as ours. PTI and TTI stay ours
+    to derive, as BTI does, from the route percentiles and averages.
 - **The methodology note.** If we buy, all three headline metrics, BTI included, rest on
   TomTom's computation. That computation is its route speed distribution, scaled to the
   covered length, over a population that is undocumented with full traversal off. The note
-  says so, and says that TomTom's indices are not published as ours.
-- **Both free-flow bases.** Route Analysis carries no `noTrafficTravelTimeInSeconds`.
-  Bought data alone gives the observed p5 basis, not the `_tomtom` basis the ledger
-  publishes beside it. Not decided.
-- **The sample floors.** Sahil's position: if we buy rather than collect, the 200/30/20
-  floors, the `min(sampleSize)` fallback and the missing full-traversal count stop shaping
-  the design, and they keep binding for collection. The evidence supports that only in
-  part:
-  - The averages clear the floors about 97–144 times over, and the night p5 floor about
-    200 times: two orders of magnitude, not three.
-  - `averageSampleSize` averages device counts over every segment, and single segments
-    held 1 or 2. The `min(sampleSize)` fallback would have withheld every time set.
+  says so, says that route travel-time percentiles are derived from speeds and not
+  observed, and says that TomTom's indices are not published as ours.
+- **Both free-flow bases: a consequence of buying, not decided.** Route Analysis carries
+  no no-traffic travel time (`noTrafficTravelTimeInSeconds` comes from the Routing API),
+  so bought data cannot supply the `_tomtom` basis.
+  - The two-basis design, which the metrics engine never collapses, would collapse to a
+    night reference alone.
+  - That reference would itself be derived. A night time set's p5 travel time is the
+    covered length ÷ its 95th-percentile speed, not the p5 of observed calls that the
+    collector's `_p5` basis is.
+  - Keeping a second basis would need Routing API calls, which store Results under the
+    same licensing question.
+- **The sample floors: not retired for the buy branch** (Sahil, 2026-09-15, withdrawing
+  his earlier position).
+  - The 08:00–14:00 average is 144 times the 200 floor and the 16:30–21:00 average 97
+    times; the night average is about 200 times the night p5 floor of 20. Two orders of
+    magnitude, not three.
+  - The averages hide segments at 1 or 2 samples, and `min(sampleSize)` would have
+    withheld every time set.
   - With full traversal off, the population behind a route percentile is undocumented, so
     these counts are not known to be the observations behind it.
-  - So sparsity is not the limit for data this dense, but the floors are not yet shown
-    irrelevant for the bought branch; that waits on question 1. For collection they bind
-    as before.
+  - The floors bind whether we buy or collect.
 - **THE CENTRAL PROBLEM** (Sahil, 2026-09-15). Full traversal is what makes a route-level
   percentile meaningful, because only whole-route vehicles count, and on a 7 km urban
   corridor it returned nothing. With it off, the route percentiles are the covered length
@@ -344,7 +375,7 @@ check and not as findings:
 
 | Finding | Consequence | Checked |
 |---|---|---|
-| **Full traversal.** With `fullTraversal: true`, route statistics are calculated only from trips by vehicles that drove the entire route; data from vehicles that drove part of it is excluded. The option can reduce the number of probe devices, and TomTom generally does not advise it for longer, more complex or door-to-door routes ([FAQ](https://docs.tomtom.com/traffic-stats/documentation/product-information/faq)). | A corridor's `travelTimePercentiles` describe whole-corridor trips, not a synthesis of segment percentiles. The warning is about thin counts, which is where the sample floor matters. | opened |
+| **Full traversal.** With `fullTraversal: true`, route statistics are calculated only from trips by vehicles that drove the entire route; data from vehicles that drove part of it is excluded. The option can reduce the number of probe devices, and TomTom generally does not advise it for longer, more complex or door-to-door routes ([FAQ](https://docs.tomtom.com/traffic-stats/documentation/product-information/faq)). | With full traversal on, route statistics come from whole-corridor vehicles. Route `travelTimePercentiles` are derived from speed percentiles (job 9886035), so they describe those vehicles' trips only if the speeds are the vehicles' own route speeds; that is undocumented (question 1). The warning is about thin counts, which is where the sample floor matters. | opened |
 | **Full traversal over older data.** Full archive support for `fullTraversal` covers only about the last two years, a moving window; older periods use limited data ([Route Analysis](https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis)). | Bought history older than about two years is weaker under full traversal. This bears on whether to buy history (question 3 in `docs/tomtom-questions.md`). | opened |
 | **Time zones.** Each Route Analysis route takes a `zoneId`, a tz database name ([Route Analysis](https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis)), and every Traffic Stats API uses the time zone given in the request ([FAQ](https://docs.tomtom.com/traffic-stats/documentation/product-information/faq)). | With `Asia/Kolkata`, date ranges and time sets are in IST. The peak windows (06:30–10:30 and 16:30–21:00), the 24-hour profile and the 24×7 rhythm matrix align as designed. | opened |
 | **Data lag: up to 72 hours.** Data takes up to 72 hours from arriving at TomTom to being available, so the most recent report is three days in the past ([Data archive process](https://developer.tomtom.com/move-portal/guides/traffic-stats/how-it-works/data-archive-process)). Newly received GPS data is added every day ([FAQ](https://docs.tomtom.com/traffic-stats/documentation/product-information/faq)). The assistant added that reports over the last three days may be incomplete or carry smaller samples. | Purchased figures could run about three days behind: close to current, not an archive only. Request windows end at least 72 hours back, because a hash chain would freeze an incomplete report. | search (72 hours); opened (daily additions); assistant only (incomplete recent reports) |
@@ -375,9 +406,8 @@ check and not as findings:
 
 ### The sample floor: two layers, neither an exact count
 
-**Status after job 9886035.** For the bought branch the floors are not yet shown
-irrelevant; that waits on question 1 ("What it changes", under "Job 9886035 (R2)"). For
-collection they bind as before.
+**Status after job 9886035.** Not retired for the bought branch (Sahil, 2026-09-15): the
+floors bind whether we buy or collect ("What it changes", under "Job 9886035 (R2)").
 
 Decided by Sahil on 2026-09-15:
 1. **Request time, the primary mechanism:** `averageSampleSizeThreshold`. A combination
