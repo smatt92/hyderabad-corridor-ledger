@@ -311,20 +311,20 @@ none.
     route is FRC 7; segment counts run from 1 to 156,220.
 - **Empty intervals are omitted**, which matches the never-interpolate rule; an
   omitted interval still counts as missing.
-- **Questions for TomTom** (reordered 2026-09-15). Only what needs a person
-  remains, in this order; the full text and a tracking table are in
-  `docs/tomtom-questions.md`:
+- **Questions for TomTom** (final order, 2026-09-15). Only what needs a person
+  remains; the full text and a tracking table are in `docs/tomtom-questions.md`:
   1. Full traversal on urban corridors: at what length and road type it returns
-     usable samples, how to get route percentiles for 4-14 km corridors, and
-     what route percentiles mean without it. AHEAD of the licence.
+     usable samples, how to get route percentiles for 4-14 km corridors, what
+     population the speed percentiles come from with it off, whether endpoints
+     or a detour can give an exact zero, and whether a whole-route count exists.
+     FIRST, because if full traversal is unusable on urban corridors the licence
+     question is moot for this use.
   2. The quote, with publication rights under clauses 11.4 and 11.6.1 answered
      in it.
-  3. How far back Hyderabad data goes, and whole-route density: buy history, or
-     collect forward.
-  4. A route-level full-traversal count.
-  5. Corridor identity for Route Analysis: GERS ids, and the undocumented map
-     type `OPEN_DSEG`, as a quote line item.
-  6. Two-wheelers in India probe data.
+  3. How far back Hyderabad data goes: buy history, or collect forward.
+  4. Corridor identity across map updates: the undocumented map type
+     `OPEN_DSEG`, and GERS for Route Analysis as a quote line item.
+  5. Two-wheelers in India probe data.
 - **A decision we would live with.** The hash chain would attest a file TomTom
   delivered, not calls this project made. "Independent record" becomes
   "independent analysis of purchased data", which is weaker. The README must
