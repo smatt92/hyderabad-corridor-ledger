@@ -214,9 +214,11 @@ City") and one date range ("Fortnight July"):
 - **(b) Hyderabad coverage absent: DISPROVED.** R2 returned dense Hyderabad data for July
   2026.
 - **(c) A trial-region restriction: DISPROVED**, provided R2 ran on the same account as
-  9885126. Sahil's earlier check, which found the trial's data limited to the UK,
-  California, Texas and Melbourne, does not hold for this account. The trial-region
-  control designed earlier is not needed, and is not to be run.
+  9885126. Sahil's MOVE Portal access is a trial (as of the evening of 2026-09-15: 18
+  reports left, data window July 2026), so a trial account does receive Hyderabad data.
+  Sahil's earlier check, which found the trial's data limited to the UK, California, Texas
+  and Melbourne, does not hold for this account. The trial-region control designed earlier
+  is not needed, and is not to be run.
 - **(a) Full traversal with an empty `via`: the only recorded explanation left, and not
   isolated.** Besides full traversal, R2 changed the route, the length (21.01 km against
   6.89 km), the via points and the time sets. The map type is not known to have changed:
@@ -385,7 +387,7 @@ check and not as findings:
     covered length ÷ its 95th-percentile speed, not the p5 of observed calls that the
     collector's `_p5` basis is.
   - Keeping a second basis would need Routing API calls, which store Results under the
-    same licensing question.
+    same licensing question. So buying relocates that question rather than escaping it.
 - **The sample floors: not retired for the buy branch** (Sahil, 2026-09-15, withdrawing
   his earlier position).
   - The 08:00–14:00 average is 144 times the 200 floor and the 16:30–21:00 average 97
@@ -433,7 +435,7 @@ check and not as findings:
 
 | Question | What is known | Checked |
 |---|---|---|
-| **Hyderabad's coverage depth** | Coverage exists: job 9886035 returned dense Hyderabad data for 15–30 July 2026 on this account ("Job 9886035 (R2)"). The market coverage page lists India from 2015; its note that coverage is limited to selected cities heads the whole table, so it names no city ([Market coverage](https://docs.tomtom.com/traffic-stats/documentation/product-information/market-coverage)). How far back Hyderabad data goes, and how dense whole-route counts are, is not known. Sahil's earlier check, which found the trial's data limited to the UK, California, Texas and Melbourne, does not hold for this account. Question 3. | opened; product (job 9886035) |
+| **Hyderabad's coverage depth** | Coverage exists: job 9886035 returned dense Hyderabad data for 15–30 July 2026 on this account ("Job 9886035 (R2)"). The market coverage page lists India from 2015; its note that coverage is limited to selected cities heads the whole table, so it names no city ([Market coverage](https://docs.tomtom.com/traffic-stats/documentation/product-information/market-coverage)). How far back Hyderabad data goes is not known, and the trial cannot show it: its data window is July 2026. How dense whole-route counts are is not known either. Sahil's earlier check, which found the trial's data limited to the UK, California, Texas and Melbourne, does not hold for this account. Questions 1 and 3. | opened; product (job 9886035); Sahil's report (trial window) |
 | **Two-wheelers** | Nothing found confirms or excludes motorised two-wheelers from India probe data. Passenger data comes mainly from smartphones, so a rider using phone navigation may count as a passenger probe without being identified as a two-wheeler; that is a reading, not documentation. It decides whether the output is described as mixed-traffic or car travel time, and the methodology note says which, or that it is unknown. Question 5. | search (passenger sources); a reading, not documented |
 
 ### The sample floor: two layers, neither an exact count

@@ -55,9 +55,11 @@ logic cannot be attributed, the dataset it produced cannot be trusted either.
   created 2026-09-14 and deployed from Sahil's Vercel CLI. Production is live
   and reads the real, empty database. `vercel.json` has
   `git.deploymentEnabled: false` and `web/` and `api/` as its only services.
-  - **Deployment protection: off**, decided by Sahil on 2026-09-15. Leaving the
-    site public is safe only because the not-started page explains the empty
-    database, so that page must be deployed before the site is shared.
+  - **Deployment protection: on** as of the evening of 2026-09-15. An
+    unauthenticated fetch of `/` or `/api/health` gets a 302 to Vercel's login,
+    checked that evening. Earlier that day it was off, by Sahil's decision. If
+    it is ever turned off again, deploy the not-started page first: it is what
+    explains the empty database to a visitor.
   - **Environment variables:** `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`, on
     Production only as of 2026-09-15. They belong on Preview as well, or a
     preview deployment's API cannot reach the database. Never add them to
@@ -169,7 +171,7 @@ none.
     length ÷ its 95th-percentile speed, not the observed p5 of calls. Keeping a
     second basis would need Routing API calls for
     `noTrafficTravelTimeInSeconds`, which store Results under the same licensing
-    question.
+    question. So buying relocates that question rather than escaping it.
 - **Data lag: up to 72 hours.** The most recent report is three days in the
   past, so purchased figures could run three days behind, not only as an
   archive. Request windows that end at least 72 hours back: the hash chain would
@@ -563,9 +565,9 @@ optional `origin_junction` and `destination_junction`.
   Declare enough via points to hold the intended road; Route Analysis takes at
   most 50 per route.
 - Road class is a quality check worth running on every declared corridor: the
-  share of its route on each FRC. Route Analysis segments carry `frc`; the
-  stored road (0012) is points only, with no road class. No pass or fail
-  threshold is decided.
+  share of its route on each FRC. Route Analysis segments carry `frc`, but the
+  stored road (0012) is points only, so a self-collected corridor has no source
+  for the check yet. No pass or fail threshold is decided.
 - Road calls come after the due slots in a run, at most two a run, one attempt
   each, retried hourly on failure, and they spend the same daily budget.
 - `verified` (default false) means a person has confirmed every coordinate on

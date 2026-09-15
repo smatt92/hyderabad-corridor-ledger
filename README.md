@@ -148,9 +148,9 @@ As of 14 September 2026.
 | Collector | Scheduled every 5 minutes across the collection windows in GitHub Actions. It exits at once while no corridor is active. |
 | Hash chains | Both chains walked once, on 13 September. One Rekor anchor, covering two empty chains. |
 | Metrics engine | Built and tested on synthetic panels. Every derived table is empty. The nightly job has not run yet. |
-| Read API and dashboard | Deployed on Vercel since 14 September, reading the empty database, with deployment protection off. Built and tested against fixture data. No browser tile key. |
+| Read API and dashboard | Deployed on Vercel since 14 September, reading the empty database, behind Vercel deployment protection since the evening of 15 September: a visitor without access is sent to Vercel's login. Built and tested against fixture data. No browser tile key. |
 | Intervention audit (P-07) | Estimator and view built. No audit is possible until a corridor has 205 days of data. |
-| System View (P-05 design, P-06 build) | **Not built.** The design has not been delivered. |
+| System View (P-05 design, P-06 build) | **Not built.** A design was delivered on 15 September and is under Sahil's review; nothing from it is in this repository. |
 | Junction register | 16 candidates. None verified on satellite imagery. |
 | Works register | 12 works: 4 announced, 2 under construction, 6 treated. 6 have a source that supports their status. 18 control candidates, none screened. |
 
