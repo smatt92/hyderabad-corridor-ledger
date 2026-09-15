@@ -176,9 +176,16 @@ none.
   unresolved; the methodology note says whether the output is mixed-traffic or
   car travel time, or that it is unknown.
 - **Request design.** A job takes at most 20 routes, 24 date ranges of at most
-  366 days each, and 24 time sets, so about 28 directional corridors need two
-  jobs. The priced length is route length × the number of date ranges, so every
-  pooling window requested as its own date range is paid for again.
+  366 days each, and 24 time sets. The priced length is route length × the
+  number of date ranges, so every pooling window requested as its own date range
+  is paid for again.
+  - ONE THRESHOLD PER JOB. `averageSampleSizeThreshold` is one value per job,
+    and the floors differ by time set: 200 for a p95, 30 for a mean or median,
+    20 for the night p5. So peak and night time sets require SEPARATE JOBS,
+    which turns one job per corridor set into two.
+  - About 28 directional corridors, in sets of at most 20 routes, need at least
+    four jobs. Time sets that feed only a median, such as the rhythm matrix's
+    cells, would be a third group at 30 if bought.
 - **Request shape: CONFIRMED from the product.** The MOVE Portal returned its
   own Route Analysis request payload on 2026-09-15 (`docs/data-sources.md`, "The
   request shape").
@@ -192,17 +199,27 @@ none.
     documentation read does not list.
 - **Two corrections to the test request for production** (Sahil, 2026-09-15):
   - Set `averageSampleSizeThreshold`: 0 disables the request-time floor. The
-    value is not yet chosen. It is one value per job, so time sets with
-    different floors (200 for a peak p95, 20 for the night p5) go in separate
-    jobs.
+    value is not yet chosen.
   - AM and PM peak time sets are MON-FRI only; the night time set keeps all
     seven days. Weekend peaks are a different regime. Mixing them in does not
     simply flatter a corridor: with lighter weekends it lowers TTI and PTI and
     raises BTI.
-  - Open: the metrics engine as built pools peak calls on all seven days
-    (`peak_minutes` in `metrics/params.py`), so weekday-only purchased peaks
-    would define BTI and PTI differently. Whether the engine follows is not
-    decided.
+- **Open decision: the engine disagrees with the request.** The metrics engine
+  pools peak calls on all seven days (`peak_minutes` in `metrics/params.py`),
+  while bought peak time sets are MON-FRI, so bought and collected BTI and PTI
+  would be defined differently.
+  - If we buy, the engine follows the purchase; if we collect, the engine's
+    definition stands (Sahil, 2026-09-15).
+  - It cannot be settled until that choice is made. Change nothing until then.
+  - The weekend argument applies to collected peaks as well.
+- **First test report: zero, unresolved.** Job 9885126 returned zero average
+  sample size, network length and covered network length in all three time sets.
+  - The candidates (`docs/data-sources.md`): full traversal with an empty `via`,
+    absent Hyderabad coverage, or the account's data region if the job ran under
+    the trial.
+  - Record or state no coverage conclusion until the diagnostics report: the
+    same route with full traversal off, and a 1-2 km single-road stretch with it
+    off.
 - **Empty intervals are omitted**, which matches the never-interpolate rule; an
   omitted interval still counts as missing.
 - **Questions for TomTom** (rewritten 2026-09-15). Only what needs a person
@@ -213,7 +230,8 @@ none.
   2. Hyderabad coverage depth and probe density: buy history, or collect
      forward.
   3. A route-level full-traversal count.
-  4. GERS for Route Analysis, as a quote line item.
+  4. Corridor identity for Route Analysis: GERS ids, and the undocumented map
+     type `OPEN_DSEG` the test used, as a quote line item.
   5. Two-wheelers in India probe data.
 - **A decision we would live with.** The hash chain would attest a file TomTom
   delivered, not calls this project made. "Independent record" becomes

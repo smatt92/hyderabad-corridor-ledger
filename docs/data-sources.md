@@ -128,11 +128,18 @@ whatever road the routing engine chose, not a pinned corridor.
 
 - **Set `averageSampleSizeThreshold`; never send 0.** It is the request-time sample floor,
   and 0 disables it. Its value is not yet chosen.
-  - It is one value per job, and the floors differ by time set: 200 for a peak p95, 20 for
-    the night p5.
-  - So time sets with different floors go in separate jobs. A night time set held to a
-    peak floor could reject the whole job, and a peak time set held to the night floor
-    would let thin data through.
+- **One threshold per job: a request-design constraint.** The threshold is one value per
+  job, and the floors differ by time set (`metrics/params.py`): 200 for a p95, 30 for a
+  mean or median, 20 for the night p5.
+  - So time sets are batched by floor, and peak and night time sets require separate jobs.
+    A night time set held to the peak floor could reject the whole job, and a peak time
+    set held to the night floor would let thin data through.
+  - That turns one job per corridor set into two. About 28 directional corridors, in sets
+    of at most 20 routes, need at least four jobs.
+  - Time sets that feed only a mean or median, such as the rhythm matrix's cells, would be
+    a third group at 30, if they are bought.
+  - Whether separate jobs over the same routes and dates are priced separately is part of
+    question 1.
 - **AM and PM peak time sets are MON–FRI only; the night time set keeps all seven days.**
   The test used all seven days for its AM peak.
   - Why: weekend peaks on a commuter corridor are a different regime, so a seven-day peak
@@ -150,15 +157,70 @@ whatever road the routing engine chose, not a pinned corridor.
   - The restriction goes in the time groups' `days`, or in `excludedDaysOfWeek`.
 
 **Open, not decided:**
-- **The metrics engine disagrees.** As built, it pools peak-hour calls on all seven days:
-  `peak_minutes` in `metrics/params.py` has no day filter, and the ledger, the audit
-  blocks and the floors' timings all assume it. Purchased peaks on weekdays only would
-  define BTI and PTI differently from the collector's. Nothing was changed.
+- **The metrics engine disagrees with the request: an open decision.** As built, the
+  engine pools peak-hour calls on all seven days. `peak_minutes` in `metrics/params.py`
+  has no day filter, and the ledger, the audit blocks and the floors' timings all assume
+  it. The corrected peak time sets are MON–FRI, so bought and collected BTI and PTI would
+  be defined differently.
+  - Decision rule (Sahil, 2026-09-15): if we buy, the engine follows the purchase; if we
+    collect, the engine's definition stands. It cannot be settled until that choice is
+    made, and nothing changes until then.
+  - The weekend argument above is not specific to bought data: a seven-day pool of
+    collected peaks mixes the same two regimes.
 - **Holidays.** By the same reasoning, weekday public holidays are a weekend-like regime,
   and `exclusions` can drop them.
 - **Profile and rhythm matrix.** The weekday restriction was set for the peak time sets
   only. The 24-hour profile pools every day, and the rhythm matrix keeps each weekday
   separate.
+
+### First report: zero in every time set, unresolved
+
+The first Route Analysis job, 9885126, returned its sample details file, the counts a job
+gives before manual acceptance. Read on 2026-09-15, it covers one route ("KPHB to Hitec
+City") and one date range ("Fortnight July"):
+
+| Time set | `averageSampleSize` | `networkLength` (km) | `coveredNetworkLength` (km) |
+|---|---|---|---|
+| AM peak | 0.0 | 0.0 | 0.0 |
+| PM peak | 0.0 | 0.0 | 0.0 |
+| Night baseline | 0.0 | 0.0 | 0.0 |
+
+- **The request, as reported.** Sahil reports that the job used `fullTraversal: true` and
+  an empty `via`, as in the payload above, on a route of 6.89 km.
+- **Maybe not the same request.** The payload as passed on showed one time set, and this
+  job has three.
+- **Not a candidate corridor.** The route's endpoints are not the `kphb-circle` or
+  `hitec-city-cyber-towers` candidates in `config/junctions.yaml`. Neither the endpoints
+  nor those candidates are verified.
+
+**No coverage conclusion is recorded.** The candidate explanations:
+- **(a) Full traversal with an empty `via`.** Full traversal counts only vehicles that
+  drove TomTom's snapped path end to end, and on a 6.89 km urban route almost nobody may.
+  TomTom's FAQ warns that full traversal reduces the probe count on longer or complex
+  routes. (a) predicts few vehicles; zero in every time set, peaks included, is its
+  extreme.
+- **(b) Hyderabad coverage genuinely absent.**
+- **(c) The account's data region.** Sahil's earlier check found the 30-day MOVE Portal
+  trial's data limited to the UK, California, Texas and Melbourne. If this job ran under
+  the trial, that alone gives zero on any Hyderabad route. Whether it did is not recorded
+  here.
+
+The zero network length does not separate them. Road network length leaves out segments
+with no data
+([Definitions](https://developer.tomtom.com/move-portal/guides/traffic-stats/how-it-works/definitions),
+search excerpt), so it is zero whenever no data qualifies, whatever the reason.
+
+**Diagnostics running** (Sahil, 2026-09-15):
+- the same route with full traversal off;
+- a single-road stretch of 1–2 km with full traversal off.
+
+What they can show:
+- **Data on either** shows Hyderabad data reaches this account.
+- **A count with full traversal off**, where it was zero with it on, points to (a).
+- **Zero on both** would not settle (b), because under (c) they return zero too.
+  - A job of the same shape on a route inside a trial region would separate a failure in
+    how the job is set up from a regional one.
+  - Only TomTom can separate the trial's regions from the product's coverage (question 2).
 
 ### Confirmed on 2026-09-15, and it attaches
 
@@ -171,7 +233,7 @@ whatever road the routing engine chose, not a pinned corridor.
 | **Request-time threshold.** `averageSampleSizeThreshold` defaults to 0. If the average sample size of any one combination of route, date range and time set falls below it, no output is generated, the whole job is moved to REJECTED, and the report is not charged. Without it, output is generated however few samples there are ([Route Analysis](https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis)). | See "The sample floor" below. | opened |
 | **Manual acceptance.** With `acceptMode: MANUAL`, a job waits at NEED_CONFIRMATION with a sample details file giving, per route, date range and time set, the `averageSampleSize`, network length and covered network length. The job is then accepted or rejected ([Route Analysis](https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis)). | The counts can be read before a report is accepted, so a withheld value can still carry its count. Whether a manually rejected job is charged is not documented. | opened |
 | **Omitted data.** Batch omits intervals with no observed traffic ([Batch data schema](https://docs.tomtom.com/traffic-stats/documentation/batch/data-schema)). Route Analysis averages cover the covered part of the route, and each summary gives the route's `distance` and its `coveredDistance` ([Route Analysis](https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis)). The assistant added that the MOVE Portal offers a manual sample-size filter for map display. | Matches the never-interpolate rule. An omitted interval, or route distance without data, still counts as missing. | opened; assistant only (MOVE filter) |
-| **Limits.** Per job: routes of at most 200 km, at most 20 routes, 24 date ranges of at most 366 days each, 732 unique days across them, and 24 time sets ([Route Analysis](https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis)). At most 50 via points per route ([FAQ](https://docs.tomtom.com/traffic-stats/documentation/product-information/faq)). A job older than two years expires and its data is removed. No limit on segment count or on reports per contract period was found. | Route length does not bind at 4–14 km. About 28 directional corridors need at least two jobs, and the 24×7 rhythm matrix's 168 cells at least seven. A corridor's declared via points stay within 50. Results are downloaded and kept, because TomTom deletes them. | opened |
+| **Limits.** Per job: routes of at most 200 km, at most 20 routes, 24 date ranges of at most 366 days each, 732 unique days across them, and 24 time sets ([Route Analysis](https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis)). At most 50 via points per route ([FAQ](https://docs.tomtom.com/traffic-stats/documentation/product-information/faq)). A job older than two years expires and its data is removed. No limit on segment count or on reports per contract period was found. | Route length does not bind at 4–14 km. About 28 directional corridors need at least two jobs per floor ("One threshold per job"), and the 24×7 rhythm matrix's 168 cells at least seven. A corridor's declared via points stay within 50. Results are downloaded and kept, because TomTom deletes them. | opened |
 | **Pricing.** The priced length is the total length of a route's segments, multiplied by the number of date ranges: a 20 km route over five date ranges counts as 100 km ([Definitions](https://developer.tomtom.com/move-portal/guides/traffic-stats/how-it-works/definitions)). Access is requested through a local partner or a TomTom account manager ([Introduction](https://docs.tomtom.com/traffic-stats/documentation/product-information/introduction)). | Every date range is paid again. A range is at most 366 days, so history from 2015 takes at least 12 ranges. If each 14-day audit block is its own range, one audit's twelve pre blocks and post period are 13. How ranges are counted belongs in the quote. | search (pricing); opened (access) |
 | **Probe sources.** `probeSource` is PASSENGER (the default), TELEMATICS (fleet management vehicles) or ALL ([Route Analysis](https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis)). Passenger data comes mainly from smartphones, portable navigation devices and some passenger-car makers; fleet data from some truck makers, taxi and delivery services and other fleet companies. Pedestrian data is filtered out of both ([Definitions](https://developer.tomtom.com/move-portal/guides/traffic-stats/how-it-works/definitions)). | The default leaves out taxi and delivery fleets. The source changes what a travel time describes, so it is chosen deliberately and recorded with every request. | opened (parameter); search (categories) |
 

@@ -12,7 +12,7 @@ message, in this order, and track each until it is answered.
 | 1 | The quote, with publication rights (clauses 11.4 and 11.6.1) | | | |
 | 2 | Hyderabad coverage depth and probe density | | | |
 | 3 | A route-level full-traversal count | | | |
-| 4 | GERS ids for Route Analysis, as a quote line item | | | |
+| 4 | Corridor identity: GERS ids and the map type, as a quote line item | | | |
 | 5 | Two-wheelers in India probe data | | | |
 
 ## Settled from the documentation: do not ask
@@ -110,7 +110,7 @@ in for it only if we knew two things:
 - **Devices or trips?** Does `sampleSize` count devices or trips? A vehicle might drive the
   route on many days in one date range.
 
-### 4. GERS ids for Route Analysis: a quote line item
+### 4. Corridor identity: GERS ids and the map type, as a quote line item
 
 Your Traffic Volume documentation offers `gersIdMapping` per segment in GeoJSON output,
 enabled at the contract level, on the Orbis map. Traffic Volume does not list India.
@@ -120,6 +120,11 @@ enabled at the contract level, on the Orbis map. Traffic Volume does not list In
 - **Transition mappings.** When a GERS id is replaced after a road is realigned, split or
   merged, are the mappings from old to new ids available to us directly as data, not only
   applied through the Global Entity Matcher?
+- **Map type.** A Route Analysis request that the MOVE Portal generated for us used
+  `mapType: OPEN_DSEG`, map version `2025.12.1800`. Your Available Maps and Route Analysis
+  pages list only GENESIS and ORBIS. What is OPEN_DSEG, and which map type would our
+  contract's jobs run on? How do its segment ids behave across map versions: do they
+  change yearly, as your Batch schema describes, and do they carry GERS mappings?
 
 We intend to identify each corridor across map versions by its GERS ids. A replaced id
 would be an alert for a person to review, never an automatic remap.
