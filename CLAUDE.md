@@ -773,16 +773,24 @@ A route we have not measured must never reach a user. Someone may drive it.
 - Distance is `length_meters` from the payload, measured by TomTom. Never
   compute it from coordinates. When it is absent, show an em dash.
 - The map draws a corridor's stored road where one exists (`path` in the
-  payload, the simplified polyline fetched once at verification), and a
-  straight connector between its measured endpoints where none does. It says
-  which is which, corridor by corridor, in visible text. Samples store no
-  geometry.
-- Satellite imagery never shows a straight connector. A connector over a
-  street or plain basemap reads as a schematic; the same line over imagery
-  reads as a claim about the road, cutting across Hussain Sagar or through
-  buildings, whatever the caption says. Satellite mode is offered only once
-  some corridor has a stored road, and over it only corridors with one are
-  drawn (`web/src/lib/mapmode.ts`, tested in `mapmode.test.ts`).
+  payload, the simplified polyline fetched once at verification). A corridor
+  without one is drawn only on blank ground, as a straight connector between
+  its measured endpoints. It says which is which, corridor by corridor, in
+  visible text. Samples store no geometry.
+- **A corridor without stored geometry never renders over any recognisable
+  basemap.** Every tile basemap shows a road network: satellite imagery, the
+  street map, the same map desaturated, and the traffic-flow layer. Over any of
+  them a straight line between two endpoints asserts a path, whatever the
+  caption says; imagery makes the claim vivid, not different in kind. The rule
+  is about what the drawing claims, which does not change with basemap style.
+  - Over every tile basemap only corridors with a stored road are drawn, and
+    the rest are listed as not drawn.
+  - Tile basemaps are offered only once some corridor has a stored road.
+  - A straight connector appears only on blank ground, which is the default.
+  - Enforced in `web/src/lib/mapmode.ts`, tested in `mapmode.test.ts`.
+  - This replaces a rule of 2026-09-14 that allowed connectors over the street
+    and minimal basemaps because a desaturated map reads as schematic. A street
+    map still shows a recognisable road network (Sahil, 2026-09-15).
 - `via_points` do not change this. A person declares them in
   `config/corridors.yaml`, and they are measured on every cycle for months.
   Declared and measured is the opposite of derived at render time. The API
@@ -858,9 +866,9 @@ Pairs sharing endpoints is enforced by `collector/config.py` and the
   plugin in `web/vite.config.ts` fails on any of them by module id.
 - Map tiles are plain `<img>` elements in a static slippy-tile grid over
   Greater Hyderabad (`lib/tiles.ts`): no pan, no zoom, no map library.
-- Basemap modes: minimal (the default), street and satellite, remembered per
-  browser in localStorage. All three are TomTom raster tiles on
-  `TOMTOM_TILE_KEY`, and none shows anything without it.
+- Map grounds: blank (the default, no tiles), minimal, street and satellite,
+  remembered per browser in localStorage. The three basemaps are TomTom raster
+  tiles on `TOMTOM_TILE_KEY`, and none shows anything without it.
   - Minimal is the street tiles desaturated in the browser. TomTom publishes
     no grey or minimal raster style, and switching between minimal and street
     requests no new tile.
@@ -888,11 +896,12 @@ Pairs sharing endpoints is enforced by `collector/config.py` and the
   meters them. TomTom publishes 200,000 free raster map tiles and 200,000
   traffic raster tiles a month, not 50,000 a day. Street and minimal request
   the same 12 basemap tiles and 12 traffic tiles a view; satellite requests
-  42 imagery tiles and no traffic layer (`tilesPerView`). Traffic tiles
+  42 imagery tiles and no traffic layer (`tilesPerView`); blank ground requests
+  none. Traffic tiles
   refresh every 2 minutes only while the tab is visible, which is still 8,640
   tiles a day for one map left open on a screen. A layer with any failed tile
-  is hidden whole, so a refused tile leaves connectors over a plain ground,
-  never a broken grid. Wall mode loads no tiles. `lib/tiles.test.ts` and
+  is hidden whole, so a refused tile leaves the stored roads over a plain
+  ground, never a broken grid. Wall mode loads no tiles. `lib/tiles.test.ts` and
   `lib/rules.test.ts` check all four.
 - TomTom's Terms (11.4) allow caching results, tiles included, only in
   clients and within their cache headers, and never "for the purpose of

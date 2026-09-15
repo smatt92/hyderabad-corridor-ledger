@@ -3,9 +3,9 @@ import type { Corridor } from "../api/types";
 import { LegendBar } from "../encodings/LegendBar";
 import { INK, MID, MONO, RAMP_DEG, SOFT, TEXT, ramp } from "../lib/color";
 import { fmtHour, fmtIst, fmtNum } from "../lib/format";
-import { browserStorage, drawnCorridors, effectiveMode, modeOptions, readBasemap, unavailableReason, writeBasemap } from "../lib/mapmode";
+import { type MapGround, browserStorage, drawnCorridors, effectiveMode, modeOptions, readBasemap, unavailableReason, writeBasemap } from "../lib/mapmode";
 import { Scheduler } from "../lib/scheduler";
-import { BASEMAPS, type BasemapMode, HYDERABAD, TILE_SIZE, frameFor, tilesFor, toFrame, trafficTileUrl } from "../lib/tiles";
+import { BASEMAPS, HYDERABAD, TILE_SIZE, frameFor, tilesFor, toFrame, trafficTileUrl } from "../lib/tiles";
 import { type Basis, Select, kicker } from "./common";
 import type { SeriesView } from "./series";
 
@@ -25,14 +25,14 @@ const codes = (cs: Corridor[]) => cs.map((c) => c.code ?? c.id).join(", ");
 /**
  * Static map of Greater Hyderabad: TomTom raster tiles as plain <img> elements with an
  * SVG overlay. No pan, no zoom, no map library. A corridor whose road has been stored
- * (fetched once from TomTom when the corridor was verified) is drawn as that road;
- * any other is a straight connector between its measured endpoints, labelled as one.
- * Over satellite imagery a straight connector reads as a claim about the road, so only
- * corridors with a stored road are drawn there.
+ * (fetched once from TomTom when the corridor was verified) is drawn as that road.
+ * A corridor without one never renders over a recognisable basemap: over any tile
+ * basemap a straight line asserts a path, so it is drawn as a straight connector only on
+ * blank ground, and over tiles it is listed as not drawn (lib/mapmode.ts).
  */
 export function MapView({ corridors, views, day, hour, asOf }: Props) {
   const [basis, setBasis] = useState<Basis>("tomtom");
-  const [preferred, setPreferred] = useState<BasemapMode>(() => readBasemap(browserStorage()));
+  const [preferred, setPreferred] = useState<MapGround>(() => readBasemap(browserStorage()));
   const [trafficEpoch, setTrafficEpoch] = useState(0);
   // A layer with any failed tile is hidden whole, so a refused tile (429 when the tile
   // allowance runs out) leaves the overlay on a plain ground, never a broken grid. A
@@ -53,12 +53,12 @@ export function MapView({ corridors, views, day, hour, asOf }: Props) {
   const frame = useMemo(() => frameFor(HYDERABAD), []);
   const pairs = useMemo(() => corridors.filter((c) => c.role !== "alternate"), [corridors]);
   const mode = effectiveMode(preferred, hasKey, pairs);
-  const source = BASEMAPS[mode];
-  const basemapTiles = useMemo(() => tilesFor(frame, source.zoom, source.tileSize), [frame, source]);
+  const source = mode === "blank" ? null : BASEMAPS[mode];
+  const basemapTiles = useMemo(() => (source ? tilesFor(frame, source.zoom, source.tileSize) : []), [frame, source]);
   const trafficTiles = useMemo(() => tilesFor(frame), [frame]);
   const { drawn: shown, withheld } = useMemo(() => drawnCorridors(mode, pairs), [mode, pairs]);
-  const showBasemap = hasKey && !failed[mode];
-  const showTraffic = hasKey && mode !== "satellite" && !failed.traffic;
+  const showBasemap = source !== null && hasKey && !failed[mode];
+  const showTraffic = source !== null && hasKey && mode !== "satellite" && !failed.traffic;
   const fallback = hasKey && preferred !== mode ? unavailableReason(preferred, hasKey, pairs) : null;
   const roads = shown.filter((c) => c.path);
   const connectors = shown.filter((c) => !c.path);
@@ -99,7 +99,7 @@ export function MapView({ corridors, views, day, hour, asOf }: Props) {
     pointerEvents: "none" as const,
   });
   const choose = (value: string) => {
-    const next = value as BasemapMode;
+    const next = value as MapGround;
     setPreferred(next);
     writeBasemap(browserStorage(), next);
   };
@@ -110,7 +110,7 @@ export function MapView({ corridors, views, day, hour, asOf }: Props) {
         <div>
           <h2 style={{ margin: "0 0 4px", fontSize: "19px", letterSpacing: "-.01em" }}>Corridor map</h2>
           <p style={{ margin: 0, color: "#5b584f", fontSize: "13px", maxWidth: "62ch" }}>
-            Declared corridors over a TomTom basemap. Colour is TTI at the scrubber position. A corridor whose road has been stored — fetched once from TomTom when the corridor was verified — is drawn as that road. Any other is a straight connector between its measured endpoints, not the road taken, and is listed as one below the map.
+            Declared corridors, coloured by TTI at the scrubber position. A corridor whose road has been stored — fetched once from TomTom when the corridor was verified — is drawn as that road, over any basemap. A corridor without a stored road never renders over a map that shows roads, where any line would read as the path taken: it is drawn only on blank ground, as a straight connector between its measured endpoints, and listed below the map.
           </p>
         </div>
         <div style={{ display: "flex", gap: "14px", alignItems: "center", flexWrap: "wrap" }}>
@@ -139,12 +139,12 @@ export function MapView({ corridors, views, day, hour, asOf }: Props) {
             ))
           : null}
         <svg viewBox={`0 0 ${frame.width} ${frame.height}`} style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} role="img" aria-label="Stored corridor roads, and straight connectors between measured endpoints where no road is stored">
-          {!hasKey ? (
+          {source === null ? (
             <text x={frame.width / 2} y={frame.height - 24} font-size={15} font-family={MONO} fill="#a8a59d" text-anchor="middle">
-              no browser tile key in this build · basemap and traffic tiles not loaded
+              {hasKey ? "blank ground · no basemap" : "blank ground · no browser tile key in this build"}
             </text>
           ) : null}
-          {hasKey && (failed[mode] || (mode !== "satellite" && failed.traffic)) ? (
+          {source !== null && hasKey && (failed[mode] || (mode !== "satellite" && failed.traffic)) ? (
             <text x={frame.width / 2} y={frame.height - 24} font-size={15} font-family={MONO} fill="#8b8880" text-anchor="middle">
               {failed[mode] && failed.traffic && mode !== "satellite"
                 ? "basemap and traffic tiles failed to load · overlay only"
@@ -192,14 +192,14 @@ export function MapView({ corridors, views, day, hour, asOf }: Props) {
             </g>
           ))}
         </svg>
-        {showBasemap || showTraffic ? (
+        {source && (showBasemap || showTraffic) ? (
           <div style={{ position: "absolute", right: 0, bottom: 0, fontFamily: MONO, fontSize: "10px", color: "#3a3832", background: "rgba(244,243,239,.8)", padding: "1px 5px" }}>{source.attribution}</div>
         ) : null}
       </div>
       <div style={{ marginTop: "8px", fontSize: "11.5px", color: MID, maxWidth: "88ch", lineHeight: 1.5 }}>
         {roads.length ? <div>Stored roads ({roads.length}): {codes(roads)}. The road TomTom routes through each corridor's declared points, fetched once when the corridor was verified and checked weekly since.</div> : null}
-        {connectors.length ? <div>Straight connectors ({connectors.length}): {codes(connectors)}. No road is stored for these yet: the line joins the measured endpoints and is not the road taken.</div> : null}
-        {withheld.length ? <div>Not drawn over satellite imagery ({withheld.length}): {codes(withheld)}. No road is stored, and a straight line over imagery would read as a claim about the road.</div> : null}
+        {connectors.length ? <div>Straight connectors on blank ground ({connectors.length}): {codes(connectors)}. No road is stored for these yet: the line joins the measured endpoints and is not the road taken.</div> : null}
+        {withheld.length ? <div>Not drawn over this basemap ({withheld.length}): {codes(withheld)}. No road is stored, and any line over a map that shows roads would read as the path taken. Choose blank ground to see them as straight connectors.</div> : null}
         <div>Dashed grey lines have no published value at this hour.</div>
       </div>
 
@@ -209,9 +209,9 @@ export function MapView({ corridors, views, day, hour, asOf }: Props) {
           <LegendBar stops={RAMP_DEG} labels={[fmtNum(lo), "", "", "", fmtNum(hi)]} />
         </div>
         <div style={{ fontFamily: MONO, fontSize: "10.5px", color: SOFT, lineHeight: 1.6, maxWidth: "58ch" }}>
-          <div>layer 1 · {mode === "minimal" ? "TomTom street tiles, desaturated in the browser" : mode === "street" ? "TomTom street tiles" : "TomTom satellite imagery"}</div>
-          {mode !== "satellite" ? <div>layer 2 · traffic-flow tiles, TomTom relative0 raster, 2-min refresh while visible</div> : null}
-          <div>layer 3 · stored roads where fetched, straight connectors elsewhere, coloured by TTI</div>
+          <div>layer 1 · {mode === "blank" ? "none: blank ground" : mode === "minimal" ? "TomTom street tiles, desaturated in the browser" : mode === "street" ? "TomTom street tiles" : "TomTom satellite imagery"}</div>
+          {mode === "minimal" || mode === "street" ? <div>layer 2 · traffic-flow tiles, TomTom relative0 raster, 2-min refresh while visible</div> : null}
+          <div>layer 3 · {mode === "blank" ? "stored roads where fetched, straight connectors elsewhere" : "stored roads only"}, coloured by TTI</div>
           <div>a layer whose tiles fail to load is hidden whole, never shown as a broken grid</div>
         </div>
       </div>

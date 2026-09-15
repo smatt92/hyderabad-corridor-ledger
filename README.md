@@ -36,8 +36,8 @@ Read this before anything it can do.
   knows nothing about the accident ten minutes ago.
 - **It holds no road geometry yet.** A corridor's road is fetched from TomTom
   once, when the corridor is verified, and no corridor is verified. Until then
-  every line on the map is a straight connector between measured endpoints,
-  labelled as one, and not the road.
+  the map draws corridors only on blank ground, as straight connectors between
+  measured endpoints, labelled as such, and never over a basemap.
 - **Every power figure comes from simulated panels.** Their noise sizes are
   assumptions: a city-wide daily shock with sd 0.10 and a weekly corridor drift
   with sd 0.08. They have to be re-estimated once a real corridor has a full
@@ -323,19 +323,19 @@ about seven months after the first real corridor goes active.
 - **Stored roads and straight connectors.** A corridor whose road has been
   stored is drawn as that road: the route TomTom returned through the
   corridor's declared points, fetched once when the corridor was verified. Any
-  other corridor is a straight connector between its measured endpoints, not
-  the road driven. A list under the map says which corridor is drawn which
-  way. No corridor has a stored road yet.
-- **Basemaps.** Minimal (the default), street or satellite, remembered in your
-  browser. All three are TomTom raster tiles loaded by your browser from
-  TomTom. Minimal is TomTom's street map desaturated, and satellite is
-  TomTom's imagery. Until the browser tile key exists, no mode shows a
-  basemap.
-- **Satellite imagery never shows a straight connector.** A straight line over
-  imagery reads as a claim about the road, crossing Hussain Sagar or cutting
-  through buildings. So satellite mode is offered only once some corridor has
-  a stored road, and over it only those corridors are drawn; the rest are
-  listed as not drawn.
+  other corridor is drawn only on blank ground, as a straight connector between
+  its measured endpoints, not the road driven. A list under the map says which
+  corridor is drawn which way, or not drawn. No corridor has a stored road yet.
+- **Basemaps.** Blank ground (the default), minimal, street or satellite,
+  remembered in your browser. The three basemaps are TomTom raster tiles loaded
+  by your browser from TomTom. Minimal is TomTom's street map desaturated, and
+  satellite is TomTom's imagery. Until the browser tile key exists, no basemap
+  is shown.
+- **No basemap ever shows a straight connector.** Any map that shows roads,
+  whether imagery, the street map or the desaturated one, turns a straight line
+  between two endpoints into a claim about the path taken. So the basemaps are
+  offered only once some corridor has a stored road, and over them only those
+  corridors are drawn; the rest are listed as not drawn.
 - **Tiles.** The traffic-flow layer refreshes every 2 minutes while the tab is
   visible, and is not drawn over imagery. If a layer's tiles fail to load (for
   example once the tile allowance runs out), the whole layer is hidden and the
@@ -561,7 +561,7 @@ npm --prefix web run dev
 |---|---|
 | A verified or measured corridor's geometry never changes. To change a road, retire the corridor and declare a new id that supersedes it. | `collector/immutability.py` in `tests.yml` and `corridors.yml`; database trigger `corridors_guard` once a road is stored or the corridor has been active |
 | A corridor's stored road is fetched once and never overwritten. A refetch that differs is a rerouting alarm. | Database trigger `corridors_guard` (0012); `collector/fetch.py` fails the run; `collector/gaps.py` fails nightly until the corridor is retired |
-| Satellite imagery never shows a straight connector. | `web/src/lib/mapmode.ts` with `mapmode.test.ts`; `web/src/lib/rules.test.ts` |
+| A corridor without a stored road never renders over any basemap: straight connectors appear only on blank ground. | `web/src/lib/mapmode.ts` with `mapmode.test.ts` |
 | An unverified corridor stays a draft. | `collector/config.py` in CI; database constraint `corridors_measured_only_when_verified` (0010) |
 | Raw responses are kept, gzipped, and never with route geometry. | The collector refuses a response with route points or over 4 KB gzipped; check constraint on `samples.raw_gz`; `archive.py` re-verifies each file's sha256 and chain before `prune_archived()` may delete |
 | `samples` and `failed_samples` are insert-only. | Database triggers raise on UPDATE and TRUNCATE, and on DELETE outside `prune_archived()`; the service role's UPDATE, DELETE and TRUNCATE privileges are revoked; the hash chain, walked nightly and anchored in Rekor |

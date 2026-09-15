@@ -965,6 +965,18 @@ decision of Sahil's, that the project holds no route geometry.
   live traffic, which would differ between refetches for reasons other than a
   change of road.
 
+**No straight connector over any basemap.** Recorded 2026-09-15. This reversed
+part of the decision above.
+- Decided: a corridor without a stored road never renders over a recognisable
+  basemap. Over the minimal, street and satellite basemaps only stored roads
+  are drawn. Straight connectors appear only on blank ground, now the default,
+  and the tile basemaps are offered only once some corridor has a stored road.
+- Evidence: a street basemap, desaturated or not, still shows a recognisable
+  road network, so a straight line across it asserts a path just as it does
+  over imagery. Imagery makes the claim vivid, not different in kind.
+- Rejected: connectors over the street and minimal basemaps, allowed on
+  2026-09-14 on the reasoning that a desaturated basemap reads as schematic.
+
 **All three basemaps from TomTom.** This departed from the brief, which named
 Esri World Imagery or Protomaps for satellite, and TomTom grey or CARTO
 Positron for minimal.
