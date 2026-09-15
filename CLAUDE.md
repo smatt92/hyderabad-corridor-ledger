@@ -113,7 +113,8 @@ history plus ongoing access.
   stays the same road across years; design it in, do not discover it later.
 - **Empty intervals are omitted**, which matches the never-interpolate rule; an
   omitted interval still counts as missing.
-- **Questions for TomTom** (amended 2026-09-14):
+- **Questions for TomTom** (amended 2026-09-14). The full set, with what the
+  documentation already settled and a tracking table, is `docs/tomtom-questions.md`:
   - Quote for Route Analysis, not Batch.
   - How are segment and route identity maintained across annual map updates?
   - With `fullTraversal`, are route travel-time percentiles computed only from
